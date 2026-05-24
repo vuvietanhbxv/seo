@@ -3,7 +3,12 @@ const fs = require('fs')
 const path = require('path')
 
 const rootDir = path.resolve(__dirname, '..')
-const publicDir = path.join(rootDir, 'dist')
+const distDir = path.join(rootDir, 'dist')
+const publicDir = process.env.SEO_OPS_PUBLIC_DIR
+  ? path.resolve(process.env.SEO_OPS_PUBLIC_DIR)
+  : fs.existsSync(path.join(distDir, 'index.html'))
+    ? distDir
+    : rootDir
 const dbDir = process.env.SEO_OPS_DB_DIR ? path.resolve(process.env.SEO_OPS_DB_DIR) : path.join(rootDir, 'db')
 const dbPath = path.join(dbDir, 'seo-ops-data.json')
 const seedPath = path.join(publicDir, 'seo-ops-seed.json')

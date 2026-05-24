@@ -8,36 +8,41 @@ https://seo.cuahangphaohoa.shop
 
 App chay o root `/`, khong chay trong thu muc `/seo-ops`.
 
-## Chay thu
+## Plesk Node.js
 
-```powershell
-cd C:\seo-ops-web
-powershell -ExecutionPolicy Bypass -File .\start-seo-ops.ps1 -Port 5173 -BasePath /
+Trong Plesk, cau hinh:
+
+```text
+Application Root: /seo.cuahangphaohoa.shop
+Document Root: /seo.cuahangphaohoa.shop
+Application Startup File: app.js
+Application Mode: production
+```
+
+Sau khi upload goi nay, bam:
+
+```text
+NPM install
+Restart App
 ```
 
 Kiem tra:
 
 ```text
-http://127.0.0.1:5173/
-http://127.0.0.1:5173/api/health
+https://seo.cuahangphaohoa.shop/
+https://seo.cuahangphaohoa.shop/api/health
 ```
 
-## Reverse proxy
+## Bien moi truong
 
-Tro domain ve Node app:
-
-```text
-https://seo.cuahangphaohoa.shop -> http://127.0.0.1:5173
-```
-
-Neu hosting Node.js cho cau hinh bien moi truong, dung:
+Neu Plesk cho khai bao bien moi truong, dung:
 
 ```text
-SEO_OPS_PORT=5173
-SEO_OPS_HOST=0.0.0.0
 SEO_OPS_BASE_PATH=/
 SEO_OPS_DB_DIR=./db
 ```
+
+Khong can dat `SEO_OPS_PORT` tren Plesk vi Plesk se tu gan `PORT` cho Node app.
 
 ## Database dung chung
 
