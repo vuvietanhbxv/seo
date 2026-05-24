@@ -1,21 +1,71 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
+import * as XLSX from 'xlsx'
 import './App.css'
 
-type View = 'overview' | 'projects' | 'keywords' | 'articles' | 'tasks' | 'finance' | 'people' | 'progress' | 'system'
+type View = 'overview' | 'projects' | 'entities' | 'backlinks' | 'keywords' | 'articles' | 'tasks' | 'finance' | 'people' | 'progress' | 'system'
 type ProjectStatus = 'Đang SEO' | 'Tạm dừng' | 'Hoàn thành'
-type TaskStatus = 'Cần làm' | 'Đang làm' | 'Hoàn thành'
+type TaskStatus = 'Cần làm' | 'Chờ nhận' | 'Đang làm' | 'Cần chỉnh sửa' | 'Chờ duyệt' | 'Từ chối' | 'Hoàn thành'
 type TransactionType = 'Thu' | 'Chi'
 type Role = 'Quản trị viên' | 'Trưởng nhóm SEO' | 'Nội dung' | 'Tài chính' | 'Chỉ xem'
 type SearchIntent = 'Informational' | 'Commercial' | 'Transactional' | 'Navigational'
 type KeywordType = 'A' | 'B' | 'C'
 type SalaryType = 'Lương theo giờ' | 'Lương theo tháng' | 'Lương theo task'
 type ExpenseScope = 'Chi chung dự án' | 'Chi riêng dự án'
+type AnalyticsGranularity = 'day' | 'week' | 'month' | 'year'
+type PermissionAction = 'view' | 'edit'
+type FinanceFilter = 'all' | 'general' | 'project'
+type EntityTab = 'overview' | 'profile' | 'platforms' | 'links' | 'checklist' | 'schema' | 'check' | 'reports'
+type BacklinkTab = 'overview' | 'sources' | 'links' | 'plans' | 'anchors' | 'check' | 'costs' | 'reports'
+type EntityType = 'Brand' | 'Company' | 'Local Business' | 'Person' | 'Product' | 'Service' | 'Website'
+type EntityStatus = 'Đang dùng' | 'Tạm dừng' | 'Hoàn thành'
+type EntityPlatformGroup = 'Social' | 'Profile' | 'Directory' | 'Web 2.0' | 'Forum' | 'Blog' | 'Map' | 'Review'
+type EntityLinkType = 'Dofollow' | 'Nofollow' | 'Redirect' | 'Mention'
+type EntityDifficulty = 'Dễ' | 'Trung bình' | 'Khó'
+type EntityIndexability = 'Cao' | 'Trung bình' | 'Thấp'
+type EntityPlatformStatus = 'Dùng được' | 'Lỗi' | 'Khó đăng ký' | 'Không cho đặt link' | 'Ngừng dùng'
+type EntityDeploymentStatus = 'Chưa làm' | 'Đang làm' | 'Chờ xác minh' | 'Chờ duyệt' | 'Đã live' | 'Lỗi' | 'Không phù hợp'
+type EntityLiveStatus = 'Chưa check' | 'Live' | 'Redirect' | '404' | '403' | 'Mất link' | 'Không tìm thấy URL đích'
+type EntityIndexStatus = 'Chưa check' | 'Đã index' | 'Chưa index' | 'Không thể check'
+type EntityNapStatus = 'Chưa check' | 'Đúng' | 'Sai tên' | 'Sai SĐT' | 'Sai địa chỉ' | 'Thiếu thông tin'
+type BacklinkSourceType = 'Guest Post' | 'Báo' | 'Forum' | 'Blog' | 'Web 2.0' | 'PBN' | 'Social' | 'Directory' | 'Comment'
+type BacklinkType = 'Guest Post' | 'Báo chí' | 'Forum' | 'Web 2.0' | 'Entity' | 'Social' | 'PBN' | 'Directory' | 'Comment' | 'Profile' | 'Image link' | 'Redirect link'
+type BacklinkLinkType = 'Dofollow' | 'Nofollow' | 'Sponsored' | 'UGC' | 'Redirect'
+type BacklinkAnchorType = 'Brand anchor' | 'Exact match' | 'Partial match' | 'Naked URL' | 'Generic' | 'Long-tail' | 'Image anchor' | 'Compound anchor'
+type BacklinkPosition = 'Trong bài viết' | 'Sidebar' | 'Footer' | 'Profile' | 'Comment' | 'Bio'
+type BacklinkDeploymentStatus = 'Chưa làm' | 'Đang làm' | 'Chờ đăng' | 'Đã đăng' | 'Lỗi' | 'Hủy'
+type BacklinkApprovalStatus = 'Chờ duyệt' | 'Đã duyệt' | 'Cần sửa' | 'Từ chối'
+type BacklinkLinkStatus = 'Chưa check' | 'Live' | 'Mất link' | 'Sai URL đích' | 'Sai anchor' | '404' | '403' | 'Redirect'
+type BacklinkIndexStatus = 'Chưa check' | 'Đã index' | 'Chưa index' | 'Không thể check'
+type BacklinkPaymentStatus = 'Chưa thanh toán' | 'Đã thanh toán' | 'Hoàn tiền' | 'Miễn phí'
+type BacklinkSourceStatus = 'Đang dùng' | 'Tạm dừng' | 'Blacklist' | 'Cần kiểm tra lại'
+type BacklinkPlanStatus = 'Chưa làm' | 'Đang làm' | 'Hoàn thành' | 'Hoãn'
+type BacklinkCostType = 'Mua bài' | 'Thuê viết bài' | 'Phí duy trì' | 'Phí index'
 type ArticleType =
   | 'Informational Content'
   | 'Commercial Investigation / Review Content'
   | 'Transactional Content'
   | 'Category Hub'
+
+type AnalyticsSettings = {
+  propertyId: string
+  measurementId: string
+  apiEndpoint: string
+  accessToken: string
+  lastSyncAt?: string
+}
+
+type AnalyticsPoint = {
+  id: string
+  projectId: string
+  granularity: AnalyticsGranularity
+  label: string
+  date: string
+  activeUsers: number
+  sessions: number
+  pageViews: number
+  engagementRate: number
+}
 
 type Project = {
   id: string
@@ -28,6 +78,7 @@ type Project = {
   status: ProjectStatus
   ownerId: string
   deletedAt?: string
+  analytics?: AnalyticsSettings
 }
 
 type Keyword = {
@@ -57,6 +108,14 @@ type Task = {
   title: string
   assigneeId: string
   dueDate: string
+  deadlineAt?: string
+  assignedAt?: string
+  acceptedAt?: string
+  completedAt?: string
+  approvedAt?: string
+  rejectionReason?: string
+  revisionNote?: string
+  estimatedHours?: number
   status: TaskStatus
 }
 
@@ -72,6 +131,176 @@ type Transaction = {
   settlementDate?: string
 }
 
+type SeoEntity = {
+  id: string
+  projectId: string
+  name: string
+  officialName: string
+  alternativeNames: string
+  entityType: EntityType
+  website: string
+  logoUrl: string
+  coverUrl: string
+  shortDescription: string
+  longDescription: string
+  industry: string
+  countryLanguage: string
+  phone: string
+  email: string
+  address: string
+  mapsUrl: string
+  status: EntityStatus
+}
+
+type SeoEntityPlatform = {
+  id: string
+  name: string
+  domain: string
+  registerUrl: string
+  loginUrl: string
+  group: EntityPlatformGroup
+  allowWebsite: boolean
+  allowBio: boolean
+  allowLogo: boolean
+  allowCover: boolean
+  defaultLinkType: EntityLinkType
+  difficulty: EntityDifficulty
+  indexability: EntityIndexability
+  qualityScore: number
+  status: EntityPlatformStatus
+  notes: string
+}
+
+type SeoEntityLink = {
+  id: string
+  projectId: string
+  entityId: string
+  platformId: string
+  loginWithGoogle?: boolean
+  loginAccount?: string
+  loginPassword?: string
+  accountUsed: string
+  liveUrl: string
+  targetUrl: string
+  anchorText: string
+  displayName: string
+  usedDescription: string
+  assigneeId: string
+  deployedDate: string
+  deploymentStatus: EntityDeploymentStatus
+  linkStatus: EntityLiveStatus
+  indexStatus: EntityIndexStatus
+  napStatus: EntityNapStatus
+  httpStatus?: number
+  lastCheckedAt?: string
+  taskId?: string
+  notes: string
+}
+
+type EntityLinkCredential = {
+  loginWithGoogle: boolean
+  loginAccount: string
+  loginPassword: string
+}
+
+type SeoEntityChecklistItem = {
+  id: string
+  projectId: string
+  entityId: string
+  label: string
+  done: boolean
+  updatedAt?: string
+}
+
+type SeoEntitySchema = {
+  id: string
+  projectId: string
+  entityId: string
+  schemaType: EntityType
+  jsonLd: string
+  updatedAt: string
+}
+
+type SeoBacklinkSource = {
+  id: string
+  name: string
+  domain: string
+  contactUrl: string
+  sourceType: BacklinkSourceType
+  topic: string
+  country: string
+  language: string
+  da: number
+  dr: number
+  ur: number
+  estimatedTraffic: number
+  spamScore: number
+  defaultLinkType: BacklinkLinkType
+  price: number
+  currency: string
+  linkDuration: string
+  allowEdit: boolean
+  allowAnchorChange: boolean
+  status: BacklinkSourceStatus
+  note: string
+}
+
+type SeoBacklink = {
+  id: string
+  projectId: string
+  sourceId: string
+  sourceUrl: string
+  sourceDomain: string
+  targetUrl: string
+  anchorText: string
+  anchorType: BacklinkAnchorType
+  linkType: BacklinkLinkType
+  backlinkType: BacklinkType
+  linkPosition: BacklinkPosition
+  assigneeId: string
+  placedAt: string
+  expiredAt: string
+  cost: number
+  currency: string
+  deploymentStatus: BacklinkDeploymentStatus
+  approvalStatus: BacklinkApprovalStatus
+  linkStatus: BacklinkLinkStatus
+  indexStatus: BacklinkIndexStatus
+  paymentStatus: BacklinkPaymentStatus
+  backlinkScore: number
+  lastCheckedAt?: string
+  note: string
+}
+
+type SeoBacklinkPlan = {
+  id: string
+  projectId: string
+  targetUrl: string
+  targetKeyword: string
+  backlinkType: BacklinkType
+  plannedAnchor: string
+  plannedQuantity: number
+  plannedDate: string
+  assigneeId: string
+  status: BacklinkPlanStatus
+  note: string
+}
+
+type SeoBacklinkCost = {
+  id: string
+  projectId: string
+  backlinkId: string
+  sourceId: string
+  costType: BacklinkCostType
+  amount: number
+  currency: string
+  paidBy: string
+  paidAt: string
+  paymentStatus: BacklinkPaymentStatus
+  invoiceUrl: string
+  note: string
+}
+
 type User = {
   id: string
   name: string
@@ -82,6 +311,8 @@ type User = {
   permissions: string[]
   salaryType?: SalaryType
   salaryAmount?: number
+  checkedInAt?: string
+  totalWorkedMs?: number
 }
 
 type ActivityLog = {
@@ -93,18 +324,48 @@ type ActivityLog = {
   at: string
 }
 
+type NotificationItem = {
+  id: string
+  recipientId: string
+  title: string
+  message: string
+  projectId?: string
+  taskId?: string
+  linkView?: View
+  createdAt: string
+  readAt?: string
+}
+
 type AppData = {
   projects: Project[]
   keywords: Keyword[]
   tasks: Task[]
   transactions: Transaction[]
   users: User[]
+  seoEntities?: SeoEntity[]
+  seoEntityPlatforms?: SeoEntityPlatform[]
+  seoEntityLinks?: SeoEntityLink[]
+  seoEntityChecklist?: SeoEntityChecklistItem[]
+  seoEntitySchemas?: SeoEntitySchema[]
+  seoBacklinkSources?: SeoBacklinkSource[]
+  seoBacklinks?: SeoBacklink[]
+  seoBacklinkPlans?: SeoBacklinkPlan[]
+  seoBacklinkCosts?: SeoBacklinkCost[]
+  analyticsReports?: AnalyticsPoint[]
+  notifications?: NotificationItem[]
   activityLogs?: ActivityLog[]
 }
 
 const storageKey = 'seo-demo-data-v5'
+const entityCredentialKey = 'seo-demo-entity-link-credentials'
 const appVersion = '1.0.0'
+const appTimeZone = 'Asia/Bangkok'
+const appUtcOffsetLabel = 'UTC+7'
 const permissions = ['Dự án', 'Tài chính', 'Nhân sự', 'Tiến độ', 'Hệ thống']
+const permissionActions: { value: PermissionAction; label: string }[] = [
+  { value: 'view', label: 'Xem' },
+  { value: 'edit', label: 'Chỉnh sửa' },
+]
 const keywordTypeLabels: Record<KeywordType, string> = {
   A: 'A. Short-tail Keywords',
   B: 'B. Mid-tail Keywords',
@@ -117,6 +378,78 @@ const articleTypes: ArticleType[] = [
   'Category Hub',
 ]
 const salaryTypes: SalaryType[] = ['Lương theo giờ', 'Lương theo tháng', 'Lương theo task']
+const editableTaskStatuses: TaskStatus[] = ['Chờ nhận', 'Đang làm', 'Cần chỉnh sửa', 'Chờ duyệt', 'Từ chối', 'Hoàn thành']
+const entityTabs: { id: EntityTab; label: string }[] = [
+  { id: 'overview', label: 'Tổng quan Entity' },
+  { id: 'profile', label: 'Hồ sơ Entity' },
+  { id: 'platforms', label: 'Nền tảng Entity' },
+  { id: 'links', label: 'Link Entity' },
+  { id: 'checklist', label: 'Checklist Entity' },
+  { id: 'schema', label: 'Schema Entity' },
+  { id: 'check', label: 'Check Entity' },
+  { id: 'reports', label: 'Báo cáo Entity' },
+]
+const backlinkTabs: { id: BacklinkTab; label: string }[] = [
+  { id: 'overview', label: 'Tổng quan Backlink' },
+  { id: 'sources', label: 'Kho nguồn Backlink' },
+  { id: 'links', label: 'Backlink đã triển khai' },
+  { id: 'plans', label: 'Kế hoạch đi link' },
+  { id: 'anchors', label: 'Anchor Text' },
+  { id: 'check', label: 'Check Backlink' },
+  { id: 'costs', label: 'Chi phí Backlink' },
+  { id: 'reports', label: 'Báo cáo Backlink' },
+]
+const entityTypes: EntityType[] = ['Brand', 'Company', 'Local Business', 'Person', 'Product', 'Service', 'Website']
+const entityStatuses: EntityStatus[] = ['Đang dùng', 'Tạm dừng', 'Hoàn thành']
+const entityPlatformGroups: EntityPlatformGroup[] = ['Social', 'Profile', 'Directory', 'Web 2.0', 'Forum', 'Blog', 'Map', 'Review']
+const entityLinkTypes: EntityLinkType[] = ['Dofollow', 'Nofollow', 'Redirect', 'Mention']
+const entityDifficulties: EntityDifficulty[] = ['Dễ', 'Trung bình', 'Khó']
+const entityIndexabilities: EntityIndexability[] = ['Cao', 'Trung bình', 'Thấp']
+const entityPlatformStatuses: EntityPlatformStatus[] = ['Dùng được', 'Lỗi', 'Khó đăng ký', 'Không cho đặt link', 'Ngừng dùng']
+const entityDeploymentStatuses: EntityDeploymentStatus[] = ['Chưa làm', 'Đang làm', 'Chờ xác minh', 'Chờ duyệt', 'Đã live', 'Lỗi', 'Không phù hợp']
+const entityLiveStatuses: EntityLiveStatus[] = ['Chưa check', 'Live', 'Redirect', '404', '403', 'Mất link', 'Không tìm thấy URL đích']
+const entityIndexStatuses: EntityIndexStatus[] = ['Chưa check', 'Đã index', 'Chưa index', 'Không thể check']
+const entityNapStatuses: EntityNapStatus[] = ['Chưa check', 'Đúng', 'Sai tên', 'Sai SĐT', 'Sai địa chỉ', 'Thiếu thông tin']
+const backlinkSourceTypes: BacklinkSourceType[] = ['Guest Post', 'Báo', 'Forum', 'Blog', 'Web 2.0', 'PBN', 'Social', 'Directory', 'Comment']
+const backlinkTypes: BacklinkType[] = ['Guest Post', 'Báo chí', 'Forum', 'Web 2.0', 'Entity', 'Social', 'PBN', 'Directory', 'Comment', 'Profile', 'Image link', 'Redirect link']
+const backlinkLinkTypes: BacklinkLinkType[] = ['Dofollow', 'Nofollow', 'Sponsored', 'UGC', 'Redirect']
+const backlinkAnchorTypes: BacklinkAnchorType[] = ['Brand anchor', 'Exact match', 'Partial match', 'Naked URL', 'Generic', 'Long-tail', 'Image anchor', 'Compound anchor']
+const backlinkPositions: BacklinkPosition[] = ['Trong bài viết', 'Sidebar', 'Footer', 'Profile', 'Comment', 'Bio']
+const backlinkDeploymentStatuses: BacklinkDeploymentStatus[] = ['Chưa làm', 'Đang làm', 'Chờ đăng', 'Đã đăng', 'Lỗi', 'Hủy']
+const backlinkApprovalStatuses: BacklinkApprovalStatus[] = ['Chờ duyệt', 'Đã duyệt', 'Cần sửa', 'Từ chối']
+const backlinkLinkStatuses: BacklinkLinkStatus[] = ['Chưa check', 'Live', 'Mất link', 'Sai URL đích', 'Sai anchor', '404', '403', 'Redirect']
+const backlinkIndexStatuses: BacklinkIndexStatus[] = ['Chưa check', 'Đã index', 'Chưa index', 'Không thể check']
+const backlinkPaymentStatuses: BacklinkPaymentStatus[] = ['Chưa thanh toán', 'Đã thanh toán', 'Hoàn tiền', 'Miễn phí']
+const backlinkSourceStatuses: BacklinkSourceStatus[] = ['Đang dùng', 'Tạm dừng', 'Blacklist', 'Cần kiểm tra lại']
+const backlinkPlanStatuses: BacklinkPlanStatus[] = ['Chưa làm', 'Đang làm', 'Hoàn thành', 'Hoãn']
+const backlinkCostTypes: BacklinkCostType[] = ['Mua bài', 'Thuê viết bài', 'Phí duy trì', 'Phí index']
+const entityChecklistTemplates = [
+  'Chuẩn hóa tên entity',
+  'Chuẩn hóa mô tả',
+  'Chuẩn hóa NAP',
+  'Upload logo',
+  'Tạo social chính',
+  'Tạo profile phụ',
+  'Tạo web 2.0',
+  'Tạo citation',
+  'Thêm schema',
+  'Check link sống',
+  'Check index',
+  'Xuất báo cáo',
+]
+const analyticsGranularityLabels: Record<AnalyticsGranularity, string> = {
+  day: 'Ngày',
+  week: 'Tuần',
+  month: 'Tháng',
+  year: 'Năm',
+}
+
+const emptyAnalyticsSettings: AnalyticsSettings = {
+  propertyId: '',
+  measurementId: '',
+  apiEndpoint: '',
+  accessToken: '',
+}
 
 const initialData: AppData = {
   users: [
@@ -326,6 +659,150 @@ const initialData: AppData = {
       settlementDate: '',
     },
   ],
+  seoEntities: [
+    {
+      id: 'entity-p1',
+      projectId: 'p1',
+      name: 'An Gia Decor',
+      officialName: 'Công ty Nội thất An Gia Decor',
+      alternativeNames: 'An Gia, An Gia Interior',
+      entityType: 'Local Business',
+      website: 'https://angia-decor.vn',
+      logoUrl: '',
+      coverUrl: '',
+      shortDescription: 'Đơn vị thiết kế và thi công nội thất căn hộ, nhà phố, văn phòng.',
+      longDescription: 'An Gia Decor cung cấp dịch vụ thiết kế, thi công nội thất trọn gói với quy trình tư vấn, khảo sát, thiết kế 3D và hoàn thiện công trình.',
+      industry: 'Thiết kế nội thất',
+      countryLanguage: 'Việt Nam / Tiếng Việt',
+      phone: '0900000000',
+      email: 'contact@angia-decor.vn',
+      address: 'Hà Nội, Việt Nam',
+      mapsUrl: '',
+      status: 'Đang dùng',
+    },
+  ],
+  seoEntityPlatforms: [
+    {
+      id: 'ep-facebook',
+      name: 'Facebook',
+      domain: 'facebook.com',
+      registerUrl: 'https://www.facebook.com/pages/create',
+      loginUrl: 'https://www.facebook.com/login',
+      group: 'Social',
+      allowWebsite: true,
+      allowBio: true,
+      allowLogo: true,
+      allowCover: true,
+      defaultLinkType: 'Nofollow',
+      difficulty: 'Dễ',
+      indexability: 'Trung bình',
+      qualityScore: 85,
+      status: 'Dùng được',
+      notes: 'Ưu tiên đồng bộ logo, cover, NAP.',
+    },
+    {
+      id: 'ep-medium',
+      name: 'Medium',
+      domain: 'medium.com',
+      registerUrl: 'https://medium.com/m/signin',
+      loginUrl: 'https://medium.com/m/signin',
+      group: 'Blog',
+      allowWebsite: true,
+      allowBio: true,
+      allowLogo: true,
+      allowCover: false,
+      defaultLinkType: 'Nofollow',
+      difficulty: 'Dễ',
+      indexability: 'Cao',
+      qualityScore: 78,
+      status: 'Dùng được',
+      notes: 'Phù hợp profile và bài giới thiệu thương hiệu.',
+    },
+  ],
+  seoEntityLinks: [
+    {
+      id: 'el-1',
+      projectId: 'p1',
+      entityId: 'entity-p1',
+      platformId: 'ep-facebook',
+      loginWithGoogle: false,
+      loginAccount: 'facebook/an-gia-decor',
+      loginPassword: '',
+      accountUsed: 'facebook/an-gia-decor',
+      liveUrl: 'https://facebook.com/angiadecor',
+      targetUrl: 'https://angia-decor.vn',
+      anchorText: 'An Gia Decor',
+      displayName: 'An Gia Decor',
+      usedDescription: 'Thiết kế và thi công nội thất trọn gói.',
+      assigneeId: 'u2',
+      deployedDate: '2026-05-12',
+      deploymentStatus: 'Đã live',
+      linkStatus: 'Live',
+      indexStatus: 'Chưa check',
+      napStatus: 'Đúng',
+      httpStatus: 200,
+      lastCheckedAt: '',
+      taskId: '',
+      notes: '',
+    },
+  ],
+  seoEntityChecklist: [],
+  seoEntitySchemas: [],
+  seoBacklinkSources: [
+    {
+      id: 'bs-1',
+      name: 'Guest Post Nội thất 24h',
+      domain: 'noithat24h.vn',
+      contactUrl: 'https://noithat24h.vn/lien-he',
+      sourceType: 'Guest Post',
+      topic: 'Nội thất',
+      country: 'Việt Nam',
+      language: 'Tiếng Việt',
+      da: 28,
+      dr: 36,
+      ur: 18,
+      estimatedTraffic: 12000,
+      spamScore: 4,
+      defaultLinkType: 'Dofollow',
+      price: 2500000,
+      currency: 'VND',
+      linkDuration: 'Vĩnh viễn',
+      allowEdit: true,
+      allowAnchorChange: true,
+      status: 'Đang dùng',
+      note: 'Phù hợp bài guest post ngành nội thất.',
+    },
+  ],
+  seoBacklinks: [
+    {
+      id: 'bl-1',
+      projectId: 'p1',
+      sourceId: 'bs-1',
+      sourceUrl: 'https://noithat24h.vn/thiet-ke-noi-that-chung-cu-dep',
+      sourceDomain: 'noithat24h.vn',
+      targetUrl: 'https://angia-decor.vn/thiet-ke-noi-that-chung-cu',
+      anchorText: 'thiết kế nội thất chung cư',
+      anchorType: 'Exact match',
+      linkType: 'Dofollow',
+      backlinkType: 'Guest Post',
+      linkPosition: 'Trong bài viết',
+      assigneeId: 'u2',
+      placedAt: '2026-05-15',
+      expiredAt: '',
+      cost: 2500000,
+      currency: 'VND',
+      deploymentStatus: 'Đã đăng',
+      approvalStatus: 'Đã duyệt',
+      linkStatus: 'Live',
+      indexStatus: 'Đã index',
+      paymentStatus: 'Đã thanh toán',
+      backlinkScore: 0,
+      lastCheckedAt: '',
+      note: '',
+    },
+  ],
+  seoBacklinkPlans: [],
+  seoBacklinkCosts: [],
 }
 
 const currency = new Intl.NumberFormat('vi-VN', {
@@ -338,6 +815,221 @@ const pct = (value: number) => `${Math.round(value)}%`
 const uid = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
 const field = (value: string | number | undefined, fallback = 'Chưa cập nhật') =>
   value === undefined || value === '' || value === 0 ? fallback : String(value)
+const appNow = () => new Date()
+const appNowIso = () => appNow().toISOString()
+const formatDateOnly = (value?: string) => {
+  if (!value) return 'Chưa cập nhật'
+  const normalizedValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00+07:00` : value
+  const date = new Date(normalizedValue)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: appTimeZone,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+}
+const formatDateTime = (value?: string) => {
+  if (!value) return 'Chưa cập nhật'
+  const normalizedValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00+07:00` : value
+  const date = new Date(normalizedValue)
+  if (Number.isNaN(date.getTime())) return value
+  return `${new Intl.DateTimeFormat('vi-VN', {
+    timeZone: appTimeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour12: false,
+  }).format(date)} (${appUtcOffsetLabel})`
+}
+const permissionKey = (permission: string, action: PermissionAction) => `${permission}:${action}`
+const normalizePermissions = (userPermissions: string[] = []) => {
+  const next = new Set<string>()
+  userPermissions.forEach((permission) => {
+    if (permission.includes(':')) {
+      next.add(permission)
+      return
+    }
+    if (permissions.includes(permission)) {
+      next.add(permissionKey(permission, 'view'))
+      next.add(permissionKey(permission, 'edit'))
+    }
+  })
+  return Array.from(next)
+}
+const formatPermissionList = (userPermissions: string[] = []) => {
+  const normalized = normalizePermissions(userPermissions)
+  const labels = permissions
+    .map((permission) => {
+      const canViewPermission = normalized.includes(permissionKey(permission, 'view'))
+      const canEditPermission = normalized.includes(permissionKey(permission, 'edit'))
+      if (!canViewPermission && !canEditPermission) return ''
+      return `${permission}: ${canEditPermission ? 'Chỉnh sửa' : 'Xem'}`
+    })
+    .filter(Boolean)
+  return labels.join(', ') || 'Chỉ xem Tổng quan'
+}
+const buildEntityChecklist = (projectId: string, entityId: string) =>
+  entityChecklistTemplates.map((label) => ({
+    id: uid('ec'),
+    projectId,
+    entityId,
+    label,
+    done: false,
+    updatedAt: '',
+  }))
+const entityScoreRank = (score: number) => {
+  if (score <= 50) return 'Yếu'
+  if (score <= 100) return 'Cần bổ sung'
+  if (score <= 200) return 'Trung bình'
+  if (score <= 350) return 'Tốt'
+  return 'Mạnh'
+}
+const escapeCsv = (value: string | number | undefined) => `"${String(value ?? '').replace(/"/g, '""')}"`
+const normalizeImportHeader = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '')
+const readImportValue = (row: Record<string, unknown>, keys: string[]) => {
+  const normalizedKeys = Object.keys(row).reduce<Record<string, unknown>>((items, key) => {
+    items[normalizeImportHeader(key)] = row[key]
+    return items
+  }, {})
+  const value = keys.map(normalizeImportHeader).map((key) => normalizedKeys[key]).find((item) => item !== undefined && item !== null && String(item).trim() !== '')
+  return value === undefined || value === null ? '' : String(value).trim()
+}
+const parseBooleanImport = (value: string) => ['co', 'yes', 'true', '1', 'x', 'có'].includes(normalizeImportHeader(value))
+const pickEnum = <T extends string>(value: string, options: T[], fallback: T) =>
+  options.find((option) => normalizeImportHeader(option) === normalizeImportHeader(value)) ?? fallback
+const parseCsvRows = (text: string) => {
+  const delimiter = text.includes('\t') ? '\t' : ','
+  const lines = text.split(/\r?\n/).filter((line) => line.trim())
+  const parseLine = (line: string) => {
+    const cells: string[] = []
+    let current = ''
+    let quoted = false
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index]
+      if (char === '"' && line[index + 1] === '"') {
+        current += '"'
+        index += 1
+      } else if (char === '"') {
+        quoted = !quoted
+      } else if (char === delimiter && !quoted) {
+        cells.push(current.trim())
+        current = ''
+      } else {
+        current += char
+      }
+    }
+    cells.push(current.trim())
+    return cells
+  }
+  const [headerLine, ...rowLines] = lines
+  const headers = parseLine(headerLine ?? '')
+  return rowLines.map((line) => {
+    const cells = parseLine(line)
+    return headers.reduce<Record<string, string>>((row, header, index) => {
+      row[header] = cells[index] ?? ''
+      return row
+    }, {})
+  })
+}
+const googleSheetExportUrl = (url: string) => {
+  const match = url.match(/\/spreadsheets\/d\/([^/]+)/)
+  if (!match) return url
+  const gid = url.match(/[?&#]gid=(\d+)/)?.[1] ?? '0'
+  return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv&gid=${gid}`
+}
+const mapPlatformImportRow = (row: Record<string, unknown>): SeoEntityPlatform | null => {
+  const name = readImportValue(row, ['Tên nền tảng', 'Ten nen tang', 'name', 'platform'])
+  const domain = readImportValue(row, ['Domain', 'Tên miền', 'ten mien'])
+  if (!name || !domain) return null
+  return {
+    id: uid('ep'),
+    name,
+    domain,
+    registerUrl: readImportValue(row, ['Link đăng ký', 'registerUrl', 'register']),
+    loginUrl: readImportValue(row, ['Link đăng nhập', 'loginUrl', 'login']),
+    group: pickEnum(readImportValue(row, ['Nhóm nền tảng', 'group', 'nhom']), entityPlatformGroups, 'Profile'),
+    allowWebsite: parseBooleanImport(readImportValue(row, ['Cho đặt website', 'allowWebsite', 'website'])),
+    allowBio: parseBooleanImport(readImportValue(row, ['Cho viết bio', 'allowBio', 'bio'])),
+    allowLogo: parseBooleanImport(readImportValue(row, ['Cho upload logo', 'allowLogo', 'logo'])),
+    allowCover: parseBooleanImport(readImportValue(row, ['Cho upload cover', 'allowCover', 'cover'])),
+    defaultLinkType: pickEnum(readImportValue(row, ['Loại link mặc định', 'defaultLinkType', 'linkType']), entityLinkTypes, 'Nofollow'),
+    difficulty: pickEnum(readImportValue(row, ['Độ khó', 'difficulty']), entityDifficulties, 'Dễ'),
+    indexability: pickEnum(readImportValue(row, ['Khả năng index', 'indexability', 'index']), entityIndexabilities, 'Trung bình'),
+    qualityScore: Number(readImportValue(row, ['Điểm chất lượng', 'qualityScore', 'score'])) || 50,
+    status: pickEnum(readImportValue(row, ['Trạng thái', 'status']), entityPlatformStatuses, 'Dùng được'),
+    notes: readImportValue(row, ['Ghi chú', 'notes', 'note']),
+  }
+}
+const calculateEntityScore = (
+  entity: SeoEntity,
+  links: SeoEntityLink[],
+  platforms: SeoEntityPlatform[],
+  checklist: SeoEntityChecklistItem[],
+  schema?: SeoEntitySchema,
+) => {
+  let score = 0
+  links.forEach((link) => {
+    const platform = platforms.find((item) => item.id === link.platformId)
+    if (link.linkStatus === 'Live') score += 2
+    if (link.indexStatus === 'Đã index') score += 3
+    if (link.deploymentStatus === 'Đã live' && platform?.group === 'Social') score += 5
+    if (link.deploymentStatus === 'Đã live' && ['Directory', 'Map', 'Review'].includes(platform?.group ?? '')) score += 4
+    if (link.deploymentStatus === 'Đã live' && ['Web 2.0', 'Blog'].includes(platform?.group ?? '')) score += 3
+    if (['404', '403', 'Mất link', 'Không tìm thấy URL đích'].includes(link.linkStatus)) score -= 3
+    if (link.napStatus !== 'Chưa check' && link.napStatus !== 'Đúng') score -= 5
+    if (!link.targetUrl) score -= 2
+  })
+  if (schema?.jsonLd) score += 15
+  if (checklist.find((item) => item.label === 'Chuẩn hóa NAP')?.done || (entity.phone && entity.address && entity.email)) score += 20
+  return Math.max(0, score)
+}
+const backlinkScoreRank = (score: number) => {
+  if (score < 20) return 'Yếu'
+  if (score <= 40) return 'Trung bình'
+  if (score <= 70) return 'Tốt'
+  return 'Rất tốt'
+}
+const backlinkDomain = (url: string) => {
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace(/^www\./, '')
+  } catch {
+    return url.replace(/^https?:\/\//, '').split('/')[0]
+  }
+}
+const calculateBacklinkScore = (backlink: SeoBacklink, source?: SeoBacklinkSource) => {
+  let score = 0
+  if (backlink.linkStatus === 'Live') score += 5
+  if (backlink.linkType === 'Dofollow') score += 5
+  if (backlink.indexStatus === 'Đã index') score += 5
+  if (source?.topic) score += 10
+  if ((source?.estimatedTraffic ?? 0) > 0) score += 10
+  if (backlink.linkPosition === 'Trong bài viết') score += 8
+  if (backlink.anchorText && !['Sai anchor', 'Mất link'].includes(backlink.linkStatus)) score += 5
+  if ((source?.spamScore ?? 0) <= 10) score += 5
+  if (backlink.indexStatus === 'Không thể check') score -= 10
+  if (backlink.linkStatus === 'Mất link') score -= 15
+  if (backlink.linkStatus === 'Sai anchor') score -= 5
+  if ((source?.spamScore ?? 0) >= 30) score -= 10
+  return Math.max(0, Math.min(100, score))
+}
+const taskStatusOf = (task: Task): TaskStatus => (task.status === 'Cần làm' ? 'Chờ nhận' : task.status)
+const taskDeadline = (task: Task) => task.deadlineAt || task.dueDate
+const formatWorkDuration = (startedAt?: string) => {
+  if (!startedAt) return 'Chưa check-in'
+  const diffMs = Math.max(0, Date.now() - new Date(startedAt).getTime())
+  const hours = Math.floor(diffMs / 3600000)
+  const minutes = Math.floor((diffMs % 3600000) / 60000)
+  return `${hours} giờ ${minutes} phút`
+}
 const keywordTypeOf = (keyword: Keyword): KeywordType => keyword.keywordType ?? 'A'
 const childTypeOf = (keyword: Keyword): KeywordType | null => {
   const type = keywordTypeOf(keyword)
@@ -345,9 +1037,99 @@ const childTypeOf = (keyword: Keyword): KeywordType | null => {
   if (type === 'B') return 'C'
   return null
 }
+const analyticsSettingsOf = (project?: Project): AnalyticsSettings => ({
+  ...emptyAnalyticsSettings,
+  ...(project?.analytics ?? {}),
+})
+const analyticsWindowSize: Record<AnalyticsGranularity, number> = {
+  day: 14,
+  week: 8,
+  month: 12,
+  year: 5,
+}
+const analyticsDateRange: Record<AnalyticsGranularity, { startDate: string; endDate: string }> = {
+  day: { startDate: '14daysAgo', endDate: 'today' },
+  week: { startDate: '56daysAgo', endDate: 'today' },
+  month: { startDate: '12monthsAgo', endDate: 'today' },
+  year: { startDate: '5yearsAgo', endDate: 'today' },
+}
+const formatAnalyticsDate = (value: Date, granularity: AnalyticsGranularity) => {
+  if (granularity === 'year') return String(value.getFullYear())
+  if (granularity === 'month') return new Intl.DateTimeFormat('vi-VN', { timeZone: appTimeZone, month: '2-digit', year: 'numeric' }).format(value)
+  if (granularity === 'week') return `Tuần ${new Intl.DateTimeFormat('vi-VN', { timeZone: appTimeZone, day: '2-digit', month: '2-digit' }).format(value)}`
+  return new Intl.DateTimeFormat('vi-VN', { timeZone: appTimeZone, day: '2-digit', month: '2-digit' }).format(value)
+}
+const buildAnalyticsDate = (index: number, granularity: AnalyticsGranularity) => {
+  const date = appNow()
+  const reverseIndex = analyticsWindowSize[granularity] - index - 1
+  if (granularity === 'day') date.setDate(date.getDate() - reverseIndex)
+  if (granularity === 'week') date.setDate(date.getDate() - reverseIndex * 7)
+  if (granularity === 'month') date.setMonth(date.getMonth() - reverseIndex)
+  if (granularity === 'year') date.setFullYear(date.getFullYear() - reverseIndex)
+  return date
+}
+const generateDemoAnalytics = (projectId: string, granularity: AnalyticsGranularity): AnalyticsPoint[] => {
+  const seed = projectId.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
+  return Array.from({ length: analyticsWindowSize[granularity] }, (_, index) => {
+    const date = buildAnalyticsDate(index, granularity)
+    const factor = granularity === 'year' ? 4500 : granularity === 'month' ? 1200 : granularity === 'week' ? 360 : 70
+    const activeUsers = Math.round(seed + factor + index * (factor * 0.09) + Math.sin(index + seed) * (factor * 0.08))
+    const sessions = Math.round(activeUsers * 1.28)
+    const pageViews = Math.round(sessions * 1.85)
+    const engagementRate = Math.min(88, Math.max(42, 58 + ((index + seed) % 18)))
+    return {
+      id: `${projectId}-${granularity}-${date.toISOString().slice(0, 10)}`,
+      projectId,
+      granularity,
+      label: formatAnalyticsDate(date, granularity),
+      date: date.toISOString().slice(0, 10),
+      activeUsers,
+      sessions,
+      pageViews,
+      engagementRate,
+    }
+  })
+}
+const normalizeAnalyticsRows = (payload: unknown, projectId: string, granularity: AnalyticsGranularity): AnalyticsPoint[] => {
+  const body = payload as { rows?: unknown[] }
+  if (!Array.isArray(body.rows)) return []
+
+  return body.rows.map((row, index) => {
+    const record = row as {
+      label?: string
+      date?: string
+      activeUsers?: number | string
+      sessions?: number | string
+      pageViews?: number | string
+      screenPageViews?: number | string
+      engagementRate?: number | string
+      dimensionValues?: { value?: string }[]
+      metricValues?: { value?: string }[]
+    }
+    const gaDate = record.dimensionValues?.[0]?.value
+    const rawDate = record.date ?? (gaDate?.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') || '')
+    const date = rawDate || buildAnalyticsDate(index, granularity).toISOString().slice(0, 10)
+    const metrics = record.metricValues ?? []
+    const activeUsers = Number(record.activeUsers ?? metrics[0]?.value ?? 0)
+    const sessions = Number(record.sessions ?? metrics[1]?.value ?? 0)
+    const pageViews = Number(record.pageViews ?? record.screenPageViews ?? metrics[2]?.value ?? 0)
+    const engagementRate = Number(record.engagementRate ?? metrics[3]?.value ?? 0)
+    return {
+      id: `${projectId}-${granularity}-${date}-${index}`,
+      projectId,
+      granularity,
+      label: record.label ?? formatAnalyticsDate(new Date(date), granularity),
+      date,
+      activeUsers,
+      sessions,
+      pageViews,
+      engagementRate: engagementRate > 1 ? engagementRate : Math.round(engagementRate * 100),
+    }
+  })
+}
 const getViewFromHash = (): View => {
   const view = window.location.hash.replace('#', '')
-  return ['overview', 'projects', 'keywords', 'articles', 'tasks', 'finance', 'people', 'progress', 'system'].includes(view)
+  return ['overview', 'projects', 'entities', 'backlinks', 'keywords', 'articles', 'tasks', 'finance', 'people', 'progress', 'system'].includes(view)
     ? (view as View)
     : 'overview'
 }
@@ -356,7 +1138,7 @@ const setHashView = (view: View) => {
 }
 
 const permissionForView = (view: View) => {
-  if (['projects', 'keywords', 'articles', 'tasks'].includes(view)) return 'Dự án'
+  if (['projects', 'entities', 'backlinks', 'keywords', 'articles', 'tasks'].includes(view)) return 'Dự án'
   if (view === 'finance') return 'Tài chính'
   if (view === 'people') return 'Nhân sự'
   if (view === 'progress') return 'Tiến độ'
@@ -366,11 +1148,18 @@ const permissionForView = (view: View) => {
 
 const normalizeData = (data: AppData): AppData => ({
   ...data,
+  projects: data.projects.map((project) => ({
+    ...project,
+    analytics: analyticsSettingsOf(project),
+  })),
   users: data.users.map((user) => ({
     ...user,
     password: user.password ?? '123456',
+    permissions: user.role === 'Quản trị viên' ? permissions.flatMap((permission) => [permissionKey(permission, 'view'), permissionKey(permission, 'edit')]) : normalizePermissions(user.permissions),
     salaryType: user.salaryType ?? 'Lương theo tháng',
     salaryAmount: user.salaryAmount ?? 0,
+    checkedInAt: user.checkedInAt ?? '',
+    totalWorkedMs: user.totalWorkedMs ?? 0,
   })),
   keywords: data.keywords.map((keyword) => ({
     ...keyword,
@@ -387,25 +1176,80 @@ const normalizeData = (data: AppData): AppData => ({
     spenderId: transaction.spenderId ?? '',
     settlementDate: transaction.settlementDate ?? '',
   })),
+  tasks: data.tasks.map((task) => ({
+    ...task,
+    status: taskStatusOf(task),
+    deadlineAt: task.deadlineAt ?? (task.dueDate ? `${task.dueDate}T17:30` : ''),
+    assignedAt: task.assignedAt ?? '',
+    acceptedAt: task.acceptedAt ?? '',
+    completedAt: task.completedAt ?? '',
+    approvedAt: task.approvedAt ?? '',
+    rejectionReason: task.rejectionReason ?? '',
+    revisionNote: task.revisionNote ?? '',
+    estimatedHours: task.estimatedHours ?? 0,
+  })),
+  seoEntities: data.seoEntities ?? [],
+  seoEntityPlatforms: data.seoEntityPlatforms ?? [],
+  seoEntityLinks: (data.seoEntityLinks ?? []).map((link) => ({
+    ...link,
+    loginWithGoogle: link.loginWithGoogle ?? false,
+    loginAccount: link.loginAccount ?? link.accountUsed ?? '',
+    loginPassword: link.loginPassword ?? '',
+    taskId: link.taskId ?? '',
+  })),
+  seoEntityChecklist: [
+    ...(data.seoEntityChecklist ?? []),
+    ...(data.seoEntities ?? []).flatMap((entity) =>
+      (data.seoEntityChecklist ?? []).some((item) => item.entityId === entity.id)
+        ? []
+        : entityChecklistTemplates.map((label, index) => ({
+            id: `ec-${entity.id}-${index}`,
+            projectId: entity.projectId,
+            entityId: entity.id,
+            label,
+            done: false,
+            updatedAt: '',
+          })),
+    ),
+  ],
+  seoEntitySchemas: data.seoEntitySchemas ?? [],
+  seoBacklinkSources: data.seoBacklinkSources ?? [],
+  seoBacklinks: (data.seoBacklinks ?? []).map((backlink) => ({
+    ...backlink,
+    backlinkScore: backlink.backlinkScore ?? 0,
+    lastCheckedAt: backlink.lastCheckedAt ?? '',
+  })),
+  seoBacklinkPlans: data.seoBacklinkPlans ?? [],
+  seoBacklinkCosts: data.seoBacklinkCosts ?? [],
+  analyticsReports: data.analyticsReports ?? [],
+  notifications: data.notifications ?? [],
   activityLogs: data.activityLogs ?? [],
 })
 
+const readStoredData = () => {
+  const raw = localStorage.getItem(storageKey)
+  return raw ? normalizeData(JSON.parse(raw)) : initialData
+}
+
 function useStoredData() {
-  const [data, setData] = useState<AppData>(() => {
-    const raw = localStorage.getItem(storageKey)
-    return raw ? normalizeData(JSON.parse(raw)) : initialData
-  })
+  const [data, setData] = useState<AppData>(readStoredData)
 
   const updateData = (next: AppData) => {
     setData(next)
     localStorage.setItem(storageKey, JSON.stringify(next))
   }
 
-  return [data, updateData] as const
+  const reloadData = () => {
+    const latest = readStoredData()
+    setData(latest)
+    return latest
+  }
+
+  return [data, updateData, reloadData] as const
 }
 
 function App() {
-  const [data, setData] = useStoredData()
+  const [data, setData, reloadData] = useStoredData()
   const [view, setView] = useState<View>(getViewFromHash)
   const [activeProjectId, setActiveProjectId] = useState(data.projects[0]?.id ?? '')
   const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem('seo-demo-current-user') || '')
@@ -415,21 +1259,116 @@ function App() {
   const [keywordBuilder, setKeywordBuilder] = useState<Keyword | null>(null)
   const [collapsedKeywordIds, setCollapsedKeywordIds] = useState<Set<string>>(() => new Set())
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(() => new Set())
+  const [analyticsGranularity, setAnalyticsGranularity] = useState<AnalyticsGranularity>('day')
+  const [analyticsStatus, setAnalyticsStatus] = useState('')
+  const [financeFilter, setFinanceFilter] = useState<FinanceFilter>('all')
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [entityTab, setEntityTab] = useState<EntityTab>('overview')
+  const [selectedEntityId, setSelectedEntityId] = useState('')
+  const [entityImportStatus, setEntityImportStatus] = useState('')
+  const [selectedEntityLinkIds, setSelectedEntityLinkIds] = useState<Set<string>>(() => new Set())
+  const [backlinkTab, setBacklinkTab] = useState<BacklinkTab>('overview')
+  const [entityLinkCredential, setEntityLinkCredential] = useState<EntityLinkCredential>(() => {
+    const raw = localStorage.getItem(entityCredentialKey)
+    return raw ? JSON.parse(raw) : { loginWithGoogle: false, loginAccount: '', loginPassword: '' }
+  })
 
   const activeProjects = data.projects.filter((project) => !project.deletedAt)
   const deletedProjects = data.projects.filter((project) => project.deletedAt)
   const activeProjectIds = new Set(activeProjects.map((project) => project.id))
   const activeTasks = data.tasks.filter((task) => activeProjectIds.has(task.projectId))
   const activeKeywords = data.keywords.filter((keyword) => activeProjectIds.has(keyword.projectId))
-  const activeTransactions = data.transactions.filter((item) => activeProjectIds.has(item.projectId))
+  const activeTransactions = data.transactions.filter((item) => !item.projectId || activeProjectIds.has(item.projectId))
+  const companyTransactions = activeTransactions
+  const visibleFinanceTransactions = companyTransactions.filter((item) => {
+    if (financeFilter === 'general') return item.scope === 'Chi chung dự án'
+    if (financeFilter === 'project') return item.scope !== 'Chi chung dự án'
+    return true
+  })
+  const unsettledTransactions = companyTransactions.filter((item) => !item.settlementDate)
+  const debtBySpender = data.users
+    .map((user) => {
+      const items = unsettledTransactions.filter((item) => item.spenderId === user.id)
+      return {
+        user,
+        count: items.length,
+        amount: items.reduce((sum, item) => sum + item.amount, 0),
+      }
+    })
+    .filter((item) => item.count > 0)
   const activeProject = activeProjects.find((project) => project.id === activeProjectId) ?? activeProjects[0]
   const currentUser = data.users.find((user) => user.id === currentUserId && user.active)
   const isAdmin = currentUser?.role === 'Quản trị viên'
-  const hasPermission = (permission: string) => isAdmin || !permission || Boolean(currentUser?.permissions.includes(permission))
-  const canView = (targetView: View) => hasPermission(permissionForView(targetView))
+  const canAccessPermission = (permission: string, action: PermissionAction = 'view') => {
+    if (isAdmin || !permission) return true
+    const userPermissions = normalizePermissions(currentUser?.permissions ?? [])
+    return action === 'view'
+      ? userPermissions.includes(permissionKey(permission, 'view')) || userPermissions.includes(permissionKey(permission, 'edit'))
+      : userPermissions.includes(permissionKey(permission, 'edit'))
+  }
+  const canView = (targetView: View) => canAccessPermission(permissionForView(targetView), 'view')
+  const canEdit = (targetView: View) => canAccessPermission(permissionForView(targetView), 'edit')
+  const canEditProjects = canEdit('projects')
+  const canEditTasks = canEdit('tasks')
   const projectTasks = data.tasks.filter((task) => task.projectId === activeProject?.id)
+  const currentUserTasks = activeTasks.filter((task) => task.assigneeId === currentUser?.id)
+  const pendingUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Chờ nhận')
+  const activeUserTasks = currentUserTasks.filter((task) => ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task)))
+  const reviewUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Chờ duyệt')
+  const approvedUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Hoàn thành')
+  const taskSalary = (currentUser?.salaryAmount ?? 0) * approvedUserTasks.length
+  const monthlyProjectTasks = activeTasks.filter((task) => {
+    if (!taskDeadline(task)) return false
+    const deadline = new Date(taskDeadline(task))
+    const now = new Date()
+    return deadline.getMonth() === now.getMonth() && deadline.getFullYear() === now.getFullYear()
+  })
+  const monthlyUserTasks = monthlyProjectTasks.filter((task) => task.assigneeId === currentUser?.id)
+  const monthlyUserDone = monthlyUserTasks.filter((task) => taskStatusOf(task) === 'Hoàn thành').length
+  const monthlySalaryRate = monthlyUserTasks.length ? (monthlyUserDone / monthlyUserTasks.length) * 100 : 0
+  const monthlySalaryEstimate = ((currentUser?.salaryAmount ?? 0) * monthlySalaryRate) / 100
   const projectKeywords = data.keywords.filter((keyword) => keyword.projectId === activeProject?.id)
   const projectTransactions = data.transactions.filter((item) => item.projectId === activeProject?.id)
+  const projectEntities = (data.seoEntities ?? []).filter((entity) => entity.projectId === activeProject?.id)
+  const activeEntity = selectedEntityId === 'new' ? undefined : projectEntities.find((entity) => entity.id === selectedEntityId) ?? projectEntities[0]
+  const entityPlatforms = data.seoEntityPlatforms ?? []
+  const projectEntityLinks = (data.seoEntityLinks ?? []).filter((link) => link.projectId === activeProject?.id)
+  const activeEntityLinks = projectEntityLinks.filter((link) => link.entityId === activeEntity?.id)
+  const activeEntityChecklist = (data.seoEntityChecklist ?? []).filter((item) => item.entityId === activeEntity?.id)
+  const activeEntitySchema = (data.seoEntitySchemas ?? []).find((schema) => schema.entityId === activeEntity?.id)
+  const liveEntityLinks = activeEntityLinks.filter((link) => link.linkStatus === 'Live')
+  const indexedEntityLinks = activeEntityLinks.filter((link) => link.indexStatus === 'Đã index')
+  const napOkLinks = activeEntityLinks.filter((link) => link.napStatus === 'Đúng')
+  const entityScore = activeEntity
+    ? calculateEntityScore(activeEntity, activeEntityLinks, entityPlatforms, activeEntityChecklist, activeEntitySchema)
+    : 0
+  const backlinkSources = data.seoBacklinkSources ?? []
+  const projectBacklinks = (data.seoBacklinks ?? []).filter((backlink) => backlink.projectId === activeProject?.id)
+  const projectBacklinkPlans = (data.seoBacklinkPlans ?? []).filter((plan) => plan.projectId === activeProject?.id)
+  const projectBacklinkCosts = (data.seoBacklinkCosts ?? []).filter((cost) => cost.projectId === activeProject?.id)
+  const backlinkLive = projectBacklinks.filter((backlink) => backlink.linkStatus === 'Live')
+  const backlinkErrors = projectBacklinks.filter((backlink) => ['Mất link', 'Sai URL đích', 'Sai anchor', '404', '403'].includes(backlink.linkStatus))
+  const backlinkIndexed = projectBacklinks.filter((backlink) => backlink.indexStatus === 'Đã index')
+  const referringDomains = new Set(projectBacklinks.map((backlink) => backlink.sourceDomain || backlinkDomain(backlink.sourceUrl)).filter(Boolean))
+  const backlinkCostTotal = projectBacklinks.reduce((sum, backlink) => sum + backlink.cost, 0) + projectBacklinkCosts.reduce((sum, cost) => sum + cost.amount, 0)
+  const backlinkAverageScore = projectBacklinks.length
+    ? projectBacklinks.reduce((sum, backlink) => sum + (backlink.backlinkScore || calculateBacklinkScore(backlink, backlinkSources.find((source) => source.id === backlink.sourceId))), 0) / projectBacklinks.length
+    : 0
+  const projectAnalyticsPoints = (data.analyticsReports ?? []).filter(
+    (point) => point.projectId === activeProject?.id && point.granularity === analyticsGranularity,
+  )
+  const analyticsTotals = projectAnalyticsPoints.reduce(
+    (totals, point) => ({
+      activeUsers: totals.activeUsers + point.activeUsers,
+      sessions: totals.sessions + point.sessions,
+      pageViews: totals.pageViews + point.pageViews,
+      engagementRate: totals.engagementRate + point.engagementRate,
+    }),
+    { activeUsers: 0, sessions: 0, pageViews: 0, engagementRate: 0 },
+  )
+  const analyticsAverageEngagement = projectAnalyticsPoints.length
+    ? analyticsTotals.engagementRate / projectAnalyticsPoints.length
+    : 0
   const projectExpense = projectTransactions.reduce((sum, item) => sum + item.amount, 0)
   const projectCompletion = projectTasks.length
     ? (projectTasks.filter((task) => task.status === 'Hoàn thành').length / projectTasks.length) * 100
@@ -458,6 +1397,55 @@ function App() {
   const editingUser = editingUserId ? data.users.find((user) => user.id === editingUserId) : undefined
   const editingTransaction = editingTransactionId ? data.transactions.find((item) => item.id === editingTransactionId) : undefined
   const activityLogs = data.activityLogs ?? []
+  const currentNotifications = (data.notifications ?? []).filter((notification) => notification.recipientId === currentUser?.id)
+  const unreadNotifications = currentNotifications.filter((notification) => !notification.readAt)
+  const projectAdminRecipients = (projectId: string) => {
+    const project = data.projects.find((item) => item.id === projectId)
+    return Array.from(
+      new Set([
+        ...data.users.filter((user) => user.active && user.role === 'Quản trị viên').map((user) => user.id),
+        project?.ownerId ?? '',
+      ].filter(Boolean)),
+    )
+  }
+  const withNotifications = (
+    nextData: AppData,
+    recipientIds: string[],
+    title: string,
+    message: string,
+    options: { projectId?: string; taskId?: string; linkView?: View } = {},
+  ): AppData => {
+    const recipients = Array.from(new Set(recipientIds.filter((id) => id && id !== currentUser?.id)))
+    if (recipients.length === 0) return nextData
+    const notifications: NotificationItem[] = recipients.map((recipientId) => ({
+      id: uid('noti'),
+      recipientId,
+      title,
+      message,
+      projectId: options.projectId,
+      taskId: options.taskId,
+      linkView: options.linkView ?? 'tasks',
+      createdAt: appNowIso(),
+    }))
+    return {
+      ...nextData,
+      notifications: [...notifications, ...(nextData.notifications ?? [])].slice(0, 500),
+    }
+  }
+  const notifyTaskAssignee = (nextData: AppData, task: Task, title = 'Task mới được giao') =>
+    withNotifications(
+      nextData,
+      [task.assigneeId],
+      title,
+      `${task.title} đang chờ bạn nhận xử lý.`,
+      { projectId: task.projectId, taskId: task.id, linkView: 'overview' },
+    )
+  const notifyProjectAdmins = (nextData: AppData, task: Task, title: string, message: string) =>
+    withNotifications(nextData, projectAdminRecipients(task.projectId), title, message, {
+      projectId: task.projectId,
+      taskId: task.id,
+      linkView: 'tasks',
+    })
   const saveData = (nextData: AppData, action: string, target: string) => {
     const log: ActivityLog = {
       id: uid('log'),
@@ -465,17 +1453,40 @@ function App() {
       actorName: currentUser?.name ?? 'Hệ thống',
       action,
       target,
-      at: new Date().toISOString(),
+      at: appNowIso(),
     }
     setData({
       ...nextData,
       activityLogs: [log, ...(nextData.activityLogs ?? [])].slice(0, 300),
     })
   }
+  const openNotification = (notification: NotificationItem) => {
+    const nextData = {
+      ...data,
+      notifications: (data.notifications ?? []).map((item) =>
+        item.id === notification.id && !item.readAt ? { ...item, readAt: appNowIso() } : item,
+      ),
+    }
+    setData(nextData)
+    localStorage.setItem(storageKey, JSON.stringify(nextData))
+    if (notification.projectId) setActiveProjectId(notification.projectId)
+    if (notification.linkView && canView(notification.linkView)) goTo(notification.linkView)
+    setNotificationsOpen(false)
+  }
+  const markAllNotificationsRead = () => {
+    const nextData = {
+      ...data,
+      notifications: (data.notifications ?? []).map((item) =>
+        item.recipientId === currentUser?.id && !item.readAt ? { ...item, readAt: appNowIso() } : item,
+      ),
+    }
+    setData(nextData)
+    localStorage.setItem(storageKey, JSON.stringify(nextData))
+  }
   const downloadBackup = () => {
     const backup = {
       version: appVersion,
-      exportedAt: new Date().toISOString(),
+      exportedAt: appNowIso(),
       storageKey,
       data,
     }
@@ -483,7 +1494,7 @@ function App() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `seo-ops-backup-${new Date().toISOString().slice(0, 10)}.json`
+    link.download = `seo-ops-backup-${appNowIso().slice(0, 10)}.json`
     link.click()
     URL.revokeObjectURL(url)
     saveData(data, 'Tải backup dữ liệu', 'Hệ thống')
@@ -496,10 +1507,11 @@ function App() {
 
   const login = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const latestData = reloadData()
     const form = new FormData(event.currentTarget)
     const email = String(form.get('email')).trim()
-    const password = String(form.get('password'))
-    const user = data.users.find((item) => item.email === email && item.password === password && item.active)
+    const password = String(form.get('password')).trim()
+    const user = latestData.users.find((item) => item.email.toLowerCase() === email.toLowerCase() && String(item.password ?? '123456') === password && item.active)
     if (!user) {
       setLoginError('Email hoặc mật khẩu không đúng.')
       return
@@ -507,13 +1519,21 @@ function App() {
     setCurrentUserId(user.id)
     localStorage.setItem('seo-demo-current-user', user.id)
     setLoginError('')
-    const nextView = isAdmin || user.permissions.includes(permissionForView(view)) || !permissionForView(view) ? view : 'overview'
+    const normalizedUserPermissions = normalizePermissions(user.permissions)
+    const nextView =
+      user.role === 'Quản trị viên' ||
+      !permissionForView(view) ||
+      normalizedUserPermissions.includes(permissionKey(permissionForView(view), 'view')) ||
+      normalizedUserPermissions.includes(permissionKey(permissionForView(view), 'edit'))
+        ? view
+        : 'overview'
     setView(nextView)
     setHashView(nextView)
     event.currentTarget.reset()
   }
 
   const logout = () => {
+    reloadData()
     localStorage.removeItem('seo-demo-current-user')
     setCurrentUserId('')
     setView('overview')
@@ -546,7 +1566,7 @@ function App() {
     }
 
     const projects = data.projects.map((item) =>
-      item.id === projectId ? { ...item, deletedAt: new Date().toISOString() } : item,
+      item.id === projectId ? { ...item, deletedAt: appNowIso() } : item,
     )
     const remainingProjects = projects.filter((item) => !item.deletedAt)
     saveData({ ...data, projects }, 'Xóa dự án', project.name)
@@ -584,7 +1604,91 @@ function App() {
       keywords: data.keywords.filter((item) => item.projectId !== projectId),
       tasks: data.tasks.filter((item) => item.projectId !== projectId),
       transactions: data.transactions.filter((item) => item.projectId !== projectId),
+      analyticsReports: (data.analyticsReports ?? []).filter((item) => item.projectId !== projectId),
     }, 'Xóa vĩnh viễn dự án', project.name)
+  }
+
+  const saveAnalyticsSettings = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+    const form = new FormData(event.currentTarget)
+    const settings: AnalyticsSettings = {
+      ...analyticsSettingsOf(activeProject),
+      propertyId: String(form.get('propertyId')).trim(),
+      measurementId: String(form.get('measurementId')).trim(),
+      apiEndpoint: String(form.get('apiEndpoint')).trim(),
+      accessToken: String(form.get('accessToken')).trim(),
+    }
+    saveData({
+      ...data,
+      projects: data.projects.map((project) => (project.id === activeProject.id ? { ...project, analytics: settings } : project)),
+    }, 'Cập nhật Google Analytics API', activeProject.name)
+    setAnalyticsStatus('Đã lưu cấu hình Google Analytics cho dự án đang chọn.')
+  }
+
+  const syncAnalytics = async () => {
+    if (!activeProject) return
+    const settings = analyticsSettingsOf(activeProject)
+    setAnalyticsStatus('Đang đồng bộ dữ liệu Google Analytics...')
+
+    let points: AnalyticsPoint[]
+    let action = 'Đồng bộ Google Analytics demo'
+    try {
+      if (settings.apiEndpoint && settings.propertyId) {
+        const response = await fetch(settings.apiEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(settings.accessToken ? { Authorization: `Bearer ${settings.accessToken}` } : {}),
+          },
+          body: JSON.stringify({
+            property: `properties/${settings.propertyId}`,
+            propertyId: settings.propertyId,
+            measurementId: settings.measurementId,
+            granularity: analyticsGranularity,
+            dateRanges: [analyticsDateRange[analyticsGranularity]],
+            dimensions: [{ name: 'date' }],
+            metrics: [
+              { name: 'activeUsers' },
+              { name: 'sessions' },
+              { name: 'screenPageViews' },
+              { name: 'engagementRate' },
+            ],
+          }),
+        })
+        if (!response.ok) throw new Error(`API trả về HTTP ${response.status}`)
+        points = normalizeAnalyticsRows(await response.json(), activeProject.id, analyticsGranularity)
+        if (points.length === 0) throw new Error('API chưa trả về dòng dữ liệu hợp lệ')
+        action = 'Đồng bộ Google Analytics API'
+      } else {
+        points = generateDemoAnalytics(activeProject.id, analyticsGranularity)
+      }
+    } catch (error) {
+      points = generateDemoAnalytics(activeProject.id, analyticsGranularity)
+      setAnalyticsStatus(`Không gọi được API nội bộ, đang hiển thị dữ liệu demo. ${error instanceof Error ? error.message : ''}`)
+    }
+
+    const syncedAt = appNowIso()
+    saveData({
+      ...data,
+      projects: data.projects.map((project) =>
+        project.id === activeProject.id
+          ? { ...project, analytics: { ...settings, lastSyncAt: syncedAt } }
+          : project,
+      ),
+      analyticsReports: [
+        ...(data.analyticsReports ?? []).filter(
+          (point) => !(point.projectId === activeProject.id && point.granularity === analyticsGranularity),
+        ),
+        ...points,
+      ],
+    }, action, activeProject.name)
+
+    if (action === 'Đồng bộ Google Analytics API') {
+      setAnalyticsStatus('Đồng bộ API thành công. Dữ liệu đã được cập nhật cho dự án đang chọn.')
+    } else if (!settings.apiEndpoint || !settings.propertyId) {
+      setAnalyticsStatus('Chưa có đủ Property ID/API Endpoint nên hệ thống đang dùng dữ liệu demo nội bộ.')
+    }
   }
 
   const addKeyword = (event: FormEvent<HTMLFormElement>) => {
@@ -746,14 +1850,22 @@ function App() {
           title,
           assigneeId: keyword.articleAssigneeId,
           dueDate: '',
-          status: 'Cần làm',
+          deadlineAt: '',
+          assignedAt: appNowIso(),
+          estimatedHours: 0,
+          status: 'Chờ nhận',
         }
 
-    saveData({
+    const nextData = {
       ...data,
       keywords: data.keywords.map((item) => (item.id === keywordId ? { ...item, articleTaskId: taskId } : item)),
       tasks: existingTask ? data.tasks.map((item) => (item.id === taskId ? task : item)) : [task, ...data.tasks],
-    }, existingTask ? 'Phân việc lại bài viết' : 'Gửi task bài viết', keyword.term)
+    }
+    saveData(
+      notifyTaskAssignee(nextData, task, existingTask ? 'Task bài viết được phân lại' : 'Task bài viết mới'),
+      existingTask ? 'Phân việc lại bài viết' : 'Gửi task bài viết',
+      keyword.term,
+    )
   }
 
   const addTask = (event: FormEvent<HTMLFormElement>) => {
@@ -765,10 +1877,13 @@ function App() {
       projectId: activeProject.id,
       title: String(form.get('title')).trim(),
       assigneeId: String(form.get('assigneeId')),
-      dueDate: String(form.get('dueDate')),
-      status: 'Cần làm',
+      dueDate: String(form.get('deadlineAt')).slice(0, 10),
+      deadlineAt: String(form.get('deadlineAt')),
+      assignedAt: appNowIso(),
+      estimatedHours: Number(form.get('estimatedHours')) || 0,
+      status: 'Chờ nhận',
     }
-    saveData({ ...data, tasks: [task, ...data.tasks] }, 'Thêm task', task.title)
+    saveData(notifyTaskAssignee({ ...data, tasks: [task, ...data.tasks] }, task), 'Thêm task', task.title)
     event.currentTarget.reset()
   }
 
@@ -785,7 +1900,7 @@ function App() {
       label: String(form.get('label')).trim(),
       amount: Number(form.get('amount')) || 0,
       date: String(form.get('date')),
-      settlementDate: String(form.get('settlementDate')),
+      settlementDate: editingTransaction?.settlementDate ?? '',
     }
     saveData({
       ...data,
@@ -801,19 +1916,36 @@ function App() {
     setEditingTransactionId(transactionId)
   }
 
+  const settleExpense = (transactionId: string) => {
+    const transaction = data.transactions.find((item) => item.id === transactionId)
+    if (!transaction) return
+    const spenderName = ownerName(transaction.spenderId ?? '')
+    if (!window.confirm(`Xác nhận đã giải ngân chi trả khoản "${transaction.label}" cho ${spenderName}?`)) return
+    saveData({
+      ...data,
+      transactions: data.transactions.map((item) =>
+        item.id === transactionId ? { ...item, settlementDate: appNowIso() } : item,
+      ),
+    }, 'Giải ngân công nợ', transaction.label)
+  }
+
   const saveUser = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const role = String(form.get('role')) as Role
+    const formPermissions = form.getAll('permissions').map(String)
     const user: User = {
       id: editingUserId ?? uid('u'),
       name: String(form.get('name')).trim(),
       email: String(form.get('email')).trim(),
       password: String(form.get('password')) || '123456',
-      role: String(form.get('role')) as Role,
+      role,
       active: true,
-      permissions: form.getAll('permissions').map(String),
+      permissions: role === 'Quản trị viên' ? permissions.flatMap((permission) => [permissionKey(permission, 'view'), permissionKey(permission, 'edit')]) : formPermissions,
       salaryType: String(form.get('salaryType')) as SalaryType,
       salaryAmount: Number(form.get('salaryAmount')) || 0,
+      checkedInAt: editingUser?.checkedInAt ?? '',
+      totalWorkedMs: editingUser?.totalWorkedMs ?? 0,
     }
     saveData({
       ...data,
@@ -844,15 +1976,734 @@ function App() {
     }, 'Xóa nhân sự', user.name)
   }
 
-  const updateTaskStatus = (taskId: string, status: TaskStatus) => {
+  const checkIn = () => {
+    if (!currentUser || currentUser.checkedInAt) return
     saveData({
       ...data,
-      tasks: data.tasks.map((task) => (task.id === taskId ? { ...task, status } : task)),
-    }, 'Cập nhật trạng thái task', data.tasks.find((task) => task.id === taskId)?.title ?? taskId)
+      users: data.users.map((user) => (user.id === currentUser.id ? { ...user, checkedInAt: appNowIso() } : user)),
+    }, 'Check-in làm việc', currentUser.name)
+  }
+
+  const checkOut = () => {
+    if (!currentUser?.checkedInAt) return
+    const sessionMs = Math.max(0, Date.now() - new Date(currentUser.checkedInAt).getTime())
+    saveData({
+      ...data,
+      users: data.users.map((user) =>
+        user.id === currentUser.id
+          ? { ...user, checkedInAt: '', totalWorkedMs: (user.totalWorkedMs ?? 0) + sessionMs }
+          : user,
+      ),
+    }, 'Check-out làm việc', currentUser.name)
+  }
+
+  const acceptTask = (taskId: string) => {
+    const task = data.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((item) =>
+        item.id === taskId
+          ? { ...item, status: 'Đang làm' as TaskStatus, acceptedAt: appNowIso(), rejectionReason: '', revisionNote: '' }
+          : item,
+      ),
+    }
+    saveData(
+      notifyProjectAdmins(nextData, task, 'Nhân viên đã nhận task', `${ownerName(task.assigneeId)} đã nhận task: ${task.title}`),
+      'Nhận task',
+      task.title,
+    )
+  }
+
+  const rejectTask = (taskId: string) => {
+    const task = data.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    const reason = window.prompt('Nhập lý do từ chối task:')
+    if (!reason) return
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((item) =>
+        item.id === taskId ? { ...item, status: 'Từ chối' as TaskStatus, rejectionReason: reason, acceptedAt: '' } : item,
+      ),
+    }
+    saveData(
+      notifyProjectAdmins(nextData, task, 'Nhân viên từ chối task', `${ownerName(task.assigneeId)} từ chối task "${task.title}". Lý do: ${reason}`),
+      'Từ chối task',
+      task.title,
+    )
+  }
+
+  const submitTaskForReview = (taskId: string) => {
+    const task = data.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((item) =>
+        item.id === taskId ? { ...item, status: 'Chờ duyệt' as TaskStatus, completedAt: appNowIso() } : item,
+      ),
+    }
+    saveData(
+      notifyProjectAdmins(nextData, task, 'Task chờ duyệt', `${ownerName(task.assigneeId)} đã gửi hoàn thành task: ${task.title}`),
+      'Gửi duyệt task',
+      task.title,
+    )
+  }
+
+  const approveTask = (taskId: string) => {
+    const task = data.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((item) =>
+        item.id === taskId ? { ...item, status: 'Hoàn thành' as TaskStatus, approvedAt: appNowIso(), revisionNote: '' } : item,
+      ),
+    }
+    saveData(
+      notifyTaskAssignee(nextData, task, 'Task đã được xác nhận hoàn thành'),
+      'Xác nhận hoàn thành task',
+      task.title,
+    )
+  }
+
+  const requestTaskRevision = (taskId: string) => {
+    const task = data.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    const note = window.prompt('Nhập nội dung cần chỉnh sửa:')
+    if (!note) return
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((item) =>
+        item.id === taskId ? { ...item, status: 'Cần chỉnh sửa' as TaskStatus, revisionNote: note } : item,
+      ),
+    }
+    saveData(
+      notifyTaskAssignee(nextData, task, 'Task cần chỉnh sửa'),
+      'Yêu cầu chỉnh sửa task',
+      task.title,
+    )
+  }
+
+  const reassignTask = (taskId: string, assigneeId: string) => {
+    const task = data.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    const updatedTask = { ...task, assigneeId, status: 'Chờ nhận' as TaskStatus }
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((item) =>
+        item.id === taskId
+          ? {
+              ...item,
+              assigneeId,
+              status: 'Chờ nhận' as TaskStatus,
+              assignedAt: appNowIso(),
+              acceptedAt: '',
+              completedAt: '',
+              approvedAt: '',
+              rejectionReason: '',
+              revisionNote: '',
+            }
+          : item,
+      ),
+    }
+    saveData(notifyTaskAssignee(nextData, updatedTask, 'Task được phân lại'), 'Phân lại task', task.title)
+  }
+
+  const updateTaskStatus = (taskId: string, status: TaskStatus) => {
+    const task = data.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              status,
+              approvedAt: status === 'Hoàn thành' ? appNowIso() : task.approvedAt,
+              completedAt: status === 'Chờ duyệt' ? appNowIso() : task.completedAt,
+            }
+          : task,
+      ),
+    }
+    saveData(
+      notifyProjectAdmins(
+        status === 'Hoàn thành' || status === 'Cần chỉnh sửa' ? notifyTaskAssignee(nextData, task, `Task chuyển trạng thái: ${status}`) : nextData,
+        task,
+        'Trạng thái task thay đổi',
+        `Task "${task.title}" chuyển sang trạng thái ${status}.`,
+      ),
+      'Cập nhật trạng thái task',
+      task.title,
+    )
+  }
+
+  const saveEntityProfile = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+    const form = new FormData(event.currentTarget)
+    const entityId = activeEntity?.id ?? uid('entity')
+    const entity: SeoEntity = {
+      id: entityId,
+      projectId: activeProject.id,
+      name: String(form.get('name')).trim(),
+      officialName: String(form.get('officialName')).trim(),
+      alternativeNames: String(form.get('alternativeNames')).trim(),
+      entityType: String(form.get('entityType')) as EntityType,
+      website: String(form.get('website')).trim(),
+      logoUrl: String(form.get('logoUrl')).trim(),
+      coverUrl: String(form.get('coverUrl')).trim(),
+      shortDescription: String(form.get('shortDescription')).trim(),
+      longDescription: String(form.get('longDescription')).trim(),
+      industry: String(form.get('industry')).trim(),
+      countryLanguage: String(form.get('countryLanguage')).trim(),
+      phone: String(form.get('phone')).trim(),
+      email: String(form.get('email')).trim(),
+      address: String(form.get('address')).trim(),
+      mapsUrl: String(form.get('mapsUrl')).trim(),
+      status: String(form.get('status')) as EntityStatus,
+    }
+    const isUpdate = projectEntities.some((item) => item.id === entityId)
+    const nextData: AppData = {
+      ...data,
+      seoEntities: isUpdate ? (data.seoEntities ?? []).map((item) => (item.id === entityId ? entity : item)) : [entity, ...(data.seoEntities ?? [])],
+      seoEntityChecklist: isUpdate ? data.seoEntityChecklist : [...buildEntityChecklist(activeProject.id, entityId), ...(data.seoEntityChecklist ?? [])],
+    }
+    saveData(nextData, isUpdate ? 'Cập nhật hồ sơ Entity' : 'Tạo hồ sơ Entity', entity.name)
+    setSelectedEntityId(entityId)
+  }
+
+  const createNewEntityProfile = () => {
+    setSelectedEntityId('new')
+    setEntityTab('profile')
+  }
+
+  const deleteEntityProfile = (entityId: string) => {
+    const entity = (data.seoEntities ?? []).find((item) => item.id === entityId)
+    if (!entity || !window.confirm(`Bạn có chắc chắn muốn xóa Entity "${entity.name}"? Link, checklist và schema liên quan cũng sẽ bị xóa.`)) return
+    saveData({
+      ...data,
+      seoEntities: (data.seoEntities ?? []).filter((item) => item.id !== entityId),
+      seoEntityLinks: (data.seoEntityLinks ?? []).filter((item) => item.entityId !== entityId),
+      seoEntityChecklist: (data.seoEntityChecklist ?? []).filter((item) => item.entityId !== entityId),
+      seoEntitySchemas: (data.seoEntitySchemas ?? []).filter((item) => item.entityId !== entityId),
+    }, 'Xóa hồ sơ Entity', entity.name)
+    setSelectedEntityId('')
+  }
+
+  const addEntityPlatform = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const platform: SeoEntityPlatform = {
+      id: uid('ep'),
+      name: String(form.get('name')).trim(),
+      domain: String(form.get('domain')).trim(),
+      registerUrl: String(form.get('registerUrl')).trim(),
+      loginUrl: String(form.get('loginUrl')).trim(),
+      group: String(form.get('group')) as EntityPlatformGroup,
+      allowWebsite: form.get('allowWebsite') === 'on',
+      allowBio: form.get('allowBio') === 'on',
+      allowLogo: form.get('allowLogo') === 'on',
+      allowCover: form.get('allowCover') === 'on',
+      defaultLinkType: String(form.get('defaultLinkType')) as EntityLinkType,
+      difficulty: String(form.get('difficulty')) as EntityDifficulty,
+      indexability: String(form.get('indexability')) as EntityIndexability,
+      qualityScore: Number(form.get('qualityScore')) || 0,
+      status: String(form.get('status')) as EntityPlatformStatus,
+      notes: String(form.get('notes')).trim(),
+    }
+    saveData({ ...data, seoEntityPlatforms: [platform, ...(data.seoEntityPlatforms ?? [])] }, 'Thêm nền tảng Entity', platform.name)
+    event.currentTarget.reset()
+  }
+
+  const importEntityPlatforms = (rows: Record<string, unknown>[], sourceLabel: string) => {
+    const importedPlatforms = rows.map(mapPlatformImportRow).filter((platform): platform is SeoEntityPlatform => Boolean(platform))
+    if (importedPlatforms.length === 0) {
+      setEntityImportStatus(`Không tìm thấy nền tảng hợp lệ trong ${sourceLabel}. Cần tối thiểu cột Tên nền tảng và Domain.`)
+      return
+    }
+    const existingKeys = new Set((data.seoEntityPlatforms ?? []).map((platform) => normalizeImportHeader(`${platform.name}-${platform.domain}`)))
+    const uniquePlatforms = importedPlatforms.filter((platform) => !existingKeys.has(normalizeImportHeader(`${platform.name}-${platform.domain}`)))
+    if (uniquePlatforms.length === 0) {
+      setEntityImportStatus(`Các nền tảng trong ${sourceLabel} đã tồn tại, không import thêm dòng mới.`)
+      return
+    }
+    saveData({
+      ...data,
+      seoEntityPlatforms: [...uniquePlatforms, ...(data.seoEntityPlatforms ?? [])],
+    }, 'Import nền tảng Entity', `${uniquePlatforms.length} nền tảng từ ${sourceLabel}`)
+    setEntityImportStatus(`Đã import ${uniquePlatforms.length}/${importedPlatforms.length} nền tảng từ ${sourceLabel}.`)
+  }
+
+  const importEntityPlatformsFromSheet = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const sheetUrl = String(form.get('sheetUrl')).trim()
+    if (!sheetUrl) return
+    setEntityImportStatus('Đang tải dữ liệu Google Sheet...')
+    try {
+      const response = await fetch(googleSheetExportUrl(sheetUrl))
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      importEntityPlatforms(parseCsvRows(await response.text()), 'Google Sheet')
+      event.currentTarget.reset()
+    } catch (error) {
+      setEntityImportStatus(`Không import được Google Sheet. Sheet cần public/published CSV. ${error instanceof Error ? error.message : ''}`)
+    }
+  }
+
+  const importEntityPlatformsFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setEntityImportStatus(`Đang đọc file ${file.name}...`)
+    try {
+      const extension = file.name.split('.').pop()?.toLowerCase()
+      if (extension === 'xlsx' || extension === 'xls') {
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '' })
+        importEntityPlatforms(rows, file.name)
+      } else {
+        importEntityPlatforms(parseCsvRows(await file.text()), file.name)
+      }
+    } catch (error) {
+      setEntityImportStatus(`Không đọc được file import. ${error instanceof Error ? error.message : ''}`)
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  const updateEntityLinkCredential = (updates: Partial<EntityLinkCredential>) => {
+    setEntityLinkCredential((current) => {
+      const next = { ...current, ...updates }
+      localStorage.setItem(entityCredentialKey, JSON.stringify(next))
+      return next
+    })
+  }
+
+  const addEntityLink = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject || !activeEntity) return
+    const form = new FormData(event.currentTarget)
+    const loginWithGoogle = form.get('loginWithGoogle') === 'on'
+    const loginAccount = String(form.get('loginAccount')).trim()
+    const loginPassword = String(form.get('loginPassword')).trim()
+    const accountUsed = String(form.get('accountUsed')).trim() || loginAccount
+    updateEntityLinkCredential({ loginWithGoogle, loginAccount, loginPassword })
+    const link: SeoEntityLink = {
+      id: uid('el'),
+      projectId: activeProject.id,
+      entityId: activeEntity.id,
+      platformId: String(form.get('platformId')),
+      loginWithGoogle,
+      loginAccount,
+      loginPassword,
+      accountUsed,
+      liveUrl: String(form.get('liveUrl')).trim(),
+      targetUrl: String(form.get('targetUrl')).trim(),
+      anchorText: String(form.get('anchorText')).trim(),
+      displayName: String(form.get('displayName')).trim(),
+      usedDescription: String(form.get('usedDescription')).trim(),
+      assigneeId: String(form.get('assigneeId')),
+      deployedDate: String(form.get('deployedDate')),
+      deploymentStatus: String(form.get('deploymentStatus')) as EntityDeploymentStatus,
+      linkStatus: 'Chưa check',
+      indexStatus: 'Chưa check',
+      napStatus: 'Chưa check',
+      taskId: '',
+      notes: String(form.get('notes')).trim(),
+    }
+    saveData({ ...data, seoEntityLinks: [link, ...(data.seoEntityLinks ?? [])] }, 'Thêm link Entity', activeEntity.name)
+    event.currentTarget.reset()
+    updateEntityLinkCredential({ loginWithGoogle, loginAccount, loginPassword })
+  }
+
+  const updateEntityLink = (linkId: string, updates: Partial<SeoEntityLink>) => {
+    const link = (data.seoEntityLinks ?? []).find((item) => item.id === linkId)
+    saveData({
+      ...data,
+      seoEntityLinks: (data.seoEntityLinks ?? []).map((item) => (item.id === linkId ? { ...item, ...updates } : item)),
+    }, 'Cập nhật link Entity', link?.liveUrl || linkId)
+  }
+
+  const toggleEntityLinkSelection = (linkId: string) => {
+    setSelectedEntityLinkIds((current) => {
+      const next = new Set(current)
+      if (next.has(linkId)) {
+        next.delete(linkId)
+      } else {
+        next.add(linkId)
+      }
+      return next
+    })
+  }
+
+  const selectIncompleteEntityLinks = () => {
+    setSelectedEntityLinkIds(
+      new Set(
+        activeEntityLinks
+          .filter((link) => link.deploymentStatus !== 'Đã live' || link.linkStatus !== 'Live' || link.indexStatus !== 'Đã index' || link.napStatus !== 'Đúng')
+          .map((link) => link.id),
+      ),
+    )
+  }
+
+  const sendEntityLinkTasks = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject || !activeEntity || selectedEntityLinkIds.size === 0) return
+    const form = new FormData(event.currentTarget)
+    const assigneeId = String(form.get('assigneeId'))
+    const deadlineAt = String(form.get('deadlineAt'))
+    const selectedLinks = activeEntityLinks.filter((link) => selectedEntityLinkIds.has(link.id))
+    const newTasks: Task[] = []
+    const updatedTasks = data.tasks.map((task) => {
+      const matchedLink = selectedLinks.find((link) => link.taskId === task.id)
+      if (!matchedLink) return task
+      return {
+        ...task,
+        assigneeId,
+        dueDate: deadlineAt.slice(0, 10),
+        deadlineAt,
+        assignedAt: appNowIso(),
+        status: 'Chờ nhận' as TaskStatus,
+        acceptedAt: '',
+        completedAt: '',
+        approvedAt: '',
+        rejectionReason: '',
+        revisionNote: '',
+      }
+    })
+    const updatedLinks = (data.seoEntityLinks ?? []).map((link) => {
+      if (!selectedEntityLinkIds.has(link.id)) return link
+      const existingTask = link.taskId ? data.tasks.find((task) => task.id === link.taskId) : undefined
+      const taskId = existingTask?.id ?? uid('t')
+      if (!existingTask) {
+        const platformName = entityPlatforms.find((platform) => platform.id === link.platformId)?.name ?? 'Nền tảng Entity'
+        newTasks.push({
+          id: taskId,
+          projectId: activeProject.id,
+          title: `Triển khai Entity: ${activeEntity.name} trên ${platformName}`,
+          assigneeId,
+          dueDate: deadlineAt.slice(0, 10),
+          deadlineAt,
+          assignedAt: appNowIso(),
+          estimatedHours: 0,
+          status: 'Chờ nhận',
+        })
+      }
+      return {
+        ...link,
+        taskId,
+        assigneeId,
+        deploymentStatus: 'Đang làm' as EntityDeploymentStatus,
+      }
+    })
+    const tasksForNotification = [
+      ...updatedTasks.filter((task) => selectedLinks.some((link) => link.taskId === task.id)),
+      ...newTasks,
+    ]
+    let nextData: AppData = {
+      ...data,
+      seoEntityLinks: updatedLinks,
+      tasks: [...newTasks, ...updatedTasks],
+    }
+    tasksForNotification.forEach((task) => {
+      nextData = notifyTaskAssignee(nextData, task, 'Task Entity mới')
+    })
+    saveData(nextData, 'Phân task nhanh Entity', `${selectedLinks.length} link cho ${ownerName(assigneeId)}`)
+    setSelectedEntityLinkIds(new Set())
+    event.currentTarget.reset()
+  }
+
+  const checkEntityLink = (linkId: string) => {
+    const link = (data.seoEntityLinks ?? []).find((item) => item.id === linkId)
+    const entity = (data.seoEntities ?? []).find((item) => item.id === link?.entityId)
+    if (!link || !entity) return
+    const hasLiveUrl = /^https?:\/\//i.test(link.liveUrl)
+    const hasTargetUrl = link.liveUrl.toLowerCase().includes(link.targetUrl.replace(/^https?:\/\//i, '').replace(/\/$/, '').toLowerCase().split('/')[0] ?? '')
+    const napStatus: EntityNapStatus =
+      link.displayName.toLowerCase().includes(entity.name.toLowerCase().slice(0, 8)) || link.displayName.toLowerCase().includes(entity.officialName.toLowerCase().slice(0, 8))
+        ? 'Đúng'
+        : 'Sai tên'
+    updateEntityLink(linkId, {
+      linkStatus: hasLiveUrl ? (hasTargetUrl || !link.targetUrl ? 'Live' : 'Không tìm thấy URL đích') : '404',
+      httpStatus: hasLiveUrl ? 200 : 404,
+      indexStatus: hasLiveUrl ? 'Đã index' : 'Không thể check',
+      napStatus,
+      deploymentStatus: hasLiveUrl ? 'Đã live' : 'Lỗi',
+      lastCheckedAt: appNowIso(),
+    })
+  }
+
+  const toggleEntityChecklist = (itemId: string) => {
+    const item = (data.seoEntityChecklist ?? []).find((entry) => entry.id === itemId)
+    saveData({
+      ...data,
+      seoEntityChecklist: (data.seoEntityChecklist ?? []).map((entry) =>
+        entry.id === itemId ? { ...entry, done: !entry.done, updatedAt: appNowIso() } : entry,
+      ),
+    }, 'Cập nhật checklist Entity', item?.label ?? itemId)
+  }
+
+  const generateEntitySchema = () => {
+    if (!activeProject || !activeEntity) return
+    const schemaType = activeEntity.entityType
+    const schema = {
+      '@context': 'https://schema.org',
+      '@type': schemaType === 'Brand' ? 'Organization' : schemaType,
+      name: activeEntity.officialName || activeEntity.name,
+      alternateName: activeEntity.alternativeNames ? activeEntity.alternativeNames.split(',').map((item) => item.trim()) : undefined,
+      url: activeEntity.website,
+      logo: activeEntity.logoUrl || undefined,
+      image: activeEntity.coverUrl || undefined,
+      description: activeEntity.longDescription || activeEntity.shortDescription,
+      telephone: activeEntity.phone || undefined,
+      email: activeEntity.email || undefined,
+      address: activeEntity.address || undefined,
+      sameAs: activeEntityLinks.filter((link) => link.linkStatus === 'Live').map((link) => link.liveUrl),
+    }
+    const entitySchema: SeoEntitySchema = {
+      id: activeEntitySchema?.id ?? uid('schema'),
+      projectId: activeProject.id,
+      entityId: activeEntity.id,
+      schemaType,
+      jsonLd: JSON.stringify(schema, null, 2),
+      updatedAt: appNowIso(),
+    }
+    saveData({
+      ...data,
+      seoEntitySchemas: activeEntitySchema
+        ? (data.seoEntitySchemas ?? []).map((item) => (item.id === activeEntitySchema.id ? entitySchema : item))
+        : [entitySchema, ...(data.seoEntitySchemas ?? [])],
+    }, 'Tạo Schema Entity', activeEntity.name)
+  }
+
+  const exportEntityCsv = (reportType: 'internal' | 'client' | 'score') => {
+    if (!activeEntity) return
+    const rows =
+      reportType === 'score'
+        ? [
+            ['Entity', 'Score', 'Xếp loại', 'Link live', 'Link index', 'NAP đúng'],
+            [activeEntity.name, entityScore, entityScoreRank(entityScore), liveEntityLinks.length, indexedEntityLinks.length, napOkLinks.length],
+          ]
+        : [
+            reportType === 'internal'
+              ? ['Entity', 'Nền tảng', 'URL live', 'URL đích', 'Người phụ trách', 'Trạng thái', 'Index', 'NAP', 'Ghi chú']
+              : ['Entity', 'Nền tảng', 'URL public', 'Trạng thái live', 'Index', 'Ngày triển khai'],
+            ...activeEntityLinks.map((link) =>
+              reportType === 'internal'
+                ? [
+                    activeEntity.name,
+                    entityPlatforms.find((platform) => platform.id === link.platformId)?.name ?? '',
+                    link.liveUrl,
+                    link.targetUrl,
+                    ownerName(link.assigneeId),
+                    link.linkStatus,
+                    link.indexStatus,
+                    link.napStatus,
+                    link.notes,
+                  ]
+                : [
+                    activeEntity.name,
+                    entityPlatforms.find((platform) => platform.id === link.platformId)?.name ?? '',
+                    link.liveUrl,
+                    link.linkStatus,
+                    link.indexStatus,
+                    formatDateOnly(link.deployedDate),
+                  ],
+            ),
+          ]
+    const csv = rows.map((row) => row.map((cell) => escapeCsv(cell)).join(',')).join('\n')
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `entity-${reportType}-${activeEntity.name.replace(/\s+/g, '-').toLowerCase()}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    saveData(data, 'Xuất báo cáo Entity', activeEntity.name)
+  }
+
+  const addBacklinkSource = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const source: SeoBacklinkSource = {
+      id: uid('bs'),
+      name: String(form.get('name')).trim(),
+      domain: String(form.get('domain')).trim(),
+      contactUrl: String(form.get('contactUrl')).trim(),
+      sourceType: String(form.get('sourceType')) as BacklinkSourceType,
+      topic: String(form.get('topic')).trim(),
+      country: String(form.get('country')).trim(),
+      language: String(form.get('language')).trim(),
+      da: Number(form.get('da')) || 0,
+      dr: Number(form.get('dr')) || 0,
+      ur: Number(form.get('ur')) || 0,
+      estimatedTraffic: Number(form.get('estimatedTraffic')) || 0,
+      spamScore: Number(form.get('spamScore')) || 0,
+      defaultLinkType: String(form.get('defaultLinkType')) as BacklinkLinkType,
+      price: Number(form.get('price')) || 0,
+      currency: String(form.get('currency')) || 'VND',
+      linkDuration: String(form.get('linkDuration')).trim(),
+      allowEdit: form.get('allowEdit') === 'on',
+      allowAnchorChange: form.get('allowAnchorChange') === 'on',
+      status: String(form.get('status')) as BacklinkSourceStatus,
+      note: String(form.get('note')).trim(),
+    }
+    saveData({ ...data, seoBacklinkSources: [source, ...(data.seoBacklinkSources ?? [])] }, 'Thêm nguồn Backlink', source.name)
+    event.currentTarget.reset()
+  }
+
+  const addBacklink = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+    const form = new FormData(event.currentTarget)
+    const sourceUrl = String(form.get('sourceUrl')).trim()
+    const sourceId = String(form.get('sourceId'))
+    const source = backlinkSources.find((item) => item.id === sourceId)
+    const backlink: SeoBacklink = {
+      id: uid('bl'),
+      projectId: activeProject.id,
+      sourceId,
+      sourceUrl,
+      sourceDomain: String(form.get('sourceDomain')).trim() || source?.domain || backlinkDomain(sourceUrl),
+      targetUrl: String(form.get('targetUrl')).trim(),
+      anchorText: String(form.get('anchorText')).trim(),
+      anchorType: String(form.get('anchorType')) as BacklinkAnchorType,
+      linkType: String(form.get('linkType')) as BacklinkLinkType,
+      backlinkType: String(form.get('backlinkType')) as BacklinkType,
+      linkPosition: String(form.get('linkPosition')) as BacklinkPosition,
+      assigneeId: String(form.get('assigneeId')),
+      placedAt: String(form.get('placedAt')),
+      expiredAt: String(form.get('expiredAt')),
+      cost: Number(form.get('cost')) || 0,
+      currency: String(form.get('currency')) || 'VND',
+      deploymentStatus: String(form.get('deploymentStatus')) as BacklinkDeploymentStatus,
+      approvalStatus: String(form.get('approvalStatus')) as BacklinkApprovalStatus,
+      linkStatus: 'Chưa check',
+      indexStatus: 'Chưa check',
+      paymentStatus: String(form.get('paymentStatus')) as BacklinkPaymentStatus,
+      backlinkScore: 0,
+      lastCheckedAt: '',
+      note: String(form.get('note')).trim(),
+    }
+    const scoredBacklink = { ...backlink, backlinkScore: calculateBacklinkScore(backlink, source) }
+    saveData({ ...data, seoBacklinks: [scoredBacklink, ...(data.seoBacklinks ?? [])] }, 'Thêm Backlink', scoredBacklink.sourceUrl)
+    event.currentTarget.reset()
+  }
+
+  const updateBacklink = (backlinkId: string, updates: Partial<SeoBacklink>) => {
+    const backlink = (data.seoBacklinks ?? []).find((item) => item.id === backlinkId)
+    saveData({
+      ...data,
+      seoBacklinks: (data.seoBacklinks ?? []).map((item) => {
+        if (item.id !== backlinkId) return item
+        const next = { ...item, ...updates }
+        return { ...next, backlinkScore: calculateBacklinkScore(next, backlinkSources.find((source) => source.id === next.sourceId)) }
+      }),
+    }, 'Cập nhật Backlink', backlink?.sourceUrl || backlinkId)
+  }
+
+  const checkBacklink = (backlinkId: string) => {
+    const backlink = (data.seoBacklinks ?? []).find((item) => item.id === backlinkId)
+    if (!backlink) return
+    const sourceOk = /^https?:\/\//i.test(backlink.sourceUrl)
+    const domainOk = backlinkDomain(backlink.sourceUrl) === backlink.sourceDomain || !backlink.sourceDomain
+    const linkStatus: BacklinkLinkStatus = !sourceOk ? '404' : domainOk ? 'Live' : 'Redirect'
+    updateBacklink(backlinkId, {
+      linkStatus,
+      indexStatus: sourceOk ? 'Đã index' : 'Không thể check',
+      approvalStatus: linkStatus === 'Live' ? 'Đã duyệt' : 'Cần sửa',
+      deploymentStatus: linkStatus === 'Live' ? 'Đã đăng' : 'Lỗi',
+      lastCheckedAt: appNowIso(),
+    })
+  }
+
+  const addBacklinkPlan = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+    const form = new FormData(event.currentTarget)
+    const plan: SeoBacklinkPlan = {
+      id: uid('bp'),
+      projectId: activeProject.id,
+      targetUrl: String(form.get('targetUrl')).trim(),
+      targetKeyword: String(form.get('targetKeyword')).trim(),
+      backlinkType: String(form.get('backlinkType')) as BacklinkType,
+      plannedAnchor: String(form.get('plannedAnchor')).trim(),
+      plannedQuantity: Number(form.get('plannedQuantity')) || 1,
+      plannedDate: String(form.get('plannedDate')),
+      assigneeId: String(form.get('assigneeId')),
+      status: 'Chưa làm',
+      note: String(form.get('note')).trim(),
+    }
+    saveData({ ...data, seoBacklinkPlans: [plan, ...(data.seoBacklinkPlans ?? [])] }, 'Thêm kế hoạch Backlink', plan.targetKeyword)
+    event.currentTarget.reset()
+  }
+
+  const updateBacklinkPlan = (planId: string, status: BacklinkPlanStatus) => {
+    const plan = (data.seoBacklinkPlans ?? []).find((item) => item.id === planId)
+    saveData({
+      ...data,
+      seoBacklinkPlans: (data.seoBacklinkPlans ?? []).map((item) => (item.id === planId ? { ...item, status } : item)),
+    }, 'Cập nhật kế hoạch Backlink', plan?.targetKeyword || planId)
+  }
+
+  const addBacklinkCost = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+    const form = new FormData(event.currentTarget)
+    const cost: SeoBacklinkCost = {
+      id: uid('bc'),
+      projectId: activeProject.id,
+      backlinkId: String(form.get('backlinkId')),
+      sourceId: String(form.get('sourceId')),
+      costType: String(form.get('costType')) as BacklinkCostType,
+      amount: Number(form.get('amount')) || 0,
+      currency: String(form.get('currency')) || 'VND',
+      paidBy: String(form.get('paidBy')),
+      paidAt: String(form.get('paidAt')),
+      paymentStatus: String(form.get('paymentStatus')) as BacklinkPaymentStatus,
+      invoiceUrl: String(form.get('invoiceUrl')).trim(),
+      note: String(form.get('note')).trim(),
+    }
+    saveData({ ...data, seoBacklinkCosts: [cost, ...(data.seoBacklinkCosts ?? [])] }, 'Thêm chi phí Backlink', cost.costType)
+    event.currentTarget.reset()
+  }
+
+  const exportBacklinkCsv = (reportType: 'internal' | 'client') => {
+    if (!activeProject) return
+    const rows = [
+      reportType === 'internal'
+        ? ['Dự án', 'URL nguồn', 'Domain', 'URL đích', 'Anchor', 'Loại link', 'Trạng thái', 'Index', 'Chi phí', 'Người phụ trách', 'Ghi chú']
+        : ['Dự án', 'URL nguồn', 'URL đích', 'Anchor', 'Trạng thái', 'Index'],
+      ...projectBacklinks.map((backlink) =>
+        reportType === 'internal'
+          ? [
+              activeProject.name,
+              backlink.sourceUrl,
+              backlink.sourceDomain,
+              backlink.targetUrl,
+              backlink.anchorText,
+              backlink.linkType,
+              backlink.linkStatus,
+              backlink.indexStatus,
+              backlink.cost,
+              ownerName(backlink.assigneeId),
+              backlink.note,
+            ]
+          : [activeProject.name, backlink.sourceUrl, backlink.targetUrl, backlink.anchorText, backlink.linkStatus, backlink.indexStatus],
+      ),
+    ]
+    const csv = rows.map((row) => row.map((cell) => escapeCsv(cell)).join(',')).join('\n')
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `backlink-${reportType}-${activeProject.name.replace(/\s+/g, '-').toLowerCase()}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    saveData(data, 'Xuất báo cáo Backlink', activeProject.name)
   }
 
   if (!currentUser) {
-    return <LoginPage error={loginError} onSubmit={login} />
+    return <LoginPage error={loginError} users={data.users} onRefresh={reloadData} onSubmit={login} />
   }
 
   return (
@@ -868,20 +2719,22 @@ function App() {
 
         <nav className="nav-list" aria-label="Điều hướng chính">
           <NavButton view="overview" current={view} label="Tổng quan" onClick={goTo} />
-          {hasPermission('Dự án') && (
+          {canAccessPermission('Dự án', 'view') && (
             <>
               <NavButton view="projects" current={view} label="Dự án SEO" onClick={goTo} />
               <div className="nav-children" aria-label="Module con của Dự án SEO">
                 <NavButton view="keywords" current={view} label="Quản lý Keyword" onClick={goTo} child />
                 <NavButton view="articles" current={view} label="Bài viết" onClick={goTo} child />
+                <NavButton view="entities" current={view} label="SEO Entity" onClick={goTo} child />
+                <NavButton view="backlinks" current={view} label="Backlink" onClick={goTo} child />
                 <NavButton view="tasks" current={view} label="Task công việc" onClick={goTo} child />
               </div>
             </>
           )}
-          {hasPermission('Tài chính') && <NavButton view="finance" current={view} label="Tài chính" onClick={goTo} />}
-          {hasPermission('Nhân sự') && <NavButton view="people" current={view} label="Nhân sự" onClick={goTo} />}
-          {hasPermission('Tiến độ') && <NavButton view="progress" current={view} label="Tiến độ" onClick={goTo} />}
-          {hasPermission('Hệ thống') && (
+          {canAccessPermission('Tài chính', 'view') && <NavButton view="finance" current={view} label="Tài chính" onClick={goTo} />}
+          {canAccessPermission('Nhân sự', 'view') && <NavButton view="people" current={view} label="Nhân sự" onClick={goTo} />}
+          {canAccessPermission('Tiến độ', 'view') && <NavButton view="progress" current={view} label="Tiến độ" onClick={goTo} />}
+          {canAccessPermission('Hệ thống', 'view') && (
             <>
               <div className="nav-section-label">Hệ thống</div>
               <div className="nav-children" aria-label="Module con của Hệ thống">
@@ -908,18 +2761,28 @@ function App() {
             <p className="eyeline">Quản lý vận hành SEO</p>
             <h1>{viewTitle(view)}</h1>
           </div>
-          {activeProjects.length > 0 && (
-            <label className="project-switcher">
-              <span>Dự án đang xem</span>
-              <select value={activeProject?.id ?? ''} onChange={(event) => setActiveProjectId(event.target.value)}>
-                {activeProjects.map((project) => (
-                  <option value={project.id} key={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <div className="topbar-actions">
+            <NotificationBell
+              notifications={currentNotifications}
+              unreadCount={unreadNotifications.length}
+              open={notificationsOpen}
+              onToggle={() => setNotificationsOpen((current) => !current)}
+              onOpen={openNotification}
+              onMarkAllRead={markAllNotificationsRead}
+            />
+            {activeProjects.length > 0 && (
+              <label className="project-switcher">
+                <span>Dự án đang xem</span>
+                <select value={activeProject?.id ?? ''} onChange={(event) => setActiveProjectId(event.target.value)}>
+                  {activeProjects.map((project) => (
+                    <option value={project.id} key={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
         </header>
 
         {!canView(view) && (
@@ -930,35 +2793,66 @@ function App() {
 
         {view === 'overview' && canView(view) && (
           <section className="view-stack">
-            <div className="metric-grid">
-              <Metric title="Tổng dự án" value={activeProjects.length} note={`${projectProgress.filter((p) => p.status === 'Đang SEO').length} đang SEO`} />
-              <Metric title="Tổng chi phí" value={currency.format(expense)} note="Không tính doanh thu" />
-              <Metric title="Task hoàn thành" value={pct(completionRate)} note={`${completedTasks}/${activeTasks.length} công việc`} />
-              <Metric title="Position TB" value={avgPosition.toFixed(1)} note={`${activeKeywords.length} keyword đang theo dõi`} />
-            </div>
-
-            <div className="dashboard-grid">
-              <Panel title="Thống kê chi phí công ty" action={currency.format(expense)}>
-                <BarChart
-                  items={[
-                    { label: 'Chi chung', value: activeTransactions.filter((item) => item.scope === 'Chi chung dự án').reduce((sum, item) => sum + item.amount, 0), color: '#2563eb' },
-                    { label: 'Chi riêng', value: activeTransactions.filter((item) => item.scope !== 'Chi chung dự án').reduce((sum, item) => sum + item.amount, 0), color: '#dc2626' },
-                    { label: 'Tổng chi', value: expense, color: '#0f766e' },
-                  ]}
-                />
-              </Panel>
-              <Panel title="Tiến độ theo dự án" action={`${pct(completionRate)} chung`}>
-                <div className="progress-list">
-                  {projectProgress.map((project) => (
-                    <ProgressRow key={project.id} label={project.name} value={project.rate} meta={`${project.done}/${project.tasks} công việc`} />
-                  ))}
+            {!isAdmin ? (
+              <EmployeeOverview
+                user={currentUser}
+                tasks={currentUserTasks}
+                projects={data.projects}
+                pendingTasks={pendingUserTasks}
+                activeTasks={activeUserTasks}
+                reviewTasks={reviewUserTasks}
+                approvedTasks={approvedUserTasks}
+                taskSalary={taskSalary}
+                monthlySalaryRate={monthlySalaryRate}
+                monthlySalaryEstimate={monthlySalaryEstimate}
+                onCheckIn={checkIn}
+                onCheckOut={checkOut}
+                onAcceptTask={acceptTask}
+                onRejectTask={rejectTask}
+                onSubmitTask={submitTaskForReview}
+              />
+            ) : (
+              <>
+                <div className="metric-grid">
+                  <Metric title="Tổng dự án" value={activeProjects.length} note={`${projectProgress.filter((p) => p.status === 'Đang SEO').length} đang SEO`} />
+                  <Metric title="Tổng chi phí" value={currency.format(expense)} note="Không tính doanh thu" />
+                  <Metric title="Task hoàn thành" value={pct(completionRate)} note={`${completedTasks}/${activeTasks.length} công việc`} />
+                  <Metric title="Position TB" value={avgPosition.toFixed(1)} note={`${activeKeywords.length} keyword đang theo dõi`} />
                 </div>
-              </Panel>
-            </div>
 
-            <Panel title="Công việc gần đây" action="Theo tất cả dự án">
-              <TaskTable tasks={activeTasks.slice(0, 6)} users={data.users} projects={data.projects} onStatus={updateTaskStatus} />
-            </Panel>
+                <div className="dashboard-grid">
+                  <Panel title="Thống kê chi phí công ty" action={currency.format(expense)}>
+                    <BarChart
+                      items={[
+                        { label: 'Chi chung', value: activeTransactions.filter((item) => item.scope === 'Chi chung dự án').reduce((sum, item) => sum + item.amount, 0), color: '#2563eb' },
+                        { label: 'Chi riêng', value: activeTransactions.filter((item) => item.scope !== 'Chi chung dự án').reduce((sum, item) => sum + item.amount, 0), color: '#dc2626' },
+                        { label: 'Tổng chi', value: expense, color: '#0f766e' },
+                      ]}
+                    />
+                  </Panel>
+                  <Panel title="Tiến độ theo dự án" action={`${pct(completionRate)} chung`}>
+                    <div className="progress-list">
+                      {projectProgress.map((project) => (
+                        <ProgressRow key={project.id} label={project.name} value={project.rate} meta={`${project.done}/${project.tasks} công việc`} />
+                      ))}
+                    </div>
+                  </Panel>
+                </div>
+
+                <Panel title="Công việc gần đây" action="Theo tất cả dự án">
+                  <TaskTable
+                    tasks={activeTasks.slice(0, 6)}
+                    users={data.users}
+                    projects={data.projects}
+                    onStatus={updateTaskStatus}
+                    onApprove={approveTask}
+                    onRevision={requestTaskRevision}
+                    onReassign={reassignTask}
+                    canEdit
+                  />
+                </Panel>
+              </>
+            )}
           </section>
         )}
 
@@ -990,29 +2884,33 @@ function App() {
                 )}
               </Panel>
 
-              <Panel title="Tạo dự án SEO" action="Chỉ bắt buộc tên và website">
-                <form className="form-grid compact" onSubmit={addProject}>
-                  <input name="name" placeholder="Tên dự án *" required />
-                  <input name="website" placeholder="Website *" required />
-                  <input name="client" placeholder="Khách hàng" />
-                  <input name="budget" placeholder="Ngân sách" type="number" min="0" />
-                  <input name="startDate" aria-label="Ngày bắt đầu" type="date" />
-                  <input name="endDate" aria-label="Ngày kết thúc" type="date" />
-                  <select name="status">
-                    <option>Đang SEO</option>
-                    <option>Tạm dừng</option>
-                    <option>Hoàn thành</option>
-                  </select>
-                  <select name="ownerId">
-                    <option value="">Chưa gán phụ trách</option>
-                    {data.users.map((user) => (
-                      <option value={user.id} key={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button type="submit">Tạo dự án</button>
-                </form>
+              <Panel title="Tạo dự án SEO" action={canEditProjects ? 'Chỉ bắt buộc tên và website' : 'Chỉ xem'}>
+                {canEditProjects ? (
+                  <form className="form-grid compact" onSubmit={addProject}>
+                    <input name="name" placeholder="Tên dự án *" required />
+                    <input name="website" placeholder="Website *" required />
+                    <input name="client" placeholder="Khách hàng" />
+                    <input name="budget" placeholder="Ngân sách" type="number" min="0" />
+                    <input name="startDate" aria-label="Ngày bắt đầu" type="date" />
+                    <input name="endDate" aria-label="Ngày kết thúc" type="date" />
+                    <select name="status">
+                      <option>Đang SEO</option>
+                      <option>Tạm dừng</option>
+                      <option>Hoàn thành</option>
+                    </select>
+                    <select name="ownerId">
+                      <option value="">Chưa gán phụ trách</option>
+                      {data.users.map((user) => (
+                        <option value={user.id} key={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="submit">Tạo dự án</button>
+                  </form>
+                ) : (
+                  <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền chỉnh sửa dự án." />
+                )}
               </Panel>
             </div>
 
@@ -1022,7 +2920,7 @@ function App() {
                   <Metric title="Tiến độ dự án" value={pct(projectCompletion)} note={`${projectTasks.filter((task) => task.status === 'Hoàn thành').length}/${projectTasks.length} công việc`} />
                   <Metric title="Keyword" value={projectKeywords.length} note={`Position TB ${projectKeywords.length ? (projectKeywords.reduce((sum, item) => sum + item.position, 0) / projectKeywords.length).toFixed(1) : '0'}`} />
                   <Metric title="Chi phí dự án" value={currency.format(projectExpense)} note="Tổng chi đang ghi nhận" />
-                  <Metric title="Chưa quyết toán" value={projectTransactions.filter((item) => !item.settlementDate).length} note={activeProject.status} />
+                  <Metric title="Công nợ" value={projectTransactions.filter((item) => !item.settlementDate).length} note={activeProject.status} />
                 </div>
 
                 <div className="split-grid">
@@ -1032,24 +2930,98 @@ function App() {
                       <Detail label="Website" value={activeProject.website} />
                       <Detail label="Phụ trách" value={ownerName(activeProject.ownerId)} />
                       <Detail label="Ngân sách" value={activeProject.budget ? currency.format(activeProject.budget) : 'Chưa cập nhật'} />
-                      <Detail label="Ngày bắt đầu" value={field(activeProject.startDate)} />
-                      <Detail label="Ngày kết thúc" value={field(activeProject.endDate)} />
+                      <Detail label="Ngày bắt đầu" value={formatDateOnly(activeProject.startDate)} />
+                      <Detail label="Ngày kết thúc" value={formatDateOnly(activeProject.endDate)} />
                     </div>
-                    <div className="panel-actions">
+                    {canEditProjects && <div className="panel-actions">
                       <button className="danger-button" type="button" onClick={() => archiveProject(activeProject.id)}>
                         Xóa dự án
                       </button>
-                    </div>
+                    </div>}
                   </Panel>
 
                   <Panel title="Thống kê thực thi" action="Dự án đang chọn">
                     <div className="progress-list">
                       <ProgressRow label="Tiến độ công việc" value={projectCompletion} meta={`${projectTasks.length} công việc`} />
                       <ProgressRow label="CTR trung bình" value={projectKeywords.length ? projectKeywords.reduce((sum, keyword) => sum + keyword.ctr, 0) / projectKeywords.length : 0} meta={`${projectKeywords.length} keyword`} />
-                      <ProgressRow label="Đã quyết toán" value={projectTransactions.length ? (projectTransactions.filter((item) => item.settlementDate).length / projectTransactions.length) * 100 : 0} meta={`${projectTransactions.filter((item) => item.settlementDate).length}/${projectTransactions.length} khoản chi`} />
+                      <ProgressRow label="Đã giải ngân" value={projectTransactions.length ? (projectTransactions.filter((item) => item.settlementDate).length / projectTransactions.length) * 100 : 0} meta={`${projectTransactions.filter((item) => item.settlementDate).length}/${projectTransactions.length} khoản chi`} />
                     </div>
                   </Panel>
                 </div>
+
+                <Panel title="Google Analytics" action="Tool nội bộ">
+                  <div className="analytics-toolbar">
+                    <div>
+                      <strong>Thống kê truy cập của {activeProject.name}</strong>
+                      <span>Chỉ cấu hình và lấy dữ liệu từ website thuộc dự án của bạn.</span>
+                    </div>
+                    <div className="analytics-tabs" aria-label="Chọn khoảng thống kê Google Analytics">
+                      {(Object.keys(analyticsGranularityLabels) as AnalyticsGranularity[]).map((granularity) => (
+                        <button
+                          className={analyticsGranularity === granularity ? 'active' : ''}
+                          key={granularity}
+                          onClick={() => setAnalyticsGranularity(granularity)}
+                          type="button"
+                        >
+                          {analyticsGranularityLabels[granularity]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="analytics-layout">
+                    <form className="analytics-settings" onSubmit={saveAnalyticsSettings} key={activeProject.id}>
+                      <label>
+                        <span>GA4 Property ID</span>
+                        <input name="propertyId" placeholder="123456789" defaultValue={analyticsSettingsOf(activeProject).propertyId} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>Measurement ID</span>
+                        <input name="measurementId" placeholder="G-XXXXXXXXXX" defaultValue={analyticsSettingsOf(activeProject).measurementId} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>API Endpoint nội bộ</span>
+                        <input name="apiEndpoint" placeholder="https://api.tenmien.vn/google-analytics/report" defaultValue={analyticsSettingsOf(activeProject).apiEndpoint} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>Access Token</span>
+                        <input name="accessToken" placeholder="Bearer token nếu API nội bộ yêu cầu" defaultValue={analyticsSettingsOf(activeProject).accessToken} type="password" disabled={!canEditProjects} />
+                      </label>
+                      <div className="analytics-form-actions">
+                        <button type="submit" disabled={!canEditProjects}>Lưu cài đặt</button>
+                        <button className="secondary-button" type="button" onClick={syncAnalytics} disabled={!canEditProjects}>
+                          Đồng bộ dữ liệu
+                        </button>
+                      </div>
+                      <p>
+                        Endpoint nội bộ nên gọi GA4 Data API bằng backend riêng, tránh đưa service account hoặc secret thật vào frontend.
+                      </p>
+                    </form>
+
+                    <div className="analytics-report">
+                      <div className="analytics-metrics">
+                        <Metric title="Active Users" value={analyticsTotals.activeUsers.toLocaleString('vi-VN')} note={analyticsGranularityLabels[analyticsGranularity]} />
+                        <Metric title="Sessions" value={analyticsTotals.sessions.toLocaleString('vi-VN')} note="Phiên truy cập" />
+                        <Metric title="Page Views" value={analyticsTotals.pageViews.toLocaleString('vi-VN')} note="Lượt xem trang" />
+                        <Metric title="Engagement" value={pct(analyticsAverageEngagement)} note="Tỷ lệ tương tác TB" />
+                      </div>
+                      {projectAnalyticsPoints.length === 0 ? (
+                        <EmptyState title="Chưa có dữ liệu Analytics" text="Nhấn Đồng bộ dữ liệu để lấy dữ liệu từ API nội bộ hoặc tạo dữ liệu demo cho dự án đang chọn." />
+                      ) : (
+                        <>
+                          <AnalyticsChart points={projectAnalyticsPoints} />
+                          <AnalyticsTable points={projectAnalyticsPoints} />
+                        </>
+                      )}
+                      {analyticsSettingsOf(activeProject).lastSyncAt && (
+                        <p className="analytics-sync-time">
+                          Lần đồng bộ gần nhất: {formatDateTime(analyticsSettingsOf(activeProject).lastSyncAt)}
+                        </p>
+                      )}
+                      {analyticsStatus && <p className="analytics-status">{analyticsStatus}</p>}
+                    </div>
+                  </div>
+                </Panel>
               </>
             )}
 
@@ -1063,16 +3035,18 @@ function App() {
                       <div>
                         <strong>{project.name}</strong>
                         <span>{project.website}</span>
-                        <small>Đã xóa: {project.deletedAt ? new Date(project.deletedAt).toLocaleString('vi-VN') : 'Chưa rõ thời gian'}</small>
+                        <small>Đã xóa: {project.deletedAt ? formatDateTime(project.deletedAt) : 'Chưa rõ thời gian'}</small>
                       </div>
-                      <div className="deleted-project-actions">
-                        <button className="secondary-button" type="button" onClick={() => restoreProject(project.id)}>
-                          Khôi phục dự án
-                        </button>
-                        <button className="danger-button" type="button" onClick={() => permanentlyDeleteProject(project.id)}>
-                          Xóa vĩnh viễn
-                        </button>
-                      </div>
+                      {canEditProjects && (
+                        <div className="deleted-project-actions">
+                          <button className="secondary-button" type="button" onClick={() => restoreProject(project.id)}>
+                            Khôi phục dự án
+                          </button>
+                          <button className="danger-button" type="button" onClick={() => permanentlyDeleteProject(project.id)}>
+                            Xóa vĩnh viễn
+                          </button>
+                        </div>
+                      )}
                     </article>
                   ))}
                 </div>
@@ -1090,25 +3064,29 @@ function App() {
               <Metric title="CTR TB" value={`${projectKeywords.length ? (projectKeywords.reduce((sum, item) => sum + item.ctr, 0) / projectKeywords.length).toFixed(2) : '0'}%`} note="Tỷ lệ nhấp trung bình" />
             </div>
 
-            <Panel title="Thêm key" action="Keyword Mapping">
-              <form className="keyword-form" onSubmit={addKeyword}>
-                <input name="term" placeholder="Keyword *" required />
-                <input name="landingUrl" placeholder="Landing URL" />
-                <input name="searchVolume" placeholder="Search Volume" type="number" min="0" />
-                <input name="keywordDifficulty" placeholder="Keyword Difficulty" type="number" min="0" max="100" />
-                <select name="searchIntent">
-                  <option>Informational</option>
-                  <option>Commercial</option>
-                  <option>Transactional</option>
-                  <option>Navigational</option>
-                </select>
-                <input name="position" placeholder="Position" type="number" min="1" />
-                <input name="impressions" placeholder="Impressions" type="number" min="0" />
-                <input name="clicks" placeholder="Clicks" type="number" min="0" />
-                <input name="organicTraffic" placeholder="Organic Traffic" type="number" min="0" />
-                <input name="ctr" placeholder="CTR (%)" type="number" min="0" step="0.01" />
-                <button type="submit">Thêm key</button>
-              </form>
+            <Panel title="Thêm key" action={canEditProjects ? 'Keyword Mapping' : 'Chỉ xem'}>
+              {canEditProjects ? (
+                <form className="keyword-form" onSubmit={addKeyword}>
+                  <input name="term" placeholder="Keyword *" required />
+                  <input name="landingUrl" placeholder="Landing URL" />
+                  <input name="searchVolume" placeholder="Search Volume" type="number" min="0" />
+                  <input name="keywordDifficulty" placeholder="Keyword Difficulty" type="number" min="0" max="100" />
+                  <select name="searchIntent">
+                    <option>Informational</option>
+                    <option>Commercial</option>
+                    <option>Transactional</option>
+                    <option>Navigational</option>
+                  </select>
+                  <input name="position" placeholder="Position" type="number" min="1" />
+                  <input name="impressions" placeholder="Impressions" type="number" min="0" />
+                  <input name="clicks" placeholder="Clicks" type="number" min="0" />
+                  <input name="organicTraffic" placeholder="Organic Traffic" type="number" min="0" />
+                  <input name="ctr" placeholder="CTR (%)" type="number" min="0" step="0.01" />
+                  <button type="submit">Thêm key</button>
+                </form>
+              ) : (
+                <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền chỉnh sửa keyword." />
+              )}
             </Panel>
 
             <Panel title="Quản lý Keyword" action={`${projectKeywords.length} keyword`}>
@@ -1120,6 +3098,7 @@ function App() {
                 onToggleSelect={toggleKeywordSelection}
                 onDeleteSelected={deleteSelectedKeywords}
                 onDevelopKeyword={setKeywordBuilder}
+                canEdit={canEditProjects}
               />
             </Panel>
           </section>
@@ -1139,9 +3118,79 @@ function App() {
                 users={data.users}
                 onUpdateKeyword={updateKeywordArticle}
                 onSendTask={sendArticleTask}
+                canEdit={canEditProjects}
               />
             </Panel>
           </section>
+        )}
+
+        {view === 'entities' && canView(view) && (
+          <EntityModule
+            activeProject={activeProject}
+            activeEntity={activeEntity}
+            projectEntities={projectEntities}
+            entityPlatforms={entityPlatforms}
+            activeEntityLinks={activeEntityLinks}
+            activeEntityChecklist={activeEntityChecklist}
+            activeEntitySchema={activeEntitySchema}
+            entityTab={entityTab}
+            selectedEntityId={selectedEntityId}
+            users={data.users}
+            canEdit={canEditProjects}
+            entityScore={entityScore}
+            liveLinks={liveEntityLinks.length}
+            indexedLinks={indexedEntityLinks.length}
+            napOkLinks={napOkLinks.length}
+            importStatus={entityImportStatus}
+            rememberedCredential={entityLinkCredential}
+            selectedLinkIds={selectedEntityLinkIds}
+            onTab={setEntityTab}
+            onSelectEntity={setSelectedEntityId}
+            onNewEntity={createNewEntityProfile}
+            onSaveEntity={saveEntityProfile}
+            onDeleteEntity={deleteEntityProfile}
+            onAddPlatform={addEntityPlatform}
+            onImportPlatformSheet={importEntityPlatformsFromSheet}
+            onImportPlatformFile={importEntityPlatformsFromFile}
+            onAddLink={addEntityLink}
+            onCredentialChange={updateEntityLinkCredential}
+            onUpdateLink={updateEntityLink}
+            onCheckLink={checkEntityLink}
+            onToggleLinkSelect={toggleEntityLinkSelection}
+            onSelectIncompleteLinks={selectIncompleteEntityLinks}
+            onSendLinkTasks={sendEntityLinkTasks}
+            onToggleChecklist={toggleEntityChecklist}
+            onGenerateSchema={generateEntitySchema}
+            onExportReport={exportEntityCsv}
+          />
+        )}
+
+        {view === 'backlinks' && canView(view) && (
+          <BacklinkModule
+            activeProject={activeProject}
+            sources={backlinkSources}
+            backlinks={projectBacklinks}
+            plans={projectBacklinkPlans}
+            costs={projectBacklinkCosts}
+            users={data.users}
+            tab={backlinkTab}
+            canEdit={canEditProjects}
+            liveCount={backlinkLive.length}
+            errorCount={backlinkErrors.length}
+            indexedCount={backlinkIndexed.length}
+            referringDomainCount={referringDomains.size}
+            totalCost={backlinkCostTotal}
+            averageScore={backlinkAverageScore}
+            onTab={setBacklinkTab}
+            onAddSource={addBacklinkSource}
+            onAddBacklink={addBacklink}
+            onUpdateBacklink={updateBacklink}
+            onCheckBacklink={checkBacklink}
+            onAddPlan={addBacklinkPlan}
+            onUpdatePlan={updateBacklinkPlan}
+            onAddCost={addBacklinkCost}
+            onExport={exportBacklinkCsv}
+          />
         )}
 
         {view === 'tasks' && canView(view) && (
@@ -1149,25 +3198,40 @@ function App() {
             <div className="metric-grid">
               <Metric title="Task dự án" value={projectTasks.length} note={activeProject?.name ?? 'Chưa có dự án'} />
               <Metric title="Hoàn thành" value={projectTasks.filter((task) => task.status === 'Hoàn thành').length} note={pct(projectCompletion)} />
-              <Metric title="Đang làm" value={projectTasks.filter((task) => task.status === 'Đang làm').length} note="Đang xử lý" />
-              <Metric title="Cần làm" value={projectTasks.filter((task) => task.status === 'Cần làm').length} note="Chưa bắt đầu" />
+              <Metric title="Đang làm" value={projectTasks.filter((task) => ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task))).length} note="Đang xử lý" />
+              <Metric title="Chờ nhận" value={projectTasks.filter((task) => taskStatusOf(task) === 'Chờ nhận').length} note="Admin đã phân" />
             </div>
-            <Panel title="Thêm công việc" action="Theo dự án đang chọn">
-              <form className="form-grid" onSubmit={addTask}>
-                <input name="title" placeholder="Tên công việc" required />
-                <select name="assigneeId" required>
-                  {data.users.map((user) => (
-                    <option value={user.id} key={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </select>
-                <input name="dueDate" aria-label="Hạn hoàn thành" type="date" required />
-                <button type="submit">Thêm công việc</button>
-              </form>
+            <Panel title="Thêm công việc" action={canEditTasks ? 'Theo dự án đang chọn' : 'Chỉ xem'}>
+              {canEditTasks ? (
+                <form className="form-grid" onSubmit={addTask}>
+                  <input name="title" placeholder="Tên công việc" required />
+                  <select name="assigneeId" required>
+                    {data.users.map((user) => (
+                      <option value={user.id} key={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input name="deadlineAt" aria-label="Thời gian yêu cầu hoàn thành" type="datetime-local" required />
+                  <input name="estimatedHours" placeholder="Số giờ dự kiến" type="number" min="0" step="0.5" />
+                  <button type="submit">Phân công việc</button>
+                </form>
+              ) : (
+                <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền phân công hoặc chỉnh sửa task." />
+              )}
             </Panel>
             <Panel title="Task công việc" action={`${projectTasks.filter((task) => task.status === 'Hoàn thành').length}/${projectTasks.length} xong`}>
-              <TaskTable tasks={projectTasks} users={data.users} projects={data.projects} onStatus={updateTaskStatus} compact />
+              <TaskTable
+                tasks={projectTasks}
+                users={data.users}
+                projects={data.projects}
+                onStatus={updateTaskStatus}
+                onApprove={approveTask}
+                onRevision={requestTaskRevision}
+                onReassign={reassignTask}
+                compact
+                canEdit={canEditTasks}
+              />
             </Panel>
           </section>
         )}
@@ -1175,19 +3239,21 @@ function App() {
         {view === 'finance' && canView(view) && (
           <section className="view-stack">
             <div className="metric-grid">
-              <Metric title="Tổng chi phí" value={currency.format(expense)} note="Không tính doanh thu" />
-              <Metric title="Chi chung" value={currency.format(activeTransactions.filter((item) => item.scope === 'Chi chung dự án').reduce((sum, item) => sum + item.amount, 0))} note="Chi phí vận hành chung" />
-              <Metric title="Chi riêng dự án" value={currency.format(activeTransactions.filter((item) => item.scope !== 'Chi chung dự án').reduce((sum, item) => sum + item.amount, 0))} note="Theo từng dự án" />
-              <Metric title="Chưa quyết toán" value={activeTransactions.filter((item) => !item.settlementDate).length} note="Cần chi trả cho người chi" />
+              <Metric title="Tổng chi phí" value={currency.format(companyTransactions.reduce((sum, item) => sum + item.amount, 0))} note="Không tính doanh thu" />
+              <Metric title="Chi chung" value={currency.format(companyTransactions.filter((item) => item.scope === 'Chi chung dự án').reduce((sum, item) => sum + item.amount, 0))} note="Chi phí vận hành chung" />
+              <Metric title="Chi riêng dự án" value={currency.format(companyTransactions.filter((item) => item.scope !== 'Chi chung dự án').reduce((sum, item) => sum + item.amount, 0))} note="Theo từng dự án" />
+              <Metric title="Công nợ chưa giải ngân" value={currency.format(unsettledTransactions.reduce((sum, item) => sum + item.amount, 0))} note={`${unsettledTransactions.length} khoản chờ trả`} />
             </div>
             <div className="dashboard-grid">
-              <Panel title={editingTransaction ? 'Sửa khoản chi' : 'Tạo khoản chi'} action="Chi phí dự án">
+              <Panel title={editingTransaction ? 'Sửa khoản chi' : 'Tạo khoản chi'} action={canEdit('finance') ? 'Chi phí dự án' : 'Chỉ xem'}>
+                {canEdit('finance') ? (
                 <form className="form-grid" onSubmit={saveExpense} key={editingTransaction?.id ?? 'new-expense'}>
                   <select name="scope" defaultValue={editingTransaction?.scope ?? 'Chi riêng dự án'}>
                     <option>Chi chung dự án</option>
                     <option>Chi riêng dự án</option>
                   </select>
-                  <select name="projectId" required>
+                  <select name="projectId" defaultValue={editingTransaction?.projectId || activeProject?.id || ''}>
+                    <option value="">Áp dụng cho chi chung</option>
                     {activeProjects.map((project) => (
                       <option value={project.id} key={project.id}>
                         {project.name}
@@ -1205,7 +3271,6 @@ function App() {
                   <input name="label" placeholder="Nội dung chi" defaultValue={editingTransaction?.label ?? ''} required />
                   <input name="amount" placeholder="Số tiền" type="number" min="0" defaultValue={editingTransaction?.amount ?? ''} required />
                   <input name="date" aria-label="Ngày chi" type="date" defaultValue={editingTransaction?.date ?? ''} required />
-                  <input name="settlementDate" aria-label="Ngày quyết toán" type="date" defaultValue={editingTransaction?.settlementDate ?? ''} />
                   <button type="submit">{editingTransaction ? 'Cập nhật khoản chi' : 'Lưu khoản chi'}</button>
                   {editingTransaction && (
                     <button className="secondary-button" type="button" onClick={() => setEditingTransactionId(null)}>
@@ -1213,6 +3278,9 @@ function App() {
                     </button>
                   )}
                 </form>
+                ) : (
+                  <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền chỉnh sửa tài chính." />
+                )}
               </Panel>
               <Panel title="Thống kê chi phí dự án đang xem" action={activeProject?.name ?? 'Chưa có dự án'}>
                 <BarChart
@@ -1223,8 +3291,40 @@ function App() {
                 />
               </Panel>
             </div>
-            <Panel title="Lịch sử chi phí" action={`${activeTransactions.length} dòng`}>
-              <TransactionTable transactions={activeTransactions} projects={data.projects} users={data.users} onEdit={isAdmin ? editExpense : undefined} />
+            <Panel title="Công nợ theo người chi" action={`${debtBySpender.length} người còn công nợ`}>
+              {debtBySpender.length === 0 ? (
+                <EmptyState title="Không còn công nợ" text="Tất cả khoản chi đã được giải ngân cho người chi." />
+              ) : (
+                <div className="debt-grid">
+                  {debtBySpender.map((item) => (
+                    <article className="debt-card" key={item.user.id}>
+                      <span>{item.user.name}</span>
+                      <strong>{currency.format(item.amount)}</strong>
+                      <small>{item.count} khoản chưa giải ngân</small>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </Panel>
+            <Panel title="Lịch sử chi phí" action={`${visibleFinanceTransactions.length} dòng`}>
+              <div className="finance-filter" aria-label="Chọn phạm vi chi phí">
+                <button className={financeFilter === 'all' ? 'active' : ''} type="button" onClick={() => setFinanceFilter('all')}>
+                  Tất cả
+                </button>
+                <button className={financeFilter === 'general' ? 'active' : ''} type="button" onClick={() => setFinanceFilter('general')}>
+                  Chi chung
+                </button>
+                <button className={financeFilter === 'project' ? 'active' : ''} type="button" onClick={() => setFinanceFilter('project')}>
+                  Chi theo dự án
+                </button>
+              </div>
+              <TransactionTable
+                transactions={visibleFinanceTransactions}
+                projects={data.projects}
+                users={data.users}
+                onEdit={canEdit('finance') ? editExpense : undefined}
+                onSettle={canEdit('finance') ? settleExpense : undefined}
+              />
             </Panel>
           </section>
         )}
@@ -1232,7 +3332,8 @@ function App() {
         {view === 'people' && canView(view) && (
           <section className="view-stack">
             <div className="split-grid">
-              <Panel title={editingUser ? 'Sửa nhân sự' : 'Thêm nhân sự'} action="Đăng nhập, phân quyền và lương">
+              <Panel title={editingUser ? 'Sửa nhân sự' : 'Thêm nhân sự'} action={canEdit('people') ? 'Đăng nhập, phân quyền và lương' : 'Chỉ xem'}>
+                {canEdit('people') ? (
                 <form className="form-grid" onSubmit={saveUser} key={editingUser?.id ?? 'new-user'}>
                   <input name="name" placeholder="Họ tên" defaultValue={editingUser?.name ?? ''} required />
                   <input name="email" placeholder="Email đăng nhập" type="email" defaultValue={editingUser?.email ?? ''} required />
@@ -1250,17 +3351,26 @@ function App() {
                     ))}
                   </select>
                   <input name="salaryAmount" placeholder="Mức lương" type="number" min="0" defaultValue={editingUser?.salaryAmount ?? ''} />
-                  <div className="permission-box">
+                  <div className="permission-box permission-matrix">
                     {permissions.map((permission) => (
-                      <label key={permission}>
-                        <input
-                          name="permissions"
-                          type="checkbox"
-                          value={permission}
-                          defaultChecked={editingUser ? editingUser.permissions.includes(permission) : permission !== 'Nhân sự'}
-                        />
-                        {permission}
-                      </label>
+                      <div className="permission-module" key={permission}>
+                        <strong>{permission}</strong>
+                        {permissionActions.map((action) => (
+                          <label key={action.value}>
+                            <input
+                              name="permissions"
+                              type="checkbox"
+                              value={permissionKey(permission, action.value)}
+                              defaultChecked={
+                                editingUser
+                                  ? normalizePermissions(editingUser.permissions).includes(permissionKey(permission, action.value))
+                                  : permission !== 'Nhân sự' && action.value === 'view'
+                              }
+                            />
+                            {action.label}
+                          </label>
+                        ))}
+                      </div>
                     ))}
                   </div>
                   <button type="submit">{editingUser ? 'Cập nhật nhân sự' : 'Tạo nhân sự'}</button>
@@ -1270,6 +3380,9 @@ function App() {
                     </button>
                   )}
                 </form>
+                ) : (
+                  <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền chỉnh sửa nhân sự." />
+                )}
               </Panel>
               <Panel title="Hiệu suất nhân sự" action={`${data.users.length} tài khoản`}>
                 <div className="progress-list">
@@ -1280,7 +3393,7 @@ function App() {
               </Panel>
             </div>
             <Panel title="Danh sách nhân sự" action="Vai trò và quyền">
-              <UserTable users={data.users} currentUserId={currentUser?.id ?? ''} onEdit={editUser} onDelete={deleteUser} />
+              <UserTable users={data.users} currentUserId={currentUser?.id ?? ''} onEdit={editUser} onDelete={deleteUser} canEdit={canEdit('people')} />
             </Panel>
           </section>
         )}
@@ -1304,7 +3417,16 @@ function App() {
               </Panel>
             </div>
             <Panel title="Bảng công việc tổng hợp" action={`${activeTasks.length} công việc`}>
-              <TaskTable tasks={activeTasks} users={data.users} projects={data.projects} onStatus={updateTaskStatus} />
+              <TaskTable
+                tasks={activeTasks}
+                users={data.users}
+                projects={data.projects}
+                onStatus={updateTaskStatus}
+                onApprove={approveTask}
+                onRevision={requestTaskRevision}
+                onReassign={reassignTask}
+                canEdit={canEdit('progress')}
+              />
             </Panel>
           </section>
         )}
@@ -1357,6 +3479,8 @@ function viewTitle(view: View) {
   return {
     overview: 'Tổng quan công ty',
     projects: 'Dự án SEO',
+    entities: 'Quản lý SEO Entity',
+    backlinks: 'Quản lý Backlink',
     keywords: 'Quản lý Keyword',
     articles: 'Bài viết',
     tasks: 'Task công việc',
@@ -1367,7 +3491,26 @@ function viewTitle(view: View) {
   }[view]
 }
 
-function LoginPage({ error, onSubmit }: { error: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function LoginPage({
+  error,
+  users,
+  onRefresh,
+  onSubmit,
+}: {
+  error: string
+  users: User[]
+  onRefresh: () => AppData
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const activeUsers = users.filter((user) => user.active)
+  const fillLogin = (email: string, password: string) => {
+    const emailInput = document.querySelector<HTMLInputElement>('input[name="email"]')
+    const passwordInput = document.querySelector<HTMLInputElement>('input[name="password"]')
+    if (emailInput) emailInput.value = email
+    if (passwordInput) passwordInput.value = password
+    passwordInput?.focus()
+  }
+
   return (
     <main className="login-page">
       <section className="login-panel">
@@ -1394,9 +3537,84 @@ function LoginPage({ error, onSubmit }: { error: string; onSubmit: (event: FormE
           {error && <p className="form-error">{error}</p>}
           <button type="submit">Đăng nhập</button>
         </form>
-        <p className="login-hint">Tài khoản demo dùng mật khẩu mặc định: 123456.</p>
+        <div className="login-account-list">
+          <div className="login-account-head">
+            <strong>Tài khoản đang hoạt động</strong>
+            <button type="button" onClick={onRefresh}>
+              Làm mới
+            </button>
+          </div>
+          {activeUsers.map((user) => (
+            <button type="button" key={user.id} onClick={() => fillLogin(user.email, String(user.password ?? '123456'))}>
+              <span>{user.name}</span>
+              <small>{user.email} · {user.role} · mật khẩu: {String(user.password ?? '123456')}</small>
+            </button>
+          ))}
+        </div>
+        <p className="login-hint">Bấm vào một tài khoản để tự điền thông tin test. Dữ liệu nhân sự hiện tại không bị thay đổi.</p>
       </section>
     </main>
+  )
+}
+
+function NotificationBell({
+  notifications,
+  unreadCount,
+  open,
+  onToggle,
+  onOpen,
+  onMarkAllRead,
+}: {
+  notifications: NotificationItem[]
+  unreadCount: number
+  open: boolean
+  onToggle: () => void
+  onOpen: (notification: NotificationItem) => void
+  onMarkAllRead: () => void
+}) {
+  return (
+    <div className="notification-box">
+      <button className="notification-button" type="button" onClick={onToggle} aria-label="Mở thông báo hệ thống">
+        <BellIcon />
+        {unreadCount > 0 && <span>{unreadCount}</span>}
+      </button>
+      {open && (
+        <div className="notification-panel">
+          <div className="notification-head">
+            <strong>Thông báo</strong>
+            <button type="button" onClick={onMarkAllRead} disabled={unreadCount === 0}>
+              Đã đọc tất cả
+            </button>
+          </div>
+          {notifications.length === 0 ? (
+            <EmptyState title="Chưa có thông báo" text="Thông báo task mới và thay đổi trạng thái sẽ xuất hiện tại đây." />
+          ) : (
+            <div className="notification-list">
+              {notifications.slice(0, 12).map((notification) => (
+                <button
+                  className={notification.readAt ? 'notification-item' : 'notification-item unread'}
+                  key={notification.id}
+                  type="button"
+                  onClick={() => onOpen(notification)}
+                >
+                  <strong>{notification.title}</strong>
+                  <span>{notification.message}</span>
+                  <small>{formatDateTime(notification.createdAt)}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BellIcon() {
+  return (
+    <svg className="bell-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 22a2.5 2.5 0 0 0 2.35-1.65h-4.7A2.5 2.5 0 0 0 12 22Zm7-6.5V11a7 7 0 0 0-5-6.7V3a2 2 0 0 0-4 0v1.3A7 7 0 0 0 5 11v4.5L3.4 17.1A1 1 0 0 0 4.1 18.8h15.8a1 1 0 0 0 .7-1.7L19 15.5ZM7 16.8V11a5 5 0 0 1 10 0v5.8H7Z" />
+    </svg>
   )
 }
 
@@ -1426,6 +3644,8 @@ function MiniIcon({ name }: { name: string }) {
     <svg className="mini-icon" viewBox="0 0 24 24" aria-hidden="true">
       {name === 'overview' && <path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-11h6V4h-6v5Z" />}
       {name === 'projects' && <path d="M4 5h16v4H4V5Zm0 6h10v8H4v-8Zm12 0h4v8h-4v-8Z" />}
+      {name === 'entities' && <path d="M12 3 4 7v10l8 4 8-4V7l-8-4Zm0 2.2L17.3 8 12 10.8 6.7 8 12 5.2Zm-5 4.4 4 2.1v6.5l-4-2V9.6Zm6 8.6v-6.5l4-2.1v6.6l-4 2Z" />}
+      {name === 'backlinks' && <path d="M8.5 13.5 10 15l-1.8 1.8a3 3 0 0 1-4.2-4.2L7 9.6a3 3 0 0 1 4.2 0l.8.8-1.5 1.5-.8-.8a1 1 0 0 0-1.4 0l-3 3a1 1 0 0 0 1.4 1.4l1.8-2Zm7-3L14 9l1.8-1.8a3 3 0 0 1 4.2 4.2L17 14.4a3 3 0 0 1-4.2 0l-.8-.8 1.5-1.5.8.8a1 1 0 0 0 1.4 0l3-3a1 1 0 0 0-1.4-1.4l-1.8 2ZM8 17l8-8 1.4 1.4-8 8L8 17Z" />}
       {name === 'keywords' && <path d="M4 5h16v3H4V5Zm2 5h12v3H6v-3Zm-2 5h16v4H4v-4Z" />}
       {name === 'articles' && <path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z" />}
       {name === 'tasks' && <path d="M5 6h3v3H5V6Zm5 1h9v2h-9V7Zm-5 5h3v3H5v-3Zm5 1h9v2h-9v-2Zm-5 5h3v3H5v-3Zm5 1h9v2h-9v-2Z" />}
@@ -1509,6 +3729,992 @@ function BarChart({ items }: { items: { label: string; value: number; color: str
   )
 }
 
+function AnalyticsChart({ points }: { points: AnalyticsPoint[] }) {
+  const max = Math.max(...points.map((point) => point.activeUsers), 1)
+  return (
+    <div className="analytics-chart">
+      {points.map((point) => (
+        <div className="analytics-bar" key={point.id}>
+          <span>{point.label}</span>
+          <div>
+            <i style={{ height: `${Math.max((point.activeUsers / max) * 100, 8)}%` }} />
+          </div>
+          <strong>{point.activeUsers.toLocaleString('vi-VN')}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AnalyticsTable({ points }: { points: AnalyticsPoint[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="analytics-table">
+        <thead>
+          <tr>
+            <th>Thời gian</th>
+            <th>Active Users</th>
+            <th>Sessions</th>
+            <th>Page Views</th>
+            <th>Engagement</th>
+          </tr>
+        </thead>
+        <tbody>
+          {points.map((point) => (
+            <tr key={point.id}>
+              <td>{point.label}</td>
+              <td>{point.activeUsers.toLocaleString('vi-VN')}</td>
+              <td>{point.sessions.toLocaleString('vi-VN')}</td>
+              <td>{point.pageViews.toLocaleString('vi-VN')}</td>
+              <td>{pct(point.engagementRate)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function BacklinkModule({
+  activeProject,
+  sources,
+  backlinks,
+  plans,
+  costs,
+  users,
+  tab,
+  canEdit,
+  liveCount,
+  errorCount,
+  indexedCount,
+  referringDomainCount,
+  totalCost,
+  averageScore,
+  onTab,
+  onAddSource,
+  onAddBacklink,
+  onUpdateBacklink,
+  onCheckBacklink,
+  onAddPlan,
+  onUpdatePlan,
+  onAddCost,
+  onExport,
+}: {
+  activeProject?: Project
+  sources: SeoBacklinkSource[]
+  backlinks: SeoBacklink[]
+  plans: SeoBacklinkPlan[]
+  costs: SeoBacklinkCost[]
+  users: User[]
+  tab: BacklinkTab
+  canEdit: boolean
+  liveCount: number
+  errorCount: number
+  indexedCount: number
+  referringDomainCount: number
+  totalCost: number
+  averageScore: number
+  onTab: (tab: BacklinkTab) => void
+  onAddSource: (event: FormEvent<HTMLFormElement>) => void
+  onAddBacklink: (event: FormEvent<HTMLFormElement>) => void
+  onUpdateBacklink: (backlinkId: string, updates: Partial<SeoBacklink>) => void
+  onCheckBacklink: (backlinkId: string) => void
+  onAddPlan: (event: FormEvent<HTMLFormElement>) => void
+  onUpdatePlan: (planId: string, status: BacklinkPlanStatus) => void
+  onAddCost: (event: FormEvent<HTMLFormElement>) => void
+  onExport: (reportType: 'internal' | 'client') => void
+}) {
+  if (!activeProject) {
+    return (
+      <section className="view-stack">
+        <EmptyState title="Chưa có dự án SEO" text="Tạo hoặc chọn dự án trước khi quản lý backlink." />
+      </section>
+    )
+  }
+
+  const anchorGroups = backlinkAnchorTypes.map((type) => {
+    const items = backlinks.filter((backlink) => backlink.anchorType === type)
+    return { type, count: items.length, rate: backlinks.length ? (items.length / backlinks.length) * 100 : 0 }
+  })
+
+  return (
+    <section className="view-stack">
+      <div className="metric-grid">
+        <Metric title="Tổng backlink" value={backlinks.length} note={`${liveCount} link live`} />
+        <Metric title="Backlink lỗi" value={errorCount} note="Mất link / 404 / sai anchor" />
+        <Metric title="Đã index" value={indexedCount} note={`${referringDomainCount} referring domain`} />
+        <Metric title="Chi phí" value={currency.format(totalCost)} note={`Score TB ${averageScore.toFixed(1)} - ${backlinkScoreRank(averageScore)}`} />
+      </div>
+
+      <Panel title="Điều hướng Backlink" action={activeProject.name}>
+        <div className="entity-tabs">
+          {backlinkTabs.map((item) => (
+            <button className={tab === item.id ? 'active' : ''} type="button" key={item.id} onClick={() => onTab(item.id)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </Panel>
+
+      {tab === 'overview' && (
+        <div className="dashboard-grid">
+          <Panel title="Tổng quan Backlink" action={backlinkScoreRank(averageScore)}>
+            <BarChart
+              items={[
+                { label: 'Live', value: liveCount, color: '#0f766e' },
+                { label: 'Index', value: indexedCount, color: '#2563eb' },
+                { label: 'Dofollow', value: backlinks.filter((item) => item.linkType === 'Dofollow').length, color: '#16a34a' },
+                { label: 'Lỗi', value: errorCount, color: '#dc2626' },
+              ]}
+            />
+          </Panel>
+          <Panel title="Chỉ số nguồn" action={`${referringDomainCount} domain`}>
+            <div className="project-detail">
+              <Detail label="Dofollow" value={`${backlinks.filter((item) => item.linkType === 'Dofollow').length}`} />
+              <Detail label="Nofollow" value={`${backlinks.filter((item) => item.linkType === 'Nofollow').length}`} />
+              <Detail label="Redirect" value={`${backlinks.filter((item) => item.linkType === 'Redirect').length}`} />
+              <Detail label="Chưa index" value={`${backlinks.filter((item) => item.indexStatus !== 'Đã index').length}`} />
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      {tab === 'sources' && (
+        <>
+          <Panel title="Thêm nguồn Backlink" action={canEdit ? 'Kho nguồn dùng chung' : 'Chỉ xem'}>
+            <form className="backlink-source-form" onSubmit={onAddSource}>
+              <input name="name" placeholder="Tên nguồn" required disabled={!canEdit} />
+              <input name="domain" placeholder="Domain" required disabled={!canEdit} />
+              <input name="contactUrl" placeholder="URL liên hệ" disabled={!canEdit} />
+              <select name="sourceType" disabled={!canEdit}>{backlinkSourceTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              <input name="topic" placeholder="Chủ đề" disabled={!canEdit} />
+              <input name="country" placeholder="Quốc gia" defaultValue="Việt Nam" disabled={!canEdit} />
+              <input name="language" placeholder="Ngôn ngữ" defaultValue="Tiếng Việt" disabled={!canEdit} />
+              <input name="da" placeholder="DA" type="number" min="0" disabled={!canEdit} />
+              <input name="dr" placeholder="DR" type="number" min="0" disabled={!canEdit} />
+              <input name="ur" placeholder="UR" type="number" min="0" disabled={!canEdit} />
+              <input name="estimatedTraffic" placeholder="Traffic ước tính" type="number" min="0" disabled={!canEdit} />
+              <input name="spamScore" placeholder="Spam Score" type="number" min="0" disabled={!canEdit} />
+              <select name="defaultLinkType" disabled={!canEdit}>{backlinkLinkTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              <input name="price" placeholder="Giá đặt link" type="number" min="0" disabled={!canEdit} />
+              <input name="currency" placeholder="Tiền tệ" defaultValue="VND" disabled={!canEdit} />
+              <input name="linkDuration" placeholder="Thời hạn link" defaultValue="Vĩnh viễn" disabled={!canEdit} />
+              <select name="status" disabled={!canEdit}>{backlinkSourceStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+              <label><input name="allowEdit" type="checkbox" disabled={!canEdit} /> Có được sửa bài</label>
+              <label><input name="allowAnchorChange" type="checkbox" disabled={!canEdit} /> Có được thay anchor</label>
+              <input name="note" placeholder="Ghi chú" disabled={!canEdit} />
+              <button type="submit" disabled={!canEdit}>Thêm nguồn</button>
+            </form>
+          </Panel>
+          <BacklinkSourceTable sources={sources} />
+        </>
+      )}
+
+      {tab === 'links' && (
+        <>
+          <Panel title="Thêm Backlink đã triển khai" action={canEdit ? activeProject.name : 'Chỉ xem'}>
+            <form className="backlink-form" onSubmit={onAddBacklink}>
+              <select name="sourceId" disabled={!canEdit}>{sources.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}</select>
+              <input name="sourceUrl" placeholder="URL nguồn" required disabled={!canEdit} />
+              <input name="sourceDomain" placeholder="Domain nguồn" disabled={!canEdit} />
+              <input name="targetUrl" placeholder="URL đích" defaultValue={activeProject.website} required disabled={!canEdit} />
+              <input name="anchorText" placeholder="Anchor text" disabled={!canEdit} />
+              <select name="anchorType" disabled={!canEdit}>{backlinkAnchorTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="linkType" disabled={!canEdit}>{backlinkLinkTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="backlinkType" disabled={!canEdit}>{backlinkTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="linkPosition" disabled={!canEdit}>{backlinkPositions.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="assigneeId" disabled={!canEdit}>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+              <input name="placedAt" type="date" aria-label="Ngày đặt link" disabled={!canEdit} />
+              <input name="expiredAt" type="date" aria-label="Ngày hết hạn" disabled={!canEdit} />
+              <input name="cost" placeholder="Chi phí" type="number" min="0" disabled={!canEdit} />
+              <input name="currency" placeholder="Tiền tệ" defaultValue="VND" disabled={!canEdit} />
+              <select name="deploymentStatus" disabled={!canEdit}>{backlinkDeploymentStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="approvalStatus" disabled={!canEdit}>{backlinkApprovalStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="paymentStatus" disabled={!canEdit}>{backlinkPaymentStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+              <input name="note" placeholder="Ghi chú" disabled={!canEdit} />
+              <button type="submit" disabled={!canEdit}>Lưu Backlink</button>
+            </form>
+          </Panel>
+          <BacklinkTable backlinks={backlinks} sources={sources} users={users} canEdit={canEdit} onUpdate={onUpdateBacklink} onCheck={onCheckBacklink} />
+        </>
+      )}
+
+      {tab === 'plans' && (
+        <>
+          <Panel title="Lập kế hoạch đi backlink" action={canEdit ? activeProject.name : 'Chỉ xem'}>
+            <form className="backlink-plan-form" onSubmit={onAddPlan}>
+              <input name="targetUrl" placeholder="URL cần SEO" defaultValue={activeProject.website} disabled={!canEdit} />
+              <input name="targetKeyword" placeholder="Từ khóa mục tiêu" required disabled={!canEdit} />
+              <select name="backlinkType" disabled={!canEdit}>{backlinkTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              <input name="plannedAnchor" placeholder="Anchor dự kiến" disabled={!canEdit} />
+              <input name="plannedQuantity" placeholder="Số backlink dự kiến" type="number" min="1" defaultValue="1" disabled={!canEdit} />
+              <input name="plannedDate" type="date" aria-label="Ngày dự kiến" disabled={!canEdit} />
+              <select name="assigneeId" disabled={!canEdit}>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+              <input name="note" placeholder="Ghi chú" disabled={!canEdit} />
+              <button type="submit" disabled={!canEdit}>Thêm kế hoạch</button>
+            </form>
+          </Panel>
+          <BacklinkPlanTable plans={plans} users={users} canEdit={canEdit} onUpdatePlan={onUpdatePlan} />
+        </>
+      )}
+
+      {tab === 'anchors' && (
+        <Panel title="Quản lý Anchor Text" action={`${backlinks.length} backlink`}>
+          <div className="progress-list">
+            {anchorGroups.map((anchor) => (
+              <ProgressRow key={anchor.type} label={anchor.type} value={anchor.rate} meta={`${anchor.count} anchor`} />
+            ))}
+          </div>
+          {(anchorGroups.find((item) => item.type === 'Exact match')?.rate ?? 0) > 35 && (
+            <p className="entity-import-status">Cảnh báo: Exact match đang cao hơn 35%, nên cân bằng thêm brand, URL trần hoặc generic.</p>
+          )}
+        </Panel>
+      )}
+
+      {tab === 'check' && (
+        <Panel title="Check Backlink" action="Live / Anchor / Index">
+          <BacklinkTable backlinks={backlinks} sources={sources} users={users} canEdit={canEdit} onUpdate={onUpdateBacklink} onCheck={onCheckBacklink} compact />
+        </Panel>
+      )}
+
+      {tab === 'costs' && (
+        <>
+          <Panel title="Thêm chi phí Backlink" action={currency.format(totalCost)}>
+            <form className="backlink-cost-form" onSubmit={onAddCost}>
+              <select name="backlinkId" disabled={!canEdit}>{backlinks.map((backlink) => <option value={backlink.id} key={backlink.id}>{backlink.sourceDomain || backlink.sourceUrl}</option>)}</select>
+              <select name="sourceId" disabled={!canEdit}>{sources.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}</select>
+              <select name="costType" disabled={!canEdit}>{backlinkCostTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              <input name="amount" placeholder="Số tiền" type="number" min="0" required disabled={!canEdit} />
+              <input name="currency" placeholder="Tiền tệ" defaultValue="VND" disabled={!canEdit} />
+              <select name="paidBy" disabled={!canEdit}>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+              <input name="paidAt" type="date" aria-label="Ngày thanh toán" disabled={!canEdit} />
+              <select name="paymentStatus" disabled={!canEdit}>{backlinkPaymentStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+              <input name="invoiceUrl" placeholder="Hóa đơn / ảnh xác nhận URL" disabled={!canEdit} />
+              <input name="note" placeholder="Ghi chú" disabled={!canEdit} />
+              <button type="submit" disabled={!canEdit}>Lưu chi phí</button>
+            </form>
+          </Panel>
+          <BacklinkCostTable costs={costs} backlinks={backlinks} sources={sources} users={users} />
+        </>
+      )}
+
+      {tab === 'reports' && (
+        <Panel title="Báo cáo Backlink" action={activeProject.name}>
+          <div className="report-actions">
+            <button type="button" onClick={() => onExport('internal')}>Xuất báo cáo nội bộ CSV</button>
+            <button type="button" onClick={() => onExport('client')}>Xuất báo cáo khách hàng CSV</button>
+          </div>
+        </Panel>
+      )}
+    </section>
+  )
+}
+
+function BacklinkSourceTable({ sources }: { sources: SeoBacklinkSource[] }) {
+  return (
+    <Panel title="Kho nguồn Backlink" action={`${sources.length} nguồn`}>
+      <div className="table-wrap">
+        <table className="backlink-source-table">
+          <thead>
+            <tr>
+              <th>Nguồn</th>
+              <th>Domain</th>
+              <th>Loại</th>
+              <th>Chủ đề</th>
+              <th>DA/DR/UR</th>
+              <th>Traffic</th>
+              <th>Spam</th>
+              <th>Link type</th>
+              <th>Giá</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sources.map((source) => (
+              <tr key={source.id}>
+                <td>{source.name}</td>
+                <td>{source.domain}</td>
+                <td>{source.sourceType}</td>
+                <td>{source.topic}</td>
+                <td>{source.da}/{source.dr}/{source.ur}</td>
+                <td>{source.estimatedTraffic.toLocaleString('vi-VN')}</td>
+                <td>{source.spamScore}</td>
+                <td>{source.defaultLinkType}</td>
+                <td>{currency.format(source.price)}</td>
+                <td>{source.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  )
+}
+
+function BacklinkTable({
+  backlinks,
+  sources,
+  users,
+  canEdit,
+  compact,
+  onUpdate,
+  onCheck,
+}: {
+  backlinks: SeoBacklink[]
+  sources: SeoBacklinkSource[]
+  users: User[]
+  canEdit: boolean
+  compact?: boolean
+  onUpdate: (backlinkId: string, updates: Partial<SeoBacklink>) => void
+  onCheck: (backlinkId: string) => void
+}) {
+  if (backlinks.length === 0) {
+    return <EmptyState title="Chưa có backlink" text="Thêm backlink đã triển khai để theo dõi live, index, anchor và chi phí." />
+  }
+
+  return (
+    <div className="table-wrap">
+      <table className="backlink-table">
+        <thead>
+          <tr>
+            <th>URL nguồn</th>
+            <th>URL đích</th>
+            <th>Anchor</th>
+            {!compact && <th>Nguồn</th>}
+            {!compact && <th>Nhân sự</th>}
+            <th>Link</th>
+            <th>Index</th>
+            <th>Duyệt</th>
+            <th>Score</th>
+            <th>Check</th>
+          </tr>
+        </thead>
+        <tbody>
+          {backlinks.map((backlink) => (
+            <tr key={backlink.id}>
+              <td>
+                {backlink.sourceUrl ? <a href={backlink.sourceUrl} target="_blank" rel="noreferrer">{backlink.sourceDomain || backlink.sourceUrl}</a> : 'Chưa có URL'}
+                {backlink.lastCheckedAt && <small className="entity-link-note">Check: {formatDateTime(backlink.lastCheckedAt)}</small>}
+              </td>
+              <td>{backlink.targetUrl}</td>
+              <td>{backlink.anchorText}<small className="entity-link-note">{backlink.anchorType}</small></td>
+              {!compact && <td>{sources.find((source) => source.id === backlink.sourceId)?.name ?? backlink.sourceDomain}</td>}
+              {!compact && <td>{users.find((user) => user.id === backlink.assigneeId)?.name ?? 'Chưa gán'}</td>}
+              <td>
+                <select value={backlink.linkStatus} onChange={(event) => onUpdate(backlink.id, { linkStatus: event.target.value as BacklinkLinkStatus })} disabled={!canEdit}>
+                  {backlinkLinkStatuses.map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </td>
+              <td>
+                <select value={backlink.indexStatus} onChange={(event) => onUpdate(backlink.id, { indexStatus: event.target.value as BacklinkIndexStatus })} disabled={!canEdit}>
+                  {backlinkIndexStatuses.map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </td>
+              <td>
+                <select value={backlink.approvalStatus} onChange={(event) => onUpdate(backlink.id, { approvalStatus: event.target.value as BacklinkApprovalStatus })} disabled={!canEdit}>
+                  {backlinkApprovalStatuses.map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </td>
+              <td>{backlink.backlinkScore || calculateBacklinkScore(backlink, sources.find((source) => source.id === backlink.sourceId))}</td>
+              <td>
+                <button className="secondary-button" type="button" onClick={() => onCheck(backlink.id)} disabled={!canEdit}>Check</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function BacklinkPlanTable({ plans, users, canEdit, onUpdatePlan }: { plans: SeoBacklinkPlan[]; users: User[]; canEdit: boolean; onUpdatePlan: (planId: string, status: BacklinkPlanStatus) => void }) {
+  return (
+    <Panel title="Kế hoạch đi link" action={`${plans.length} kế hoạch`}>
+      <div className="table-wrap">
+        <table className="backlink-plan-table">
+          <thead>
+            <tr>
+              <th>URL cần SEO</th>
+              <th>Từ khóa</th>
+              <th>Loại</th>
+              <th>Anchor</th>
+              <th>Số lượng</th>
+              <th>Ngày dự kiến</th>
+              <th>Nhân sự</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plans.map((plan) => (
+              <tr key={plan.id}>
+                <td>{plan.targetUrl}</td>
+                <td>{plan.targetKeyword}</td>
+                <td>{plan.backlinkType}</td>
+                <td>{plan.plannedAnchor}</td>
+                <td>{plan.plannedQuantity}</td>
+                <td>{formatDateOnly(plan.plannedDate)}</td>
+                <td>{users.find((user) => user.id === plan.assigneeId)?.name ?? 'Chưa gán'}</td>
+                <td>
+                  <select value={plan.status} onChange={(event) => onUpdatePlan(plan.id, event.target.value as BacklinkPlanStatus)} disabled={!canEdit}>
+                    {backlinkPlanStatuses.map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  )
+}
+
+function BacklinkCostTable({ costs, backlinks, sources, users }: { costs: SeoBacklinkCost[]; backlinks: SeoBacklink[]; sources: SeoBacklinkSource[]; users: User[] }) {
+  return (
+    <Panel title="Chi phí Backlink" action={`${costs.length} khoản`}>
+      <div className="table-wrap">
+        <table className="backlink-cost-table">
+          <thead>
+            <tr>
+              <th>Loại chi phí</th>
+              <th>Nguồn</th>
+              <th>Backlink</th>
+              <th>Số tiền</th>
+              <th>Người thanh toán</th>
+              <th>Ngày thanh toán</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            {costs.map((cost) => {
+              const backlink = backlinks.find((item) => item.id === cost.backlinkId)
+              return (
+                <tr key={cost.id}>
+                  <td>{cost.costType}</td>
+                  <td>{sources.find((source) => source.id === cost.sourceId)?.name ?? backlink?.sourceDomain ?? 'Chưa chọn'}</td>
+                  <td>{backlink?.sourceUrl ?? 'Không gắn backlink'}</td>
+                  <td>{currency.format(cost.amount)}</td>
+                  <td>{users.find((user) => user.id === cost.paidBy)?.name ?? 'Chưa chọn'}</td>
+                  <td>{formatDateOnly(cost.paidAt)}</td>
+                  <td>{cost.paymentStatus}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  )
+}
+
+function EntityModule({
+  activeProject,
+  activeEntity,
+  projectEntities,
+  entityPlatforms,
+  activeEntityLinks,
+  activeEntityChecklist,
+  activeEntitySchema,
+  entityTab,
+  selectedEntityId,
+  users,
+  canEdit,
+  entityScore,
+  liveLinks,
+  indexedLinks,
+  napOkLinks,
+  importStatus,
+  rememberedCredential,
+  selectedLinkIds,
+  onTab,
+  onSelectEntity,
+  onNewEntity,
+  onSaveEntity,
+  onDeleteEntity,
+  onAddPlatform,
+  onImportPlatformSheet,
+  onImportPlatformFile,
+  onAddLink,
+  onCredentialChange,
+  onUpdateLink,
+  onCheckLink,
+  onToggleLinkSelect,
+  onSelectIncompleteLinks,
+  onSendLinkTasks,
+  onToggleChecklist,
+  onGenerateSchema,
+  onExportReport,
+}: {
+  activeProject?: Project
+  activeEntity?: SeoEntity
+  projectEntities: SeoEntity[]
+  entityPlatforms: SeoEntityPlatform[]
+  activeEntityLinks: SeoEntityLink[]
+  activeEntityChecklist: SeoEntityChecklistItem[]
+  activeEntitySchema?: SeoEntitySchema
+  entityTab: EntityTab
+  selectedEntityId: string
+  users: User[]
+  canEdit: boolean
+  entityScore: number
+  liveLinks: number
+  indexedLinks: number
+  napOkLinks: number
+  importStatus: string
+  rememberedCredential: EntityLinkCredential
+  selectedLinkIds: Set<string>
+  onTab: (tab: EntityTab) => void
+  onSelectEntity: (entityId: string) => void
+  onNewEntity: () => void
+  onSaveEntity: (event: FormEvent<HTMLFormElement>) => void
+  onDeleteEntity: (entityId: string) => void
+  onAddPlatform: (event: FormEvent<HTMLFormElement>) => void
+  onImportPlatformSheet: (event: FormEvent<HTMLFormElement>) => void
+  onImportPlatformFile: (event: ChangeEvent<HTMLInputElement>) => void
+  onAddLink: (event: FormEvent<HTMLFormElement>) => void
+  onCredentialChange: (updates: Partial<EntityLinkCredential>) => void
+  onUpdateLink: (linkId: string, updates: Partial<SeoEntityLink>) => void
+  onCheckLink: (linkId: string) => void
+  onToggleLinkSelect: (linkId: string) => void
+  onSelectIncompleteLinks: () => void
+  onSendLinkTasks: (event: FormEvent<HTMLFormElement>) => void
+  onToggleChecklist: (itemId: string) => void
+  onGenerateSchema: () => void
+  onExportReport: (reportType: 'internal' | 'client' | 'score') => void
+}) {
+  if (!activeProject) {
+    return (
+      <section className="view-stack">
+        <EmptyState title="Chưa có dự án SEO" text="Tạo hoặc chọn dự án trước khi quản lý SEO Entity." />
+      </section>
+    )
+  }
+
+  const activeEntityId = activeEntity?.id ?? ''
+
+  return (
+    <section className="view-stack">
+      <div className="metric-grid">
+        <Metric title="Entity Score" value={entityScore} note={entityScoreRank(entityScore)} />
+        <Metric title="Link live" value={liveLinks} note={`${activeEntityLinks.length} link đang quản lý`} />
+        <Metric title="Đã index" value={indexedLinks} note="Theo trạng thái đã ghi nhận" />
+        <Metric title="NAP đúng" value={napOkLinks} note="Tên, SĐT, địa chỉ đồng bộ" />
+      </div>
+
+      <Panel title="Điều hướng SEO Entity" action={activeProject.name}>
+        <div className="entity-toolbar">
+          <select value={selectedEntityId === 'new' ? 'new' : activeEntityId} onChange={(event) => onSelectEntity(event.target.value)}>
+            <option value="new">Tạo hồ sơ Entity mới</option>
+            {projectEntities.map((entity) => (
+              <option value={entity.id} key={entity.id}>
+                {entity.name}
+              </option>
+            ))}
+          </select>
+          <button className="secondary-button" type="button" onClick={onNewEntity} disabled={!canEdit}>
+            Tạo mới
+          </button>
+        </div>
+        <div className="entity-tabs">
+          {entityTabs.map((tab) => (
+            <button className={entityTab === tab.id ? 'active' : ''} type="button" key={tab.id} onClick={() => onTab(tab.id)}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </Panel>
+
+      {entityTab === 'overview' && (
+        <div className="dashboard-grid">
+          <Panel title="Tổng quan Entity" action={activeEntity?.status ?? 'Chưa có hồ sơ'}>
+            {activeEntity ? (
+              <div className="project-detail">
+                <Detail label="Tên chuẩn" value={activeEntity.officialName || activeEntity.name} />
+                <Detail label="Loại entity" value={activeEntity.entityType} />
+                <Detail label="Website chính" value={field(activeEntity.website)} />
+                <Detail label="Ngành nghề" value={field(activeEntity.industry)} />
+                <Detail label="SĐT" value={field(activeEntity.phone)} />
+                <Detail label="Địa chỉ" value={field(activeEntity.address)} />
+              </div>
+            ) : (
+              <EmptyState title="Chưa có hồ sơ Entity" text="Tạo hồ sơ entity chuẩn để bắt đầu quản lý nền tảng, link và schema." />
+            )}
+          </Panel>
+          <Panel title="Tình trạng triển khai" action={entityScoreRank(entityScore)}>
+            <BarChart
+              items={[
+                { label: 'Live', value: liveLinks, color: '#0f766e' },
+                { label: 'Index', value: indexedLinks, color: '#2563eb' },
+                { label: 'NAP đúng', value: napOkLinks, color: '#16a34a' },
+                { label: 'Lỗi', value: activeEntityLinks.filter((link) => ['404', '403', 'Mất link'].includes(link.linkStatus)).length, color: '#dc2626' },
+              ]}
+            />
+          </Panel>
+        </div>
+      )}
+
+      {entityTab === 'profile' && (
+        <Panel title={activeEntity ? 'Hồ sơ Entity' : 'Tạo hồ sơ Entity'} action={canEdit ? 'Thông tin chuẩn NAP' : 'Chỉ xem'}>
+          <form className="entity-profile-form" onSubmit={onSaveEntity} key={activeEntity?.id ?? 'new-entity'}>
+            <input name="name" placeholder="Tên entity *" defaultValue={activeEntity?.name ?? ''} required disabled={!canEdit} />
+            <input name="officialName" placeholder="Tên chuẩn" defaultValue={activeEntity?.officialName ?? ''} disabled={!canEdit} />
+            <input name="alternativeNames" placeholder="Tên thay thế" defaultValue={activeEntity?.alternativeNames ?? ''} disabled={!canEdit} />
+            <select name="entityType" defaultValue={activeEntity?.entityType ?? 'Brand'} disabled={!canEdit}>
+              {entityTypes.map((type) => (
+                <option key={type}>{type}</option>
+              ))}
+            </select>
+            <input name="website" placeholder="Website chính" defaultValue={activeEntity?.website ?? activeProject.website} disabled={!canEdit} />
+            <input name="logoUrl" placeholder="Logo URL" defaultValue={activeEntity?.logoUrl ?? ''} disabled={!canEdit} />
+            <input name="coverUrl" placeholder="Ảnh bìa URL" defaultValue={activeEntity?.coverUrl ?? ''} disabled={!canEdit} />
+            <input name="industry" placeholder="Ngành nghề" defaultValue={activeEntity?.industry ?? ''} disabled={!canEdit} />
+            <input name="countryLanguage" placeholder="Quốc gia / ngôn ngữ" defaultValue={activeEntity?.countryLanguage ?? 'Việt Nam / Tiếng Việt'} disabled={!canEdit} />
+            <input name="phone" placeholder="SĐT" defaultValue={activeEntity?.phone ?? ''} disabled={!canEdit} />
+            <input name="email" placeholder="Email" type="email" defaultValue={activeEntity?.email ?? ''} disabled={!canEdit} />
+            <input name="address" placeholder="Địa chỉ" defaultValue={activeEntity?.address ?? ''} disabled={!canEdit} />
+            <input name="mapsUrl" placeholder="Google Maps URL" defaultValue={activeEntity?.mapsUrl ?? ''} disabled={!canEdit} />
+            <select name="status" defaultValue={activeEntity?.status ?? 'Đang dùng'} disabled={!canEdit}>
+              {entityStatuses.map((status) => (
+                <option key={status}>{status}</option>
+              ))}
+            </select>
+            <textarea name="shortDescription" placeholder="Mô tả ngắn" defaultValue={activeEntity?.shortDescription ?? ''} disabled={!canEdit} />
+            <textarea name="longDescription" placeholder="Mô tả dài" defaultValue={activeEntity?.longDescription ?? ''} disabled={!canEdit} />
+            <button type="submit" disabled={!canEdit}>{activeEntity ? 'Cập nhật hồ sơ Entity' : 'Tạo hồ sơ Entity'}</button>
+            {activeEntity && (
+              <button className="danger-button" type="button" onClick={() => onDeleteEntity(activeEntity.id)} disabled={!canEdit}>
+                Xóa Entity
+              </button>
+            )}
+          </form>
+        </Panel>
+      )}
+
+      {entityTab === 'platforms' && (
+        <>
+          <Panel title="Import nền tảng Entity" action="Google Sheet / Excel">
+            <div className="entity-import-grid">
+              <form className="entity-import-form" onSubmit={onImportPlatformSheet}>
+                <input name="sheetUrl" placeholder="Google Sheet public URL hoặc CSV URL" disabled={!canEdit} />
+                <button type="submit" disabled={!canEdit}>Import từ Google Sheet</button>
+              </form>
+              <label className="entity-file-import">
+                <span>Import file Excel / CSV</span>
+                <input type="file" accept=".xlsx,.xls,.csv,.tsv" onChange={onImportPlatformFile} disabled={!canEdit} />
+              </label>
+            </div>
+            <p className="entity-import-hint">
+              Hỗ trợ cột: Tên nền tảng, Domain, Link đăng ký, Link đăng nhập, Nhóm nền tảng, Cho đặt website, Cho viết bio, Cho upload logo, Cho upload cover, Loại link mặc định, Độ khó, Khả năng index, Điểm chất lượng, Trạng thái, Ghi chú.
+            </p>
+            {importStatus && <p className="entity-import-status">{importStatus}</p>}
+          </Panel>
+          <Panel title="Thêm nền tảng Entity" action={canEdit ? 'Kho nền tảng dùng chung' : 'Chỉ xem'}>
+            <form className="entity-platform-form" onSubmit={onAddPlatform}>
+              <input name="name" placeholder="Tên nền tảng" required disabled={!canEdit} />
+              <input name="domain" placeholder="Domain" required disabled={!canEdit} />
+              <input name="registerUrl" placeholder="Link đăng ký" disabled={!canEdit} />
+              <input name="loginUrl" placeholder="Link đăng nhập" disabled={!canEdit} />
+              <select name="group" disabled={!canEdit}>{entityPlatformGroups.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="defaultLinkType" disabled={!canEdit}>{entityLinkTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="difficulty" disabled={!canEdit}>{entityDifficulties.map((item) => <option key={item}>{item}</option>)}</select>
+              <select name="indexability" disabled={!canEdit}>{entityIndexabilities.map((item) => <option key={item}>{item}</option>)}</select>
+              <input name="qualityScore" placeholder="Điểm chất lượng 1-100" type="number" min="1" max="100" disabled={!canEdit} />
+              <select name="status" disabled={!canEdit}>{entityPlatformStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+              <label><input name="allowWebsite" type="checkbox" disabled={!canEdit} /> Cho đặt website</label>
+              <label><input name="allowBio" type="checkbox" disabled={!canEdit} /> Cho viết bio</label>
+              <label><input name="allowLogo" type="checkbox" disabled={!canEdit} /> Cho upload logo</label>
+              <label><input name="allowCover" type="checkbox" disabled={!canEdit} /> Cho upload cover</label>
+              <input name="notes" placeholder="Ghi chú" disabled={!canEdit} />
+              <button type="submit" disabled={!canEdit}>Thêm nền tảng</button>
+            </form>
+          </Panel>
+          <EntityPlatformTable platforms={entityPlatforms} />
+        </>
+      )}
+
+      {entityTab === 'links' && (
+        <>
+          <Panel title="Thêm Link Entity" action={activeEntity?.name ?? 'Chưa chọn Entity'}>
+            {activeEntity ? (
+              <form className="entity-link-form" onSubmit={onAddLink}>
+                <select name="platformId" required disabled={!canEdit}>{entityPlatforms.map((platform) => <option value={platform.id} key={platform.id}>{platform.name}</option>)}</select>
+                <select name="assigneeId" disabled={!canEdit}>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+                <label className="entity-google-login">
+                  <input
+                    name="loginWithGoogle"
+                    type="checkbox"
+                    checked={rememberedCredential.loginWithGoogle}
+                    onChange={(event) => onCredentialChange({ loginWithGoogle: event.target.checked })}
+                    disabled={!canEdit}
+                  />
+                  Đăng nhập bằng tài khoản Google
+                </label>
+                <input
+                  name="loginAccount"
+                  placeholder="Tài khoản đăng nhập"
+                  value={rememberedCredential.loginAccount}
+                  onChange={(event) => onCredentialChange({ loginAccount: event.target.value })}
+                  disabled={!canEdit}
+                />
+                <input
+                  name="loginPassword"
+                  placeholder="Mật khẩu"
+                  type="password"
+                  value={rememberedCredential.loginPassword}
+                  onChange={(event) => onCredentialChange({ loginPassword: event.target.value })}
+                  disabled={!canEdit}
+                />
+                <input name="accountUsed" placeholder="Tài khoản sử dụng" disabled={!canEdit} />
+                <input name="liveUrl" placeholder="URL live" disabled={!canEdit} />
+                <input name="targetUrl" placeholder="URL đích" defaultValue={activeEntity.website} disabled={!canEdit} />
+                <input name="anchorText" placeholder="Anchor text" defaultValue={activeEntity.name} disabled={!canEdit} />
+                <input name="displayName" placeholder="Tên hiển thị" defaultValue={activeEntity.name} disabled={!canEdit} />
+                <input name="deployedDate" type="date" aria-label="Ngày triển khai" disabled={!canEdit} />
+                <select name="deploymentStatus" disabled={!canEdit}>{entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}</select>
+                <textarea name="usedDescription" placeholder="Mô tả đã dùng" defaultValue={activeEntity.shortDescription} disabled={!canEdit} />
+                <textarea name="notes" placeholder="Ghi chú nội bộ" disabled={!canEdit} />
+                <button type="submit" disabled={!canEdit}>Lưu Link Entity</button>
+              </form>
+            ) : (
+              <EmptyState title="Chưa có hồ sơ Entity" text="Tạo hồ sơ Entity trước khi thêm link triển khai." />
+            )}
+          </Panel>
+          <Panel title="Phân task nhanh Link Entity" action={`${selectedLinkIds.size} link được chọn`}>
+            {activeEntityLinks.length === 0 ? (
+              <EmptyState title="Chưa có link để phân task" text="Thêm Link Entity trước khi phân việc nhanh cho nhân viên." />
+            ) : (
+              <form className="entity-task-form" onSubmit={onSendLinkTasks}>
+                <button className="secondary-button" type="button" onClick={onSelectIncompleteLinks} disabled={!canEdit}>
+                  Chọn link chưa hoàn thành
+                </button>
+                <select name="assigneeId" disabled={!canEdit} required>
+                  {users.map((user) => (
+                    <option value={user.id} key={user.id}>{user.name}</option>
+                  ))}
+                </select>
+                <input name="deadlineAt" type="datetime-local" aria-label="Hạn hoàn thành task Entity" disabled={!canEdit} required />
+                <button type="submit" disabled={!canEdit || selectedLinkIds.size === 0}>Gửi task cho nhân viên</button>
+              </form>
+            )}
+          </Panel>
+          <EntityLinkTable
+            links={activeEntityLinks}
+            platforms={entityPlatforms}
+            users={users}
+            canEdit={canEdit}
+            selectedLinkIds={selectedLinkIds}
+            onToggleSelect={onToggleLinkSelect}
+            onUpdate={onUpdateLink}
+            onCheck={onCheckLink}
+          />
+        </>
+      )}
+
+      {entityTab === 'checklist' && (
+        <Panel title="Checklist Entity" action={activeEntity?.name ?? 'Chưa chọn Entity'}>
+          {activeEntityChecklist.length === 0 ? (
+            <EmptyState title="Chưa có checklist" text="Checklist mẫu sẽ được tạo tự động khi bạn tạo hồ sơ Entity mới." />
+          ) : (
+            <div className="entity-checklist">
+              {activeEntityChecklist.map((item) => (
+                <label key={item.id}>
+                  <input type="checkbox" checked={item.done} onChange={() => onToggleChecklist(item.id)} disabled={!canEdit} />
+                  <span>{item.label}</span>
+                  <small>{item.updatedAt ? formatDateTime(item.updatedAt) : 'Chưa cập nhật'}</small>
+                </label>
+              ))}
+            </div>
+          )}
+        </Panel>
+      )}
+
+      {entityTab === 'schema' && (
+        <Panel title="Schema Entity" action={activeEntitySchema ? formatDateTime(activeEntitySchema.updatedAt) : 'Chưa tạo'}>
+          {activeEntity ? (
+            <div className="schema-panel">
+              <button className="secondary-button" type="button" onClick={onGenerateSchema} disabled={!canEdit}>
+                Tạo / cập nhật JSON-LD
+              </button>
+              <pre>{activeEntitySchema?.jsonLd ?? 'Chưa có schema. Bấm nút tạo để sinh schema cơ bản từ hồ sơ Entity.'}</pre>
+            </div>
+          ) : (
+            <EmptyState title="Chưa có hồ sơ Entity" text="Tạo hồ sơ Entity trước khi sinh schema." />
+          )}
+        </Panel>
+      )}
+
+      {entityTab === 'check' && (
+        <Panel title="Check Entity" action="Live / Index / NAP">
+          <EntityLinkTable
+            links={activeEntityLinks}
+            platforms={entityPlatforms}
+            users={users}
+            canEdit={canEdit}
+            selectedLinkIds={selectedLinkIds}
+            onToggleSelect={onToggleLinkSelect}
+            onUpdate={onUpdateLink}
+            onCheck={onCheckLink}
+            compact
+          />
+        </Panel>
+      )}
+
+      {entityTab === 'reports' && (
+        <Panel title="Báo cáo Entity" action={activeEntity?.name ?? 'Chưa chọn Entity'}>
+          {activeEntity ? (
+            <div className="report-actions">
+              <button type="button" onClick={() => onExportReport('internal')}>Xuất báo cáo nội bộ CSV</button>
+              <button type="button" onClick={() => onExportReport('client')}>Xuất báo cáo khách hàng CSV</button>
+              <button type="button" onClick={() => onExportReport('score')}>Xuất Entity Score CSV</button>
+            </div>
+          ) : (
+            <EmptyState title="Chưa có dữ liệu báo cáo" text="Tạo hồ sơ Entity và thêm link trước khi xuất báo cáo." />
+          )}
+        </Panel>
+      )}
+    </section>
+  )
+}
+
+function EntityPlatformTable({ platforms }: { platforms: SeoEntityPlatform[] }) {
+  return (
+    <Panel title="Kho nền tảng Entity" action={`${platforms.length} nền tảng`}>
+      <div className="table-wrap">
+        <table className="entity-table">
+          <thead>
+            <tr>
+              <th>Nền tảng</th>
+              <th>Domain</th>
+              <th>Nhóm</th>
+              <th>Website/Bio/Logo/Cover</th>
+              <th>Link</th>
+              <th>Độ khó</th>
+              <th>Index</th>
+              <th>Điểm</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            {platforms.map((platform) => (
+              <tr key={platform.id}>
+                <td>{platform.name}</td>
+                <td>{platform.domain}</td>
+                <td>{platform.group}</td>
+                <td>{[platform.allowWebsite, platform.allowBio, platform.allowLogo, platform.allowCover].map((value) => (value ? 'Có' : 'Không')).join(' / ')}</td>
+                <td>{platform.defaultLinkType}</td>
+                <td>{platform.difficulty}</td>
+                <td>{platform.indexability}</td>
+                <td>{platform.qualityScore}/100</td>
+                <td>{platform.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  )
+}
+
+function EntityLinkTable({
+  links,
+  platforms,
+  users,
+  canEdit,
+  selectedLinkIds,
+  compact,
+  onToggleSelect,
+  onUpdate,
+  onCheck,
+}: {
+  links: SeoEntityLink[]
+  platforms: SeoEntityPlatform[]
+  users: User[]
+  canEdit: boolean
+  selectedLinkIds: Set<string>
+  compact?: boolean
+  onToggleSelect: (linkId: string) => void
+  onUpdate: (linkId: string, updates: Partial<SeoEntityLink>) => void
+  onCheck: (linkId: string) => void
+}) {
+  if (links.length === 0) {
+    return <EmptyState title="Chưa có Link Entity" text="Thêm link entity đã triển khai để theo dõi trạng thái live, index và NAP." />
+  }
+
+  return (
+    <div className="table-wrap">
+      <table className="entity-link-table">
+        <thead>
+          <tr>
+            {!compact && <th>Chọn</th>}
+            <th>Nền tảng</th>
+            <th>URL live</th>
+            {!compact && <th>Người phụ trách</th>}
+            {!compact && <th>Tài khoản</th>}
+            <th>Triển khai</th>
+            <th>Link</th>
+            <th>Index</th>
+            <th>NAP</th>
+            <th>Check</th>
+          </tr>
+        </thead>
+        <tbody>
+          {links.map((link) => (
+            <tr key={link.id}>
+              {!compact && (
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedLinkIds.has(link.id)}
+                    onChange={() => onToggleSelect(link.id)}
+                    disabled={!canEdit}
+                    aria-label={`Chọn link ${link.liveUrl || link.id}`}
+                  />
+                </td>
+              )}
+              <td>{platforms.find((platform) => platform.id === link.platformId)?.name ?? 'Nền tảng đã xóa'}</td>
+              <td>
+                {link.liveUrl ? <a href={link.liveUrl} target="_blank" rel="noreferrer">{link.liveUrl}</a> : 'Chưa cập nhật'}
+                {link.lastCheckedAt && <small className="entity-link-note">Check: {formatDateTime(link.lastCheckedAt)}</small>}
+              </td>
+              {!compact && <td>{users.find((user) => user.id === link.assigneeId)?.name ?? 'Chưa gán'}</td>}
+              {!compact && (
+                <td>
+                  {link.loginWithGoogle ? <span className="pill income">Google</span> : <span className="pill">Thường</span>}
+                  <small className="entity-link-note">{link.loginAccount || link.accountUsed || 'Chưa lưu tài khoản'}</small>
+                </td>
+              )}
+              <td>
+                <select value={link.deploymentStatus} onChange={(event) => onUpdate(link.id, { deploymentStatus: event.target.value as EntityDeploymentStatus })} disabled={!canEdit}>
+                  {entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </td>
+              <td>
+                <select value={link.linkStatus} onChange={(event) => onUpdate(link.id, { linkStatus: event.target.value as EntityLiveStatus })} disabled={!canEdit}>
+                  {entityLiveStatuses.map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </td>
+              <td>
+                <select value={link.indexStatus} onChange={(event) => onUpdate(link.id, { indexStatus: event.target.value as EntityIndexStatus })} disabled={!canEdit}>
+                  {entityIndexStatuses.map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </td>
+              <td>
+                <select value={link.napStatus} onChange={(event) => onUpdate(link.id, { napStatus: event.target.value as EntityNapStatus })} disabled={!canEdit}>
+                  {entityNapStatuses.map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </td>
+              <td>
+                <button className="secondary-button" type="button" onClick={() => onCheck(link.id)} disabled={!canEdit}>
+                  Check nhanh
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 const keywordTooltips = {
   keyword: 'Từ khóa chính cần theo dõi và tối ưu.',
   landingUrl: 'URL đích được map với từ khóa trong kế hoạch nội dung hoặc tối ưu sản phẩm.',
@@ -1543,6 +4749,7 @@ function KeywordTable({
   onToggleSelect,
   onDeleteSelected,
   onDevelopKeyword,
+  canEdit,
 }: {
   keywords: Keyword[]
   collapsedKeywordIds: Set<string>
@@ -1551,6 +4758,7 @@ function KeywordTable({
   onToggleSelect: (keywordId: string) => void
   onDeleteSelected: () => void
   onDevelopKeyword: (keyword: Keyword) => void
+  canEdit: boolean
 }) {
   if (keywords.length === 0) {
     return <EmptyState title="Chưa có keyword" text="Thêm key đầu tiên để lập bản đồ từ khóa và theo dõi hiệu suất SEO cho dự án này." />
@@ -1578,7 +4786,7 @@ function KeywordTable({
     <>
       <div className="bulk-actions">
         <span>{selectedKeywordIds.size} keyword được chọn</span>
-        <button className="danger-button" disabled={selectedKeywordIds.size === 0} onClick={onDeleteSelected} type="button">
+        <button className="danger-button" disabled={!canEdit || selectedKeywordIds.size === 0} onClick={onDeleteSelected} type="button">
           Xóa key đã chọn
         </button>
       </div>
@@ -1606,6 +4814,7 @@ function KeywordTable({
                 <input
                   checked={selectedKeywordIds.has(keyword.id)}
                   onChange={() => onToggleSelect(keyword.id)}
+                  disabled={!canEdit}
                   type="checkbox"
                   aria-label={`Chọn keyword ${keyword.term}`}
                 />
@@ -1623,7 +4832,7 @@ function KeywordTable({
                   </button>
                   <span className={`keyword-type-badge type-${keywordTypeOf(keyword)}`}>{keywordTypeOf(keyword)}</span>
                   <strong>{keyword.term}</strong>
-                  {childTypeOf(keyword) && (
+                  {canEdit && childTypeOf(keyword) && (
                     <button className="develop-keyword-button" onClick={() => onDevelopKeyword(keyword)} type="button" title={`Phát triển lên keyword loại ${childTypeOf(keyword)}`}>
                       +
                     </button>
@@ -1655,11 +4864,13 @@ function ArticleTable({
   users,
   onUpdateKeyword,
   onSendTask,
+  canEdit,
 }: {
   keywords: Keyword[]
   users: User[]
   onUpdateKeyword: (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleAssigneeId' | 'articleUrl'>>) => void
   onSendTask: (keywordId: string) => void
+  canEdit: boolean
 }) {
   if (keywords.length === 0) {
     return <EmptyState title="Chưa có keyword" text="Thêm keyword ở module Quản lý Keyword, danh sách bài viết sẽ tự động đồng bộ tại đây." />
@@ -1689,6 +4900,7 @@ function ArticleTable({
                 <select
                   value={keyword.articleType ?? 'Informational Content'}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleType: event.target.value as ArticleType })}
+                  disabled={!canEdit}
                 >
                   {articleTypes.map((type) => (
                     <option key={type}>{type}</option>
@@ -1699,6 +4911,7 @@ function ArticleTable({
                 <select
                   value={keyword.articleAssigneeId ?? ''}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleAssigneeId: event.target.value })}
+                  disabled={!canEdit}
                 >
                   <option value="">Chưa chọn</option>
                   {users.map((user) => (
@@ -1709,7 +4922,7 @@ function ArticleTable({
                 </select>
               </td>
               <td>
-                <button className="secondary-button" type="button" onClick={() => onSendTask(keyword.id)}>
+                <button className="secondary-button" type="button" onClick={() => onSendTask(keyword.id)} disabled={!canEdit}>
                   {keyword.articleTaskId ? 'Phân việc lại' : 'Gửi Task'}
                 </button>
               </td>
@@ -1718,6 +4931,7 @@ function ArticleTable({
                   value={keyword.articleUrl ?? ''}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleUrl: event.target.value })}
                   placeholder="https://..."
+                  disabled={!canEdit}
                 />
               </td>
             </tr>
@@ -1771,17 +4985,156 @@ function KeywordBuilderModal({
   )
 }
 
+function EmployeeOverview({
+  user,
+  tasks,
+  projects,
+  pendingTasks,
+  activeTasks,
+  reviewTasks,
+  approvedTasks,
+  taskSalary,
+  monthlySalaryRate,
+  monthlySalaryEstimate,
+  onCheckIn,
+  onCheckOut,
+  onAcceptTask,
+  onRejectTask,
+  onSubmitTask,
+}: {
+  user: User
+  tasks: Task[]
+  projects: Project[]
+  pendingTasks: Task[]
+  activeTasks: Task[]
+  reviewTasks: Task[]
+  approvedTasks: Task[]
+  taskSalary: number
+  monthlySalaryRate: number
+  monthlySalaryEstimate: number
+  onCheckIn: () => void
+  onCheckOut: () => void
+  onAcceptTask: (taskId: string) => void
+  onRejectTask: (taskId: string) => void
+  onSubmitTask: (taskId: string) => void
+}) {
+  const salaryType = user.salaryType ?? 'Lương theo tháng'
+  const totalWorkedMs = (user.totalWorkedMs ?? 0) + (user.checkedInAt ? Math.max(0, Date.now() - new Date(user.checkedInAt).getTime()) : 0)
+  const workedHours = totalWorkedMs / 3600000
+  const hourlySalary = salaryType === 'Lương theo giờ' ? workedHours * (user.salaryAmount ?? 0) : 0
+
+  return (
+    <>
+      <div className="metric-grid">
+        <Metric title="Task chờ nhận" value={pendingTasks.length} note="Cần phản hồi" />
+        <Metric title="Đang xử lý" value={activeTasks.length} note="Đang làm hoặc cần chỉnh sửa" />
+        <Metric title="Chờ admin duyệt" value={reviewTasks.length} note="Đã gửi hoàn thành" />
+        <Metric title="Đã tính công" value={approvedTasks.length} note="Task hoàn thành" />
+      </div>
+
+      <div className="dashboard-grid">
+        {salaryType === 'Lương theo giờ' && (
+          <Panel title="Check-in làm việc" action="Lương theo giờ">
+            <div className="employee-paybox">
+              <Detail label="Trạng thái" value={user.checkedInAt ? 'Đang làm việc' : 'Chưa check-in'} />
+              <Detail label="Phiên hiện tại" value={formatWorkDuration(user.checkedInAt)} />
+              <Detail label="Tổng giờ ghi nhận" value={`${workedHours.toFixed(2)} giờ`} />
+              <Detail label="Lương tạm tính" value={currency.format(hourlySalary)} />
+              <div className="panel-actions">
+                <button className="secondary-button" type="button" onClick={onCheckIn} disabled={Boolean(user.checkedInAt)}>
+                  Check-in
+                </button>
+                <button className="danger-button" type="button" onClick={onCheckOut} disabled={!user.checkedInAt}>
+                  Check-out
+                </button>
+              </div>
+            </div>
+          </Panel>
+        )}
+
+        {salaryType === 'Lương theo task' && (
+          <Panel title="Lương theo task" action="Tính theo task đã duyệt">
+            <div className="employee-paybox">
+              <Detail label="Đơn giá task" value={currency.format(user.salaryAmount ?? 0)} />
+              <Detail label="Task đã được admin xác nhận" value={`${approvedTasks.length} task`} />
+              <Detail label="Lương tạm tính" value={currency.format(taskSalary)} />
+              <Detail label="Task đang chờ duyệt" value={`${reviewTasks.length} task`} />
+            </div>
+          </Panel>
+        )}
+
+        {salaryType === 'Lương theo tháng' && (
+          <Panel title="Lương theo tháng" action="Theo tiến độ tháng hiện tại">
+            <div className="employee-paybox">
+              <Detail label="Lương tháng" value={currency.format(user.salaryAmount ?? 0)} />
+              <Detail label="Tiến độ task tháng" value={pct(monthlySalaryRate)} />
+              <Detail label="Lương tạm tính" value={currency.format(monthlySalaryEstimate)} />
+              <Detail label="Cách tính" value="Task được giao trong tháng và đã được admin xác nhận" />
+            </div>
+          </Panel>
+        )}
+
+        <Panel title="Thông báo task" action={`${tasks.length} task được giao`}>
+          {tasks.length === 0 ? (
+            <EmptyState title="Chưa có task được giao" text="Khi admin phân công, task sẽ xuất hiện tại đây để nhận hoặc từ chối." />
+          ) : (
+            <div className="employee-task-list">
+              {tasks.map((task) => (
+                <article className={`employee-task-card status-${taskStatusOf(task).replace(/\s+/g, '-').toLowerCase()}`} key={task.id}>
+                  <div>
+                    <strong>{task.title}</strong>
+                    <span>{projects.find((project) => project.id === task.projectId)?.name ?? 'Dự án đã xóa'}</span>
+                    <small>Giao: {formatDateTime(task.assignedAt)} · Hạn: {formatDateTime(taskDeadline(task))}</small>
+                    {task.rejectionReason && <small>Từ chối: {task.rejectionReason}</small>}
+                    {task.revisionNote && <small>Cần chỉnh sửa: {task.revisionNote}</small>}
+                  </div>
+                  <div className="employee-task-actions">
+                    <span className="task-status-badge">{taskStatusOf(task)}</span>
+                    {taskStatusOf(task) === 'Chờ nhận' && (
+                      <>
+                        <button className="secondary-button" type="button" onClick={() => onAcceptTask(task.id)}>
+                          Nhận task
+                        </button>
+                        <button className="danger-button" type="button" onClick={() => onRejectTask(task.id)}>
+                          Từ chối
+                        </button>
+                      </>
+                    )}
+                    {['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task)) && (
+                      <button className="secondary-button" type="button" onClick={() => onSubmitTask(task.id)}>
+                        Gửi hoàn thành
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+    </>
+  )
+}
+
 function TaskTable({
   tasks,
   users,
   projects,
   onStatus,
+  onApprove,
+  onRevision,
+  onReassign,
+  canEdit,
   compact,
 }: {
   tasks: Task[]
   users: User[]
   projects: Project[]
   onStatus: (taskId: string, status: TaskStatus) => void
+  onApprove: (taskId: string) => void
+  onRevision: (taskId: string) => void
+  onReassign: (taskId: string, assigneeId: string) => void
+  canEdit: boolean
   compact?: boolean
 }) {
   if (tasks.length === 0) {
@@ -1796,8 +5149,10 @@ function TaskTable({
             <th>Công việc</th>
             {!compact && <th>Dự án</th>}
             <th>Nhân sự</th>
-            <th>Hạn hoàn thành</th>
+            <th>Thời gian giao</th>
+            <th>Yêu cầu hoàn thành</th>
             <th>Trạng thái</th>
+            {canEdit && <th>Tác vụ</th>}
           </tr>
         </thead>
         <tbody>
@@ -1805,15 +5160,44 @@ function TaskTable({
             <tr key={task.id}>
               <td>{task.title}</td>
               {!compact && <td>{projects.find((project) => project.id === task.projectId)?.name}</td>}
-              <td>{users.find((user) => user.id === task.assigneeId)?.name ?? 'Chưa gán'}</td>
-              <td>{field(task.dueDate)}</td>
               <td>
-                <select className="status-select" value={task.status} onChange={(event) => onStatus(task.id, event.target.value as TaskStatus)}>
-                  <option>Cần làm</option>
-                  <option>Đang làm</option>
-                  <option>Hoàn thành</option>
+                <select
+                  className="status-select"
+                  value={task.assigneeId}
+                  onChange={(event) => onReassign(task.id, event.target.value)}
+                  disabled={!canEdit}
+                >
+                  <option value="">Chưa gán</option>
+                  {users.map((user) => (
+                    <option value={user.id} key={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
                 </select>
               </td>
+              <td>{formatDateTime(task.assignedAt)}</td>
+              <td>{formatDateTime(taskDeadline(task))}</td>
+              <td>
+                <select className="status-select" value={taskStatusOf(task)} onChange={(event) => onStatus(task.id, event.target.value as TaskStatus)} disabled={!canEdit}>
+                  {editableTaskStatuses.map((status) => (
+                    <option key={status}>{status}</option>
+                  ))}
+                </select>
+                {task.rejectionReason && <small className="task-note">Từ chối: {task.rejectionReason}</small>}
+                {task.revisionNote && <small className="task-note revision">Cần sửa: {task.revisionNote}</small>}
+              </td>
+              {canEdit && (
+                <td>
+                  <div className="table-actions">
+                    <button className="secondary-button" type="button" onClick={() => onApprove(task.id)} disabled={taskStatusOf(task) !== 'Chờ duyệt'}>
+                      Xác nhận
+                    </button>
+                    <button className="danger-button" type="button" onClick={() => onRevision(task.id)} disabled={taskStatusOf(task) !== 'Chờ duyệt'}>
+                      Cần sửa
+                    </button>
+                  </div>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -1827,11 +5211,13 @@ function TransactionTable({
   projects,
   users,
   onEdit,
+  onSettle,
 }: {
   transactions: Transaction[]
   projects: Project[]
   users: User[]
   onEdit?: (transactionId: string) => void
+  onSettle?: (transactionId: string) => void
 }) {
   return (
     <div className="table-wrap">
@@ -1839,30 +5225,39 @@ function TransactionTable({
         <thead>
           <tr>
             <th>Ngày chi</th>
-            <th>Ngày quyết toán</th>
+            <th>Ngày giải ngân</th>
             <th>Phạm vi</th>
             <th>Dự án</th>
             <th>Người chi</th>
             <th>Nội dung</th>
             <th>Số tiền</th>
-            {onEdit && <th>Sửa</th>}
+            {(onEdit || onSettle) && <th>Thao tác</th>}
           </tr>
         </thead>
         <tbody>
           {transactions.map((transaction) => (
             <tr key={transaction.id}>
-              <td>{field(transaction.date)}</td>
-              <td>{field(transaction.settlementDate, 'Chưa quyết toán')}</td>
+              <td>{formatDateOnly(transaction.date)}</td>
+              <td>{transaction.settlementDate ? formatDateOnly(transaction.settlementDate) : 'Công nợ'}</td>
               <td>{transaction.scope ?? 'Chi riêng dự án'}</td>
               <td>{transaction.scope === 'Chi chung dự án' ? 'Chi chung' : projects.find((project) => project.id === transaction.projectId)?.name ?? 'Dự án đã xóa'}</td>
               <td>{users.find((user) => user.id === transaction.spenderId)?.name ?? 'Chưa chọn'}</td>
               <td>{transaction.label}</td>
               <td>{currency.format(transaction.amount)}</td>
-              {onEdit && (
+              {(onEdit || onSettle) && (
                 <td>
-                  <button className="secondary-button" type="button" onClick={() => onEdit(transaction.id)}>
-                    Sửa
-                  </button>
+                  <div className="table-actions">
+                    {onSettle && (
+                      <button className="secondary-button" type="button" onClick={() => onSettle(transaction.id)} disabled={Boolean(transaction.settlementDate)}>
+                        Giải ngân
+                      </button>
+                    )}
+                    {onEdit && (
+                      <button className="secondary-button" type="button" onClick={() => onEdit(transaction.id)}>
+                        Sửa
+                      </button>
+                    )}
+                  </div>
                 </td>
               )}
             </tr>
@@ -1892,7 +5287,7 @@ function ActivityLogTable({ logs }: { logs: ActivityLog[] }) {
         <tbody>
           {logs.map((log) => (
             <tr key={log.id}>
-              <td>{new Date(log.at).toLocaleString('vi-VN')}</td>
+              <td>{formatDateTime(log.at)}</td>
               <td>{log.actorName}</td>
               <td>{log.action}</td>
               <td>{log.target}</td>
@@ -1909,11 +5304,13 @@ function UserTable({
   currentUserId,
   onEdit,
   onDelete,
+  canEdit,
 }: {
   users: User[]
   currentUserId: string
   onEdit: (userId: string) => void
   onDelete: (userId: string) => void
+  canEdit: boolean
 }) {
   return (
     <div className="table-wrap">
@@ -1938,16 +5335,16 @@ function UserTable({
               <td>{user.role}</td>
               <td>{user.salaryType ?? 'Chưa cập nhật'}</td>
               <td>{currency.format(user.salaryAmount ?? 0)}</td>
-              <td>{user.permissions.join(', ') || 'Chỉ xem'}</td>
+              <td>{formatPermissionList(user.permissions)}</td>
               <td>
                 <span className="pill income">{user.active ? 'Hoạt động' : 'Khóa'}</span>
               </td>
               <td>
                 <div className="table-actions">
-                  <button className="secondary-button" type="button" onClick={() => onEdit(user.id)}>
+                  <button className="secondary-button" type="button" onClick={() => onEdit(user.id)} disabled={!canEdit}>
                     Sửa
                   </button>
-                  <button className="danger-button" disabled={user.id === currentUserId} type="button" onClick={() => onDelete(user.id)}>
+                  <button className="danger-button" disabled={!canEdit || user.id === currentUserId} type="button" onClick={() => onDelete(user.id)}>
                     Xóa
                   </button>
                 </div>
@@ -1961,3 +5358,4 @@ function UserTable({
 }
 
 export default App
+
