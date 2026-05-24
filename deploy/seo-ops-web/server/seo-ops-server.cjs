@@ -4,11 +4,10 @@ const path = require('path')
 
 const rootDir = path.resolve(__dirname, '..')
 const distDir = path.join(rootDir, 'dist')
+const packagedPublicDir = path.join(rootDir, 'deploy', 'seo-ops-web')
 const publicDir = process.env.SEO_OPS_PUBLIC_DIR
   ? path.resolve(process.env.SEO_OPS_PUBLIC_DIR)
-  : fs.existsSync(path.join(distDir, 'index.html'))
-    ? distDir
-    : rootDir
+  : choosePublicDir()
 const dbDir = process.env.SEO_OPS_DB_DIR ? path.resolve(process.env.SEO_OPS_DB_DIR) : path.join(rootDir, 'db')
 const dbPath = path.join(dbDir, 'seo-ops-data.json')
 const seedPath = path.join(publicDir, 'seo-ops-seed.json')
@@ -34,6 +33,20 @@ function normalizeBasePath(value) {
   const raw = String(value || '/').trim()
   if (!raw || raw === '/') return ''
   return `/${raw.replace(/^\/+|\/+$/g, '')}`
+}
+
+function hasBuiltFrontend(dir) {
+  const indexPath = path.join(dir, 'index.html')
+  if (!fs.existsSync(indexPath)) return false
+  const html = fs.readFileSync(indexPath, 'utf8')
+  return html.includes('/assets/') && !html.includes('/src/main.tsx')
+}
+
+function choosePublicDir() {
+  if (hasBuiltFrontend(distDir)) return distDir
+  if (hasBuiltFrontend(rootDir)) return rootDir
+  if (hasBuiltFrontend(packagedPublicDir)) return packagedPublicDir
+  return rootDir
 }
 
 function stripBasePath(pathname) {
@@ -127,7 +140,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (scopedPathname === '/api/health') {
-      sendJson(res, 200, { ok: true, dbPath, storage: 'json-db', basePath: basePath || '/' })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/' })
       return
     }
 
