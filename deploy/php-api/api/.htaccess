@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteRule ^data$ data.php [L,QSA]
+RewriteRule ^health$ health.php [L,QSA]

@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import * as XLSX from 'xlsx'
 import './App.css'
 
-type View = 'overview' | 'projects' | 'entities' | 'backlinks' | 'keywords' | 'articles' | 'tasks' | 'finance' | 'people' | 'progress' | 'system'
+type View = 'overview' | 'projects' | 'entities' | 'backlinks' | 'keywords' | 'articles' | 'tasks' | 'knowledge' | 'finance' | 'people' | 'progress' | 'system'
 type ProjectStatus = 'Đang SEO' | 'Tạm dừng' | 'Hoàn thành'
 type TaskStatus = 'Cần làm' | 'Chờ nhận' | 'Đang làm' | 'Cần chỉnh sửa' | 'Chờ duyệt' | 'Từ chối' | 'Hoàn thành'
 type TransactionType = 'Thu' | 'Chi'
@@ -17,6 +17,7 @@ type PermissionAction = 'view' | 'edit'
 type FinanceFilter = 'all' | 'general' | 'project'
 type EntityTab = 'overview' | 'profile' | 'platforms' | 'links' | 'checklist' | 'schema' | 'check' | 'reports'
 type BacklinkTab = 'overview' | 'sources' | 'links' | 'plans' | 'anchors' | 'check' | 'costs' | 'reports'
+type KnowledgeTab = 'all' | 'web-log' | 'issues' | 'guides' | 'sops' | 'technical' | 'files' | 'archive'
 type EntityType = 'Brand' | 'Company' | 'Local Business' | 'Person' | 'Product' | 'Service' | 'Website'
 type EntityStatus = 'Đang dùng' | 'Tạm dừng' | 'Hoàn thành'
 type EntityPlatformGroup = 'Social' | 'Profile' | 'Directory' | 'Web 2.0' | 'Forum' | 'Blog' | 'Map' | 'Review'
@@ -41,6 +42,20 @@ type BacklinkPaymentStatus = 'Chưa thanh toán' | 'Đã thanh toán' | 'Hoàn t
 type BacklinkSourceStatus = 'Đang dùng' | 'Tạm dừng' | 'Blacklist' | 'Cần kiểm tra lại'
 type BacklinkPlanStatus = 'Chưa làm' | 'Đang làm' | 'Hoàn thành' | 'Hoãn'
 type BacklinkCostType = 'Mua bài' | 'Thuê viết bài' | 'Phí duy trì' | 'Phí index'
+type InternalNoteType =
+  | 'Chỉnh sửa giao diện'
+  | 'Chỉnh sửa nội dung'
+  | 'Chỉnh sửa SEO'
+  | 'Chỉnh sửa code'
+  | 'Chỉnh sửa database'
+  | 'Lỗi website'
+  | 'Hướng dẫn thao tác'
+  | 'Quy trình nội bộ'
+  | 'Cấu hình hệ thống'
+  | 'Ý tưởng nâng cấp'
+type InternalNoteStatus = 'Nháp' | 'Chờ duyệt' | 'Đã duyệt' | 'Đang xử lý' | 'Hoàn thành' | 'Cần kiểm tra lại' | 'Lưu trữ' | 'Hủy'
+type InternalNotePriority = 'Thấp' | 'Trung bình' | 'Cao' | 'Khẩn cấp'
+type InternalNoteVisibility = 'Nội bộ' | 'Riêng tư' | 'Cho khách xem'
 type ArticleType =
   | 'Informational Content'
   | 'Commercial Investigation / Review Content'
@@ -53,6 +68,27 @@ type AnalyticsSettings = {
   apiEndpoint: string
   accessToken: string
   lastSyncAt?: string
+}
+
+type WordPressSettings = {
+  siteUrl: string
+  connectorEndpoint: string
+  apiKey: string
+  lastConnectedAt?: string
+  lastSyncAt?: string
+}
+
+type WordPressContentItem = {
+  id?: number
+  type?: string
+  title?: string
+  url?: string
+  path?: string
+  slug?: string
+  seo?: {
+    rankMathFocusKeyword?: string
+    yoastFocusKeyword?: string
+  }
 }
 
 type AnalyticsPoint = {
@@ -79,6 +115,7 @@ type Project = {
   ownerId: string
   deletedAt?: string
   analytics?: AnalyticsSettings
+  wordpress?: WordPressSettings
 }
 
 type Keyword = {
@@ -97,6 +134,7 @@ type Keyword = {
   organicTraffic: number
   ctr: number
   articleType?: ArticleType
+  articleTitle?: string
   articleAssigneeId?: string
   articleUrl?: string
   articleTaskId?: string
@@ -301,6 +339,76 @@ type SeoBacklinkCost = {
   note: string
 }
 
+type InternalNote = {
+  id: string
+  projectId: string
+  website: string
+  title: string
+  noteType: InternalNoteType
+  category: string
+  relatedUrl: string
+  affectedArea: string
+  problemDescription: string
+  content: string
+  reason: string
+  priority: InternalNotePriority
+  status: InternalNoteStatus
+  visibility: InternalNoteVisibility
+  requestedBy: string
+  assignedTo: string
+  createdBy: string
+  approvedBy?: string
+  approvedAt?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt: string
+  tags: string[]
+  extraNote: string
+  version: number
+  archivedAt?: string
+  deletedAt?: string
+}
+
+type InternalNoteTag = {
+  id: string
+  name: string
+  color: string
+  createdAt: string
+  updatedAt: string
+}
+
+type InternalNoteFile = {
+  id: string
+  noteId: string
+  fileName: string
+  fileUrl: string
+  fileType: string
+  fileSize: number
+  uploadedBy: string
+  createdAt: string
+}
+
+type InternalNoteVersion = {
+  id: string
+  noteId: string
+  versionNumber: number
+  title: string
+  content: string
+  changedBy: string
+  changeNote: string
+  createdAt: string
+}
+
+type InternalNoteComment = {
+  id: string
+  noteId: string
+  parentId?: string
+  content: string
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
 type User = {
   id: string
   name: string
@@ -351,6 +459,11 @@ type AppData = {
   seoBacklinks?: SeoBacklink[]
   seoBacklinkPlans?: SeoBacklinkPlan[]
   seoBacklinkCosts?: SeoBacklinkCost[]
+  internalNotes?: InternalNote[]
+  internalNoteTags?: InternalNoteTag[]
+  internalNoteFiles?: InternalNoteFile[]
+  internalNoteVersions?: InternalNoteVersion[]
+  internalNoteComments?: InternalNoteComment[]
   analyticsReports?: AnalyticsPoint[]
   notifications?: NotificationItem[]
   activityLogs?: ActivityLog[]
@@ -361,7 +474,7 @@ const entityCredentialKey = 'seo-demo-entity-link-credentials'
 const appVersion = '1.0.0'
 const appTimeZone = 'Asia/Bangkok'
 const appUtcOffsetLabel = 'UTC+7'
-const permissions = ['Dự án', 'Tài chính', 'Nhân sự', 'Tiến độ', 'Hệ thống']
+const permissions = ['Dự án', 'Ghi chú', 'Tài chính', 'Nhân sự', 'Tiến độ', 'Hệ thống']
 const permissionActions: { value: PermissionAction; label: string }[] = [
   { value: 'view', label: 'Xem' },
   { value: 'edit', label: 'Chỉnh sửa' },
@@ -398,6 +511,53 @@ const backlinkTabs: { id: BacklinkTab; label: string }[] = [
   { id: 'check', label: 'Check Backlink' },
   { id: 'costs', label: 'Chi phí Backlink' },
   { id: 'reports', label: 'Báo cáo Backlink' },
+]
+const knowledgeTabs: { id: KnowledgeTab; label: string }[] = [
+  { id: 'all', label: 'Tất cả ghi chú' },
+  { id: 'web-log', label: 'Nhật ký chỉnh sửa Web' },
+  { id: 'issues', label: 'Lỗi & cách xử lý' },
+  { id: 'guides', label: 'Hướng dẫn nội bộ' },
+  { id: 'sops', label: 'Quy trình thao tác' },
+  { id: 'technical', label: 'Tài liệu kỹ thuật' },
+  { id: 'files', label: 'File đính kèm' },
+  { id: 'archive', label: 'Thùng rác / lưu trữ' },
+]
+const internalNoteTypes: InternalNoteType[] = [
+  'Chỉnh sửa giao diện',
+  'Chỉnh sửa nội dung',
+  'Chỉnh sửa SEO',
+  'Chỉnh sửa code',
+  'Chỉnh sửa database',
+  'Lỗi website',
+  'Hướng dẫn thao tác',
+  'Quy trình nội bộ',
+  'Cấu hình hệ thống',
+  'Ý tưởng nâng cấp',
+]
+const internalNoteStatuses: InternalNoteStatus[] = ['Nháp', 'Chờ duyệt', 'Đã duyệt', 'Đang xử lý', 'Hoàn thành', 'Cần kiểm tra lại', 'Lưu trữ', 'Hủy']
+const internalNotePriorities: InternalNotePriority[] = ['Thấp', 'Trung bình', 'Cao', 'Khẩn cấp']
+const internalNoteVisibilityOptions: InternalNoteVisibility[] = ['Nội bộ', 'Riêng tư', 'Cho khách xem']
+const internalNoteCategories = ['SEO', 'Dev', 'Content', 'Admin', 'CSKH', 'Thiết kế', 'Vận hành', 'Kỹ thuật']
+const suggestedInternalTags = [
+  'homepage',
+  'product-page',
+  'blog',
+  'checkout',
+  'admin',
+  'title',
+  'meta',
+  'schema',
+  'backlink',
+  'entity',
+  'index',
+  'sitemap',
+  'frontend',
+  'backend',
+  'database',
+  'API',
+  'deploy',
+  'tracking',
+  'backup',
 ]
 const entityTypes: EntityType[] = ['Brand', 'Company', 'Local Business', 'Person', 'Product', 'Service', 'Website']
 const entityStatuses: EntityStatus[] = ['Đang dùng', 'Tạm dừng', 'Hoàn thành']
@@ -449,6 +609,12 @@ const emptyAnalyticsSettings: AnalyticsSettings = {
   measurementId: '',
   apiEndpoint: '',
   accessToken: '',
+}
+
+const emptyWordPressSettings: WordPressSettings = {
+  siteUrl: '',
+  connectorEndpoint: '',
+  apiKey: '',
 }
 
 const initialData: AppData = {
@@ -538,6 +704,7 @@ const initialData: AppData = {
       organicTraffic: 390,
       ctr: 3.28,
       articleType: 'Commercial Investigation / Review Content',
+      articleTitle: 'Thiết kế nội thất chung cư trọn gói',
       articleAssigneeId: 'u3',
       articleUrl: '',
     },
@@ -557,6 +724,7 @@ const initialData: AppData = {
       organicTraffic: 304,
       ctr: 4.34,
       articleType: 'Transactional Content',
+      articleTitle: 'Báo giá thi công nội thất mới nhất',
       articleAssigneeId: 'u3',
       articleUrl: '',
     },
@@ -575,6 +743,7 @@ const initialData: AppData = {
       organicTraffic: 198,
       ctr: 6.36,
       articleType: 'Category Hub',
+      articleTitle: 'Nha khoa quận 1 uy tín',
       articleAssigneeId: 'u2',
       articleUrl: '',
     },
@@ -803,6 +972,101 @@ const initialData: AppData = {
   ],
   seoBacklinkPlans: [],
   seoBacklinkCosts: [],
+  internalNotes: [
+    {
+      id: 'in-1',
+      projectId: 'p1',
+      website: 'angia-decor.vn',
+      title: 'Sửa banner trang chủ An Gia Decor',
+      noteType: 'Chỉnh sửa giao diện',
+      category: 'Dev',
+      relatedUrl: '/',
+      affectedArea: 'Trang chủ',
+      problemDescription: 'Banner cũ chưa nhấn mạnh dịch vụ thiết kế nội thất trọn gói và hiển thị chưa tốt trên mobile.',
+      content: 'Thay banner mới, đổi CTA, căn lại kích thước ảnh mobile và kiểm tra khoảng cách giữa hero với khối dịch vụ.',
+      reason: 'Tăng nhận diện thương hiệu và làm giao diện đúng định vị ngành nội thất.',
+      priority: 'Cao',
+      status: 'Hoàn thành',
+      visibility: 'Nội bộ',
+      requestedBy: 'u1',
+      assignedTo: 'u2',
+      createdBy: 'u2',
+      approvedBy: 'u1',
+      approvedAt: '2026-05-18T09:00:00+07:00',
+      completedAt: '2026-05-18T10:30:00+07:00',
+      createdAt: '2026-05-18T08:30:00+07:00',
+      updatedAt: '2026-05-18T10:30:00+07:00',
+      tags: ['homepage', 'banner', 'frontend'],
+      extraNote: 'Đã kiểm tra desktop và mobile.',
+      version: 1,
+    },
+    {
+      id: 'in-2',
+      projectId: 'p1',
+      website: 'angia-decor.vn',
+      title: 'Hướng dẫn thêm backlink vào dự án SEO',
+      noteType: 'Hướng dẫn thao tác',
+      category: 'SEO',
+      relatedUrl: '',
+      affectedArea: 'Module Backlink',
+      problemDescription: '',
+      content: '1. Vào Dự án SEO\n2. Chọn module Backlink\n3. Bấm Thêm backlink\n4. Nhập URL nguồn, URL đích, anchor text\n5. Chọn loại link\n6. Bấm lưu\n7. Bấm check link sống\n8. Gửi Leader duyệt',
+      reason: 'Chuẩn hóa thao tác nhập backlink cho nhân viên SEO.',
+      priority: 'Trung bình',
+      status: 'Đã duyệt',
+      visibility: 'Nội bộ',
+      requestedBy: 'u2',
+      assignedTo: 'u3',
+      createdBy: 'u2',
+      approvedBy: 'u1',
+      approvedAt: '2026-05-17T15:00:00+07:00',
+      completedAt: '',
+      createdAt: '2026-05-17T14:30:00+07:00',
+      updatedAt: '2026-05-17T15:00:00+07:00',
+      tags: ['backlink', 'hướng-dẫn', 'quy-trình'],
+      extraNote: 'Checklist: URL nguồn đúng, URL đích đúng, anchor đúng, Leader đã duyệt.',
+      version: 1,
+    },
+  ],
+  internalNoteTags: [
+    { id: 'tag-homepage', name: 'homepage', color: '#2563eb', createdAt: '2026-05-17T14:00:00+07:00', updatedAt: '2026-05-17T14:00:00+07:00' },
+    { id: 'tag-schema', name: 'schema', color: '#0f766e', createdAt: '2026-05-17T14:00:00+07:00', updatedAt: '2026-05-17T14:00:00+07:00' },
+    { id: 'tag-backlink', name: 'backlink', color: '#d97706', createdAt: '2026-05-17T14:00:00+07:00', updatedAt: '2026-05-17T14:00:00+07:00' },
+  ],
+  internalNoteFiles: [
+    {
+      id: 'inf-1',
+      noteId: 'in-1',
+      fileName: 'banner-home-before-after.png',
+      fileUrl: 'https://drive.google.com/',
+      fileType: 'Ảnh trước/sau',
+      fileSize: 0,
+      uploadedBy: 'u2',
+      createdAt: '2026-05-18T10:35:00+07:00',
+    },
+  ],
+  internalNoteVersions: [
+    {
+      id: 'inv-1',
+      noteId: 'in-2',
+      versionNumber: 1,
+      title: 'Hướng dẫn thêm backlink vào dự án SEO',
+      content: 'Tạo bản hướng dẫn đầu tiên cho nhân viên SEO nhập backlink.',
+      changedBy: 'u2',
+      changeNote: 'Khởi tạo tài liệu',
+      createdAt: '2026-05-17T14:30:00+07:00',
+    },
+  ],
+  internalNoteComments: [
+    {
+      id: 'inc-1',
+      noteId: 'in-1',
+      content: 'Sau khi sửa cần kiểm tra lại CLS trên mobile trong lần audit tiếp theo.',
+      createdBy: 'u1',
+      createdAt: '2026-05-18T11:00:00+07:00',
+      updatedAt: '2026-05-18T11:00:00+07:00',
+    },
+  ],
 }
 
 const currency = new Intl.NumberFormat('vi-VN', {
@@ -1041,6 +1305,38 @@ const analyticsSettingsOf = (project?: Project): AnalyticsSettings => ({
   ...emptyAnalyticsSettings,
   ...(project?.analytics ?? {}),
 })
+const wordpressSettingsOf = (project?: Project): WordPressSettings => ({
+  ...emptyWordPressSettings,
+  ...(project?.wordpress ?? {}),
+})
+const wordpressErrorMessage = async (response: Response) => {
+  let detail = ''
+  try {
+    const payload = await response.clone().json()
+    detail = payload?.message || payload?.error?.message || payload?.code || ''
+  } catch {
+    try {
+      detail = await response.clone().text()
+    } catch {
+      detail = ''
+    }
+  }
+  if (response.status === 401 || response.status === 403) return `API key không đúng hoặc plugin chặn quyền truy cập. HTTP ${response.status}${detail ? ` - ${detail}` : ''}`
+  if (response.status === 404) return 'Không tìm thấy endpoint. Kiểm tra Connector Endpoint có đúng dạng /wp-json/seo-ops/v1 và plugin SEO Ops đã kích hoạt chưa. HTTP 404'
+  if (response.status >= 500) return `WordPress/server đang lỗi khi xử lý request. HTTP ${response.status}${detail ? ` - ${detail}` : ''}`
+  return `WordPress trả về HTTP ${response.status}${detail ? ` - ${detail}` : ''}`
+}
+const formatFetchError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+    return 'Không gọi được WordPress. Thường do sai URL, website không bật HTTPS hợp lệ, CORS Allowed Origin chưa đúng, hoặc hosting chặn REST API.'
+  }
+  return message
+}
+const wordpressUrlWithKey = (endpoint: string, path: string, apiKey: string, params = '') => {
+  const separator = params ? `?${params}&` : '?'
+  return `${endpoint.replace(/\/$/, '')}/${path.replace(/^\//, '')}${separator}seo_ops_key=${encodeURIComponent(apiKey)}`
+}
 const analyticsWindowSize: Record<AnalyticsGranularity, number> = {
   day: 14,
   week: 8,
@@ -1103,11 +1399,12 @@ const normalizeAnalyticsRows = (payload: unknown, projectId: string, granularity
       pageViews?: number | string
       screenPageViews?: number | string
       engagementRate?: number | string
+      path?: string
       dimensionValues?: { value?: string }[]
       metricValues?: { value?: string }[]
     }
     const gaDate = record.dimensionValues?.[0]?.value
-    const rawDate = record.date ?? (gaDate?.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') || '')
+    const rawDate = record.date ?? (gaDate && /^\d{8}$/.test(gaDate) ? gaDate.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') : '')
     const date = rawDate || buildAnalyticsDate(index, granularity).toISOString().slice(0, 10)
     const metrics = record.metricValues ?? []
     const activeUsers = Number(record.activeUsers ?? metrics[0]?.value ?? 0)
@@ -1118,7 +1415,7 @@ const normalizeAnalyticsRows = (payload: unknown, projectId: string, granularity
       id: `${projectId}-${granularity}-${date}-${index}`,
       projectId,
       granularity,
-      label: record.label ?? formatAnalyticsDate(new Date(date), granularity),
+      label: record.label ?? record.path ?? formatAnalyticsDate(new Date(date), granularity),
       date,
       activeUsers,
       sessions,
@@ -1129,7 +1426,7 @@ const normalizeAnalyticsRows = (payload: unknown, projectId: string, granularity
 }
 const getViewFromHash = (): View => {
   const view = window.location.hash.replace('#', '')
-  return ['overview', 'projects', 'entities', 'backlinks', 'keywords', 'articles', 'tasks', 'finance', 'people', 'progress', 'system'].includes(view)
+  return ['overview', 'projects', 'entities', 'backlinks', 'keywords', 'articles', 'tasks', 'knowledge', 'finance', 'people', 'progress', 'system'].includes(view)
     ? (view as View)
     : 'overview'
 }
@@ -1139,6 +1436,7 @@ const setHashView = (view: View) => {
 
 const permissionForView = (view: View) => {
   if (['projects', 'entities', 'backlinks', 'keywords', 'articles', 'tasks'].includes(view)) return 'Dự án'
+  if (view === 'knowledge') return 'Ghi chú'
   if (view === 'finance') return 'Tài chính'
   if (view === 'people') return 'Nhân sự'
   if (view === 'progress') return 'Tiến độ'
@@ -1151,6 +1449,7 @@ const normalizeData = (data: AppData): AppData => ({
   projects: data.projects.map((project) => ({
     ...project,
     analytics: analyticsSettingsOf(project),
+    wordpress: wordpressSettingsOf(project),
   })),
   users: data.users.map((user) => ({
     ...user,
@@ -1165,6 +1464,7 @@ const normalizeData = (data: AppData): AppData => ({
     ...keyword,
     keywordType: keyword.keywordType ?? 'A',
     articleType: keyword.articleType ?? 'Informational Content',
+    articleTitle: keyword.articleTitle ?? '',
     articleAssigneeId: keyword.articleAssigneeId ?? '',
     articleUrl: keyword.articleUrl ?? '',
     articleTaskId: keyword.articleTaskId ?? '',
@@ -1221,11 +1521,43 @@ const normalizeData = (data: AppData): AppData => ({
   })),
   seoBacklinkPlans: data.seoBacklinkPlans ?? [],
   seoBacklinkCosts: data.seoBacklinkCosts ?? [],
+  internalNotes: (data.internalNotes ?? []).map((note) => ({
+    ...note,
+    website: note.website ?? data.projects.find((project) => project.id === note.projectId)?.website ?? '',
+    category: note.category ?? '',
+    relatedUrl: note.relatedUrl ?? '',
+    affectedArea: note.affectedArea ?? '',
+    problemDescription: note.problemDescription ?? '',
+    content: note.content ?? '',
+    reason: note.reason ?? '',
+    priority: note.priority ?? 'Trung bình',
+    status: note.status ?? 'Nháp',
+    visibility: note.visibility ?? 'Nội bộ',
+    requestedBy: note.requestedBy ?? '',
+    assignedTo: note.assignedTo ?? '',
+    createdBy: note.createdBy ?? '',
+    approvedBy: note.approvedBy ?? '',
+    approvedAt: note.approvedAt ?? '',
+    completedAt: note.completedAt ?? '',
+    createdAt: note.createdAt ?? appNowIso(),
+    updatedAt: note.updatedAt ?? note.createdAt ?? appNowIso(),
+    tags: note.tags ?? [],
+    extraNote: note.extraNote ?? '',
+    version: note.version ?? 1,
+  })),
+  internalNoteTags: data.internalNoteTags ?? [],
+  internalNoteFiles: data.internalNoteFiles ?? [],
+  internalNoteVersions: data.internalNoteVersions ?? [],
+  internalNoteComments: data.internalNoteComments ?? [],
   analyticsReports: data.analyticsReports ?? [],
   notifications: data.notifications ?? [],
   activityLogs: data.activityLogs ?? [],
 })
 
+const appBaseUrl = import.meta.env.BASE_URL || '/'
+const appUrl = (path: string) => `${appBaseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
+const seedDataUrl = appUrl('seo-ops-seed.json')
+const apiDataUrl = appUrl('api/data')
 const readStoredData = () => {
   const raw = localStorage.getItem(storageKey)
   return raw ? normalizeData(JSON.parse(raw)) : initialData
@@ -1233,23 +1565,54 @@ const readStoredData = () => {
 
 function useStoredData() {
   const [data, setData] = useState<AppData>(readStoredData)
+  const [apiEnabled, setApiEnabled] = useState(false)
 
-  const updateData = (next: AppData) => {
+  useEffect(() => {
+    fetch(apiDataUrl)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+      .then((remoteData) => {
+        const next = normalizeData(remoteData?.data ?? remoteData)
+        setData(next)
+        localStorage.setItem(storageKey, JSON.stringify(next))
+        setApiEnabled(true)
+      })
+      .catch(() => setApiEnabled(false))
+  }, [])
+
+  const syncRemoteData = useCallback((next: AppData) => {
+    fetch(apiDataUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    })
+      .then((response) => {
+        if (response.ok) setApiEnabled(true)
+      })
+      .catch(() => setApiEnabled(false))
+  }, [])
+
+  const updateData = useCallback((next: AppData) => {
     setData(next)
     localStorage.setItem(storageKey, JSON.stringify(next))
-  }
+    syncRemoteData(next)
+  }, [syncRemoteData])
 
-  const reloadData = () => {
+  const reloadData = useCallback(() => {
     const latest = readStoredData()
     setData(latest)
     return latest
-  }
+  }, [])
 
-  return [data, updateData, reloadData] as const
+  const importData = useCallback((next: AppData) => {
+    updateData(normalizeData(next))
+  }, [updateData])
+
+  return [data, updateData, reloadData, importData, apiEnabled] as const
 }
 
 function App() {
-  const [data, setData, reloadData] = useStoredData()
+  const [data, setData, reloadData, importData, apiEnabled] = useStoredData()
+  const wordpressFormRef = useRef<HTMLFormElement | null>(null)
   const [view, setView] = useState<View>(getViewFromHash)
   const [activeProjectId, setActiveProjectId] = useState(data.projects[0]?.id ?? '')
   const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem('seo-demo-current-user') || '')
@@ -1257,10 +1620,13 @@ function App() {
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null)
   const [keywordBuilder, setKeywordBuilder] = useState<Keyword | null>(null)
+  const [editingKeywordId, setEditingKeywordId] = useState<string | null>(null)
+  const [keywordFormType, setKeywordFormType] = useState<KeywordType>('A')
   const [collapsedKeywordIds, setCollapsedKeywordIds] = useState<Set<string>>(() => new Set())
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(() => new Set())
   const [analyticsGranularity, setAnalyticsGranularity] = useState<AnalyticsGranularity>('day')
   const [analyticsStatus, setAnalyticsStatus] = useState('')
+  const [wordpressStatus, setWordpressStatus] = useState('')
   const [financeFilter, setFinanceFilter] = useState<FinanceFilter>('all')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [entityTab, setEntityTab] = useState<EntityTab>('overview')
@@ -1268,10 +1634,31 @@ function App() {
   const [entityImportStatus, setEntityImportStatus] = useState('')
   const [selectedEntityLinkIds, setSelectedEntityLinkIds] = useState<Set<string>>(() => new Set())
   const [backlinkTab, setBacklinkTab] = useState<BacklinkTab>('overview')
+  const [knowledgeTab, setKnowledgeTab] = useState<KnowledgeTab>('all')
+  const [knowledgeSearch, setKnowledgeSearch] = useState('')
+  const [knowledgeProjectFilter, setKnowledgeProjectFilter] = useState('all')
+  const [knowledgeTypeFilter, setKnowledgeTypeFilter] = useState('all')
+  const [knowledgeStatusFilter, setKnowledgeStatusFilter] = useState('all')
+  const [knowledgePriorityFilter, setKnowledgePriorityFilter] = useState('all')
+  const [knowledgeTagFilter, setKnowledgeTagFilter] = useState('all')
+  const [editingInternalNoteId, setEditingInternalNoteId] = useState<string | null>(null)
   const [entityLinkCredential, setEntityLinkCredential] = useState<EntityLinkCredential>(() => {
     const raw = localStorage.getItem(entityCredentialKey)
     return raw ? JSON.parse(raw) : { loginWithGoogle: false, loginAccount: '', loginPassword: '' }
   })
+
+  useEffect(() => {
+    if (localStorage.getItem(storageKey)) return
+    fetch(seedDataUrl)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((backup) => {
+        const seededData = backup?.data ?? backup
+        if (seededData?.projects && !localStorage.getItem(storageKey)) {
+          importData(seededData)
+        }
+      })
+      .catch(() => undefined)
+  }, [importData])
 
   const activeProjects = data.projects.filter((project) => !project.deletedAt)
   const deletedProjects = data.projects.filter((project) => project.deletedAt)
@@ -1328,6 +1715,7 @@ function App() {
   const monthlySalaryRate = monthlyUserTasks.length ? (monthlyUserDone / monthlyUserTasks.length) * 100 : 0
   const monthlySalaryEstimate = ((currentUser?.salaryAmount ?? 0) * monthlySalaryRate) / 100
   const projectKeywords = data.keywords.filter((keyword) => keyword.projectId === activeProject?.id)
+  const editingKeyword = editingKeywordId ? projectKeywords.find((keyword) => keyword.id === editingKeywordId) : undefined
   const projectTransactions = data.transactions.filter((item) => item.projectId === activeProject?.id)
   const projectEntities = (data.seoEntities ?? []).filter((entity) => entity.projectId === activeProject?.id)
   const activeEntity = selectedEntityId === 'new' ? undefined : projectEntities.find((entity) => entity.id === selectedEntityId) ?? projectEntities[0]
@@ -1354,6 +1742,47 @@ function App() {
   const backlinkAverageScore = projectBacklinks.length
     ? projectBacklinks.reduce((sum, backlink) => sum + (backlink.backlinkScore || calculateBacklinkScore(backlink, backlinkSources.find((source) => source.id === backlink.sourceId))), 0) / projectBacklinks.length
     : 0
+  const internalNotes = data.internalNotes ?? []
+  const internalNoteFiles = data.internalNoteFiles ?? []
+  const internalNoteVersions = data.internalNoteVersions ?? []
+  const internalNoteComments = data.internalNoteComments ?? []
+  const internalNoteTags = data.internalNoteTags ?? []
+  const editingInternalNote = editingInternalNoteId ? internalNotes.find((note) => note.id === editingInternalNoteId) : undefined
+  const internalTagOptions = Array.from(new Set([...suggestedInternalTags, ...internalNoteTags.map((tag) => tag.name), ...internalNotes.flatMap((note) => note.tags)])).filter(Boolean)
+  const filteredInternalNotes = internalNotes.filter((note) => {
+    const tabMatches =
+      knowledgeTab === 'all' ||
+      (knowledgeTab === 'web-log' && ['Chỉnh sửa giao diện', 'Chỉnh sửa nội dung', 'Chỉnh sửa SEO', 'Chỉnh sửa code', 'Chỉnh sửa database'].includes(note.noteType)) ||
+      (knowledgeTab === 'issues' && note.noteType === 'Lỗi website') ||
+      (knowledgeTab === 'guides' && note.noteType === 'Hướng dẫn thao tác') ||
+      (knowledgeTab === 'sops' && note.noteType === 'Quy trình nội bộ') ||
+      (knowledgeTab === 'technical' && ['Chỉnh sửa code', 'Chỉnh sửa database', 'Cấu hình hệ thống'].includes(note.noteType)) ||
+      (knowledgeTab === 'files' && internalNoteFiles.some((file) => file.noteId === note.id)) ||
+      (knowledgeTab === 'archive' && (note.deletedAt || note.archivedAt || note.status === 'Lưu trữ'))
+    if (!tabMatches) return false
+    if (knowledgeTab !== 'archive' && (note.deletedAt || note.archivedAt || note.status === 'Lưu trữ')) return false
+    if (knowledgeProjectFilter !== 'all' && note.projectId !== knowledgeProjectFilter) return false
+    if (knowledgeTypeFilter !== 'all' && note.noteType !== knowledgeTypeFilter) return false
+    if (knowledgeStatusFilter !== 'all' && note.status !== knowledgeStatusFilter) return false
+    if (knowledgePriorityFilter !== 'all' && note.priority !== knowledgePriorityFilter) return false
+    if (knowledgeTagFilter !== 'all' && !note.tags.includes(knowledgeTagFilter)) return false
+    const query = knowledgeSearch.trim().toLowerCase()
+    if (!query) return true
+    const haystack = [
+      note.title,
+      note.website,
+      note.relatedUrl,
+      note.affectedArea,
+      note.problemDescription,
+      note.content,
+      note.reason,
+      note.extraNote,
+      note.tags.join(' '),
+      data.users.find((user) => user.id === note.assignedTo)?.name ?? '',
+      data.users.find((user) => user.id === note.createdBy)?.name ?? '',
+    ].join(' ').toLowerCase()
+    return haystack.includes(query)
+  })
   const projectAnalyticsPoints = (data.analyticsReports ?? []).filter(
     (point) => point.projectId === activeProject?.id && point.granularity === analyticsGranularity,
   )
@@ -1468,7 +1897,6 @@ function App() {
       ),
     }
     setData(nextData)
-    localStorage.setItem(storageKey, JSON.stringify(nextData))
     if (notification.projectId) setActiveProjectId(notification.projectId)
     if (notification.linkView && canView(notification.linkView)) goTo(notification.linkView)
     setNotificationsOpen(false)
@@ -1481,7 +1909,6 @@ function App() {
       ),
     }
     setData(nextData)
-    localStorage.setItem(storageKey, JSON.stringify(nextData))
   }
   const downloadBackup = () => {
     const backup = {
@@ -1498,6 +1925,23 @@ function App() {
     link.click()
     URL.revokeObjectURL(url)
     saveData(data, 'Tải backup dữ liệu', 'Hệ thống')
+  }
+  const importBackupFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      const payload = JSON.parse(await file.text())
+      const nextData = payload?.data ?? payload
+      if (!nextData?.projects || !nextData?.users) throw new Error('File không đúng định dạng backup SEO Ops.')
+      importData(nextData)
+      setTimeout(() => {
+        saveData(normalizeData(nextData), 'Import backup dữ liệu', file.name)
+      }, 0)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Không import được file backup.')
+    } finally {
+      event.target.value = ''
+    }
   }
   const goTo = (nextView: View) => {
     if (!canView(nextView)) return
@@ -1626,6 +2070,146 @@ function App() {
     setAnalyticsStatus('Đã lưu cấu hình Google Analytics cho dự án đang chọn.')
   }
 
+  const saveWordPressSettings = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+    const form = new FormData(event.currentTarget)
+    const settings: WordPressSettings = {
+      ...wordpressSettingsOf(activeProject),
+      siteUrl: String(form.get('siteUrl')).trim().replace(/\/$/, ''),
+      connectorEndpoint: String(form.get('connectorEndpoint')).trim().replace(/\/$/, ''),
+      apiKey: String(form.get('apiKey')).trim(),
+    }
+    const endpoint = settings.connectorEndpoint || (settings.siteUrl ? `${settings.siteUrl}/wp-json/seo-ops/v1` : '')
+    saveData({
+      ...data,
+      projects: data.projects.map((project) => (project.id === activeProject.id ? { ...project, wordpress: { ...settings, connectorEndpoint: endpoint } } : project)),
+    }, 'Cập nhật kết nối WordPress', activeProject.name)
+    setWordpressStatus('Đã lưu cấu hình WordPress Connector cho dự án đang chọn.')
+  }
+
+  const currentWordPressSettings = () => {
+    if (!activeProject) return { settings: emptyWordPressSettings, endpoint: '' }
+    const saved = wordpressSettingsOf(activeProject)
+    const formElement = wordpressFormRef.current
+    if (!formElement) {
+      const endpoint = saved.connectorEndpoint || (saved.siteUrl ? `${saved.siteUrl.replace(/\/$/, '')}/wp-json/seo-ops/v1` : '')
+      return { settings: saved, endpoint }
+    }
+    const form = new FormData(formElement)
+    const siteUrl = String(form.get('siteUrl') || saved.siteUrl).trim().replace(/\/$/, '')
+    const connectorEndpoint = String(form.get('connectorEndpoint') || saved.connectorEndpoint).trim().replace(/\/$/, '')
+    const apiKey = String(form.get('apiKey') || saved.apiKey).trim()
+    const endpoint = connectorEndpoint || (siteUrl ? `${siteUrl}/wp-json/seo-ops/v1` : '')
+    return {
+      settings: {
+        ...saved,
+        siteUrl,
+        connectorEndpoint: endpoint,
+        apiKey,
+      },
+      endpoint,
+    }
+  }
+
+  const testWordPressConnection = async () => {
+    if (!activeProject) return
+    const { settings, endpoint } = currentWordPressSettings()
+    if (!endpoint || !settings.apiKey) {
+      setWordpressStatus('Lỗi cấu hình: thiếu Connector Endpoint hoặc API key. Endpoint thường có dạng https://tenmien.vn/wp-json/seo-ops/v1.')
+      return
+    }
+    setWordpressStatus('Đang kiểm tra kết nối WordPress...')
+    try {
+      const response = await fetch(wordpressUrlWithKey(endpoint, 'site', settings.apiKey))
+      if (!response.ok) throw new Error(await wordpressErrorMessage(response))
+      const site = await response.json()
+      const propertyId = site?.siteKit?.propertyId ? String(site.siteKit.propertyId) : analyticsSettingsOf(activeProject).propertyId
+      const measurementId = site?.siteKit?.measurementId ? String(site.siteKit.measurementId) : analyticsSettingsOf(activeProject).measurementId
+      const connectedAt = appNowIso()
+      saveData({
+        ...data,
+        projects: data.projects.map((project) =>
+          project.id === activeProject.id
+            ? {
+                ...project,
+                wordpress: { ...wordpressSettingsOf(project), ...settings, connectorEndpoint: endpoint, lastConnectedAt: connectedAt },
+                analytics: {
+                  ...analyticsSettingsOf(project),
+                  propertyId,
+                  measurementId,
+                  apiEndpoint: `${endpoint}/analytics/report`,
+                  accessToken: settings.apiKey,
+                },
+              }
+            : project,
+        ),
+      }, 'Kiểm tra kết nối WordPress', activeProject.name)
+      setWordpressStatus(`Kết nối thành công: ${site?.name ?? activeProject.name}. Site Kit: ${site?.siteKit?.active ? 'đang bật' : 'chưa bật'}. Posts: ${site?.counts?.posts ?? 0}, Pages: ${site?.counts?.pages ?? 0}.`)
+    } catch (error) {
+      setWordpressStatus(`Không kết nối được WordPress Connector. ${formatFetchError(error)}`)
+    }
+  }
+
+  const syncWordPressSite = async () => {
+    await testWordPressConnection()
+  }
+
+  const syncWordPressContent = async (contentType: 'posts' | 'pages') => {
+    if (!activeProject) return
+    const { settings, endpoint } = currentWordPressSettings()
+    if (!endpoint || !settings.apiKey) {
+      setWordpressStatus('Lỗi cấu hình: thiếu Connector Endpoint hoặc API key. Hãy lưu kết nối trước khi đồng bộ.')
+      return
+    }
+      setWordpressStatus(`Đang đồng bộ ${contentType === 'posts' ? 'bài viết' : 'page'} từ WordPress...`)
+    try {
+      const response = await fetch(wordpressUrlWithKey(endpoint, contentType, settings.apiKey, 'per_page=100'))
+      if (!response.ok) throw new Error(await wordpressErrorMessage(response))
+      const responseData = await response.json()
+      const items: WordPressContentItem[] = Array.isArray(responseData.items) ? responseData.items : []
+      const existingUrls = new Set(data.keywords.filter((keyword) => keyword.projectId === activeProject.id).map((keyword) => keyword.articleUrl || keyword.landingUrl))
+      const importedKeywords: Keyword[] = items
+        .filter((item) => item?.url && !existingUrls.has(String(item.url)))
+        .slice(0, 100)
+        .map((item) => {
+          const seo = item.seo ?? {}
+          const focusKeyword = String(seo.rankMathFocusKeyword || seo.yoastFocusKeyword || '').split(',')[0].trim()
+          const title = String(item.title || item.slug || item.path || 'WordPress content')
+          return {
+            id: uid('k'),
+            projectId: activeProject.id,
+            keywordType: 'C',
+            term: focusKeyword || title,
+            landingUrl: String(item.path || item.url || ''),
+            searchVolume: 0,
+            keywordDifficulty: 0,
+            searchIntent: 'Informational',
+            position: 100,
+            impressions: 0,
+            clicks: 0,
+            organicTraffic: 0,
+            ctr: 0,
+            articleType: item.type === 'page' ? 'Category Hub' : 'Informational Content',
+            articleTitle: title,
+            articleAssigneeId: '',
+            articleUrl: String(item.url),
+            articleTaskId: '',
+          }
+        })
+      saveData({
+        ...data,
+        keywords: [...importedKeywords, ...data.keywords],
+        projects: data.projects.map((project) =>
+          project.id === activeProject.id ? { ...project, wordpress: { ...wordpressSettingsOf(project), ...settings, connectorEndpoint: endpoint, lastSyncAt: appNowIso() } } : project,
+        ),
+      }, 'Đồng bộ nội dung WordPress', activeProject.name)
+      setWordpressStatus(`Đã đồng bộ ${importedKeywords.length}/${items.length} ${contentType === 'posts' ? 'bài viết' : 'page'} mới từ WordPress vào module Keyword/Bài viết.`)
+    } catch (error) {
+      setWordpressStatus(`Không đồng bộ được WordPress. ${formatFetchError(error)}`)
+    }
+  }
+
   const syncAnalytics = async () => {
     if (!activeProject) return
     const settings = analyticsSettingsOf(activeProject)
@@ -1639,6 +2223,7 @@ function App() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(settings.accessToken ? { 'X-SEO-OPS-KEY': settings.accessToken } : {}),
             ...(settings.accessToken ? { Authorization: `Bearer ${settings.accessToken}` } : {}),
           },
           body: JSON.stringify({
@@ -1691,14 +2276,21 @@ function App() {
     }
   }
 
-  const addKeyword = (event: FormEvent<HTMLFormElement>) => {
+  const saveKeyword = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!activeProject) return
     const form = new FormData(event.currentTarget)
+    const keywordType = String(form.get('keywordType')) as KeywordType
+    const parentId = keywordType === 'A' ? '' : String(form.get('parentId'))
+    if (keywordType !== 'A' && !parentId) {
+      window.alert(`Keyword loại ${keywordType} cần chọn keyword cấp cao hơn.`)
+      return
+    }
     const keyword: Keyword = {
-      id: uid('k'),
+      id: editingKeyword?.id ?? uid('k'),
       projectId: activeProject.id,
-      keywordType: 'A',
+      parentId,
+      keywordType,
       term: String(form.get('term')).trim(),
       landingUrl: String(form.get('landingUrl')).trim(),
       searchVolume: Number(form.get('searchVolume')) || 0,
@@ -1709,12 +2301,20 @@ function App() {
       clicks: Number(form.get('clicks')) || 0,
       organicTraffic: Number(form.get('organicTraffic')) || 0,
       ctr: Number(form.get('ctr')) || 0,
-      articleType: 'Informational Content',
-      articleAssigneeId: '',
-      articleUrl: '',
-      articleTaskId: '',
+      articleType: editingKeyword?.articleType ?? 'Informational Content',
+      articleTitle: editingKeyword?.articleTitle ?? '',
+      articleAssigneeId: editingKeyword?.articleAssigneeId ?? '',
+      articleUrl: editingKeyword?.articleUrl ?? '',
+      articleTaskId: editingKeyword?.articleTaskId ?? '',
     }
-    saveData({ ...data, keywords: [keyword, ...data.keywords] }, 'Thêm keyword', keyword.term)
+    saveData({
+      ...data,
+      keywords: editingKeyword
+        ? data.keywords.map((item) => (item.id === editingKeyword.id ? keyword : item))
+        : [keyword, ...data.keywords],
+    }, editingKeyword ? 'Sửa keyword' : 'Thêm keyword', keyword.term)
+    setEditingKeywordId(null)
+    setKeywordFormType('A')
     event.currentTarget.reset()
   }
 
@@ -1745,6 +2345,7 @@ function App() {
       organicTraffic: 0,
       ctr: 0,
       articleType: 'Informational Content',
+      articleTitle: '',
       articleAssigneeId: '',
       articleUrl: '',
       articleTaskId: '',
@@ -1804,6 +2405,14 @@ function App() {
     })
   }
 
+  const startEditKeyword = (keyword: Keyword) => {
+    setEditingKeywordId(keyword.id)
+    setKeywordFormType(keywordTypeOf(keyword))
+    window.requestAnimationFrame(() => {
+      document.querySelector('.keyword-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
   const deleteSelectedKeywords = () => {
     if (selectedKeywordIds.size === 0) return
     const idsToDelete = collectKeywordBranchIds(selectedKeywordIds)
@@ -1824,7 +2433,7 @@ function App() {
     setSelectedKeywordIds(new Set())
   }
 
-  const updateKeywordArticle = (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleAssigneeId' | 'articleUrl'>>) => {
+  const updateKeywordArticle = (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleAssigneeId' | 'articleUrl'>>) => {
     saveData({
       ...data,
       keywords: data.keywords.map((keyword) => (keyword.id === keywordId ? { ...keyword, ...updates } : keyword)),
@@ -2702,6 +3311,171 @@ function App() {
     saveData(data, 'Xuất báo cáo Backlink', activeProject.name)
   }
 
+  const saveInternalNote = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const now = appNowIso()
+    const noteProjectId = String(form.get('projectId')) || activeProject?.id || ''
+    const project = data.projects.find((item) => item.id === noteProjectId)
+    const tags = String(form.get('tags'))
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+    const nextNote: InternalNote = {
+      id: editingInternalNote?.id ?? uid('in'),
+      projectId: noteProjectId,
+      website: String(form.get('website')).trim() || project?.website || '',
+      title: String(form.get('title')).trim(),
+      noteType: String(form.get('noteType')) as InternalNoteType,
+      category: String(form.get('category')).trim(),
+      relatedUrl: String(form.get('relatedUrl')).trim(),
+      affectedArea: String(form.get('affectedArea')).trim(),
+      problemDescription: String(form.get('problemDescription')).trim(),
+      content: String(form.get('content')).trim(),
+      reason: String(form.get('reason')).trim(),
+      priority: String(form.get('priority')) as InternalNotePriority,
+      status: String(form.get('status')) as InternalNoteStatus,
+      visibility: String(form.get('visibility')) as InternalNoteVisibility,
+      requestedBy: String(form.get('requestedBy')),
+      assignedTo: String(form.get('assignedTo')),
+      createdBy: editingInternalNote?.createdBy ?? currentUser?.id ?? '',
+      approvedBy: editingInternalNote?.approvedBy ?? '',
+      approvedAt: editingInternalNote?.approvedAt ?? '',
+      completedAt: String(form.get('status')) === 'Hoàn thành' ? editingInternalNote?.completedAt || now : editingInternalNote?.completedAt ?? '',
+      createdAt: editingInternalNote?.createdAt ?? now,
+      updatedAt: now,
+      tags,
+      extraNote: String(form.get('extraNote')).trim(),
+      version: editingInternalNote ? editingInternalNote.version + 1 : 1,
+      archivedAt: String(form.get('status')) === 'Lưu trữ' ? editingInternalNote?.archivedAt || now : '',
+      deletedAt: editingInternalNote?.deletedAt ?? '',
+    }
+    const version: InternalNoteVersion = {
+      id: uid('inv'),
+      noteId: nextNote.id,
+      versionNumber: nextNote.version,
+      title: nextNote.title,
+      content: nextNote.content,
+      changedBy: currentUser?.id ?? '',
+      changeNote: String(form.get('changeNote')).trim() || (editingInternalNote ? 'Cập nhật ghi chú' : 'Tạo ghi chú'),
+      createdAt: now,
+    }
+    const existingTagNames = new Set((data.internalNoteTags ?? []).map((tag) => tag.name.toLowerCase()))
+    const newTags: InternalNoteTag[] = tags
+      .filter((tag) => !existingTagNames.has(tag.toLowerCase()))
+      .map((tag) => ({
+        id: uid('tag'),
+        name: tag,
+        color: '#64748b',
+        createdAt: now,
+        updatedAt: now,
+      }))
+    saveData({
+      ...data,
+      internalNotes: editingInternalNote
+        ? internalNotes.map((note) => (note.id === nextNote.id ? nextNote : note))
+        : [nextNote, ...internalNotes],
+      internalNoteTags: [...newTags, ...(data.internalNoteTags ?? [])],
+      internalNoteVersions: [version, ...(data.internalNoteVersions ?? [])].slice(0, 800),
+    }, editingInternalNote ? 'Cập nhật ghi chú nội bộ' : 'Tạo ghi chú nội bộ', nextNote.title)
+    setEditingInternalNoteId(null)
+    event.currentTarget.reset()
+  }
+
+  const archiveInternalNote = (noteId: string) => {
+    const note = internalNotes.find((item) => item.id === noteId)
+    if (!note) return
+    saveData({
+      ...data,
+      internalNotes: internalNotes.map((item) => (item.id === noteId ? { ...item, status: 'Lưu trữ', archivedAt: appNowIso(), updatedAt: appNowIso() } : item)),
+    }, 'Lưu trữ ghi chú nội bộ', note.title)
+  }
+
+  const deleteInternalNote = (noteId: string) => {
+    const note = internalNotes.find((item) => item.id === noteId)
+    if (!note) return
+    saveData({
+      ...data,
+      internalNotes: internalNotes.map((item) => (item.id === noteId ? { ...item, deletedAt: appNowIso(), updatedAt: appNowIso() } : item)),
+    }, 'Xóa mềm ghi chú nội bộ', note.title)
+  }
+
+  const restoreInternalNote = (noteId: string) => {
+    const note = internalNotes.find((item) => item.id === noteId)
+    if (!note) return
+    saveData({
+      ...data,
+      internalNotes: internalNotes.map((item) =>
+        item.id === noteId ? { ...item, status: item.status === 'Lưu trữ' ? 'Nháp' : item.status, archivedAt: '', deletedAt: '', updatedAt: appNowIso() } : item,
+      ),
+    }, 'Khôi phục ghi chú nội bộ', note.title)
+  }
+
+  const permanentlyDeleteInternalNote = (noteId: string) => {
+    const note = internalNotes.find((item) => item.id === noteId)
+    if (!note || !window.confirm(`Xóa vĩnh viễn ghi chú "${note.title}"?`)) return
+    saveData({
+      ...data,
+      internalNotes: internalNotes.filter((item) => item.id !== noteId),
+      internalNoteFiles: internalNoteFiles.filter((file) => file.noteId !== noteId),
+      internalNoteVersions: internalNoteVersions.filter((version) => version.noteId !== noteId),
+      internalNoteComments: internalNoteComments.filter((comment) => comment.noteId !== noteId),
+    }, 'Xóa vĩnh viễn ghi chú nội bộ', note.title)
+  }
+
+  const approveInternalNote = (noteId: string) => {
+    const note = internalNotes.find((item) => item.id === noteId)
+    if (!note) return
+    saveData({
+      ...data,
+      internalNotes: internalNotes.map((item) =>
+        item.id === noteId ? { ...item, status: 'Đã duyệt', approvedBy: currentUser?.id ?? '', approvedAt: appNowIso(), updatedAt: appNowIso() } : item,
+      ),
+    }, 'Duyệt ghi chú nội bộ', note.title)
+  }
+
+  const addInternalNoteFile = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const noteId = String(form.get('noteId'))
+    const note = internalNotes.find((item) => item.id === noteId)
+    if (!note) return
+    const pickedFile = form.get('file') as File | null
+    const externalUrl = String(form.get('fileUrl')).trim()
+    const fileName = pickedFile?.name || String(form.get('fileName')).trim() || externalUrl || 'Tài liệu đính kèm'
+    const file: InternalNoteFile = {
+      id: uid('inf'),
+      noteId,
+      fileName,
+      fileUrl: externalUrl || (pickedFile ? `local://${pickedFile.name}` : ''),
+      fileType: String(form.get('fileType')).trim() || pickedFile?.type || 'Tài liệu',
+      fileSize: pickedFile?.size || 0,
+      uploadedBy: currentUser?.id ?? '',
+      createdAt: appNowIso(),
+    }
+    saveData({ ...data, internalNoteFiles: [file, ...internalNoteFiles] }, 'Thêm file ghi chú nội bộ', note.title)
+    event.currentTarget.reset()
+  }
+
+  const addInternalNoteComment = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const noteId = String(form.get('noteId'))
+    const content = String(form.get('content')).trim()
+    const note = internalNotes.find((item) => item.id === noteId)
+    if (!note || !content) return
+    const comment: InternalNoteComment = {
+      id: uid('inc'),
+      noteId,
+      content,
+      createdBy: currentUser?.id ?? '',
+      createdAt: appNowIso(),
+      updatedAt: appNowIso(),
+    }
+    saveData({ ...data, internalNoteComments: [comment, ...internalNoteComments] }, 'Bình luận ghi chú nội bộ', note.title)
+    event.currentTarget.reset()
+  }
+
   if (!currentUser) {
     return <LoginPage error={loginError} users={data.users} onRefresh={reloadData} onSubmit={login} />
   }
@@ -2732,6 +3506,7 @@ function App() {
             </>
           )}
           {canAccessPermission('Tài chính', 'view') && <NavButton view="finance" current={view} label="Tài chính" onClick={goTo} />}
+          {canAccessPermission('Ghi chú', 'view') && <NavButton view="knowledge" current={view} label="Ghi chú & Tài liệu nội bộ" onClick={goTo} />}
           {canAccessPermission('Nhân sự', 'view') && <NavButton view="people" current={view} label="Nhân sự" onClick={goTo} />}
           {canAccessPermission('Tiến độ', 'view') && <NavButton view="progress" current={view} label="Tiến độ" onClick={goTo} />}
           {canAccessPermission('Hệ thống', 'view') && (
@@ -2949,6 +3724,52 @@ function App() {
                   </Panel>
                 </div>
 
+                <Panel title="Kết nối WordPress / Site Kit" action="SEO Ops Connector">
+                  <div className="analytics-layout">
+                    <form className="analytics-settings" onSubmit={saveWordPressSettings} key={`${activeProject.id}-wordpress`} ref={wordpressFormRef}>
+                      <label>
+                        <span>WordPress Site URL</span>
+                        <input name="siteUrl" placeholder="https://tenmien.vn" defaultValue={wordpressSettingsOf(activeProject).siteUrl || activeProject.website} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>Connector Endpoint</span>
+                        <input name="connectorEndpoint" placeholder="https://tenmien.vn/wp-json/seo-ops/v1" defaultValue={wordpressSettingsOf(activeProject).connectorEndpoint} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>SEO Ops API Key</span>
+                        <input name="apiKey" placeholder="Dán API key trong plugin WordPress" defaultValue={wordpressSettingsOf(activeProject).apiKey} type="password" disabled={!canEditProjects} />
+                      </label>
+                      <div className="analytics-form-actions">
+                        <button type="submit" disabled={!canEditProjects}>Lưu kết nối</button>
+                        <button className="secondary-button" type="button" onClick={testWordPressConnection} disabled={!canEditProjects}>
+                          Kiểm tra kết nối
+                        </button>
+                        <button className="secondary-button" type="button" onClick={syncWordPressSite} disabled={!canEditProjects}>
+                          Đồng bộ site
+                        </button>
+                        <button className="secondary-button" type="button" onClick={() => syncWordPressContent('posts')} disabled={!canEditProjects}>
+                          Đồng bộ bài viết
+                        </button>
+                        <button className="secondary-button" type="button" onClick={() => syncWordPressContent('pages')} disabled={!canEditProjects}>
+                          Đồng bộ page
+                        </button>
+                      </div>
+                      <p>
+                        Cài plugin <code>SEO Ops</code>, sau đó copy API key từ WordPress Admin. Nếu dùng localhost, Allowed Origin trong WordPress là <code>http://127.0.0.1:5173</code>.
+                      </p>
+                    </form>
+                    <div className="analytics-report">
+                      <div className="project-detail">
+                        <Detail label="Endpoint hiện tại" value={field(wordpressSettingsOf(activeProject).connectorEndpoint)} />
+                        <Detail label="Kết nối gần nhất" value={formatDateTime(wordpressSettingsOf(activeProject).lastConnectedAt)} />
+                        <Detail label="Đồng bộ gần nhất" value={formatDateTime(wordpressSettingsOf(activeProject).lastSyncAt)} />
+                        <Detail label="Dữ liệu nhận về" value="Bài viết, page, trạng thái Site Kit, report Analytics proxy" />
+                      </div>
+                      {wordpressStatus && <p className="analytics-status">{wordpressStatus}</p>}
+                    </div>
+                  </div>
+                </Panel>
+
                 <Panel title="Google Analytics" action="Tool nội bộ">
                   <div className="analytics-toolbar">
                     <div>
@@ -3064,25 +3885,46 @@ function App() {
               <Metric title="CTR TB" value={`${projectKeywords.length ? (projectKeywords.reduce((sum, item) => sum + item.ctr, 0) / projectKeywords.length).toFixed(2) : '0'}%`} note="Tỷ lệ nhấp trung bình" />
             </div>
 
-            <Panel title="Thêm key" action={canEditProjects ? 'Keyword Mapping' : 'Chỉ xem'}>
+            <Panel title={editingKeyword ? 'Sửa key' : 'Thêm key'} action={canEditProjects ? 'Keyword Mapping' : 'Chỉ xem'}>
               {canEditProjects ? (
-                <form className="keyword-form" onSubmit={addKeyword}>
-                  <input name="term" placeholder="Keyword *" required />
-                  <input name="landingUrl" placeholder="Landing URL" />
-                  <input name="searchVolume" placeholder="Search Volume" type="number" min="0" />
-                  <input name="keywordDifficulty" placeholder="Keyword Difficulty" type="number" min="0" max="100" />
-                  <select name="searchIntent">
+                <form className="keyword-form" onSubmit={saveKeyword} key={editingKeyword?.id ?? 'new-keyword'}>
+                  <input name="term" placeholder="Keyword *" defaultValue={editingKeyword?.term ?? ''} required />
+                  <select name="keywordType" value={keywordFormType} onChange={(event) => setKeywordFormType(event.target.value as KeywordType)}>
+                    <option value="A">A. Short-tail</option>
+                    <option value="B">B. Mid-tail</option>
+                    <option value="C">C. Long-tail</option>
+                  </select>
+                  <select name="parentId" defaultValue={editingKeyword?.parentId ?? ''} disabled={keywordFormType === 'A'}>
+                    <option value="">{keywordFormType === 'A' ? 'Không có keyword cha' : 'Chọn keyword cha'}</option>
+                    {projectKeywords
+                      .filter((keyword) => keyword.id !== editingKeyword?.id)
+                      .filter((keyword) => keywordFormType === 'B' ? keywordTypeOf(keyword) === 'A' : keywordFormType === 'C' ? keywordTypeOf(keyword) === 'B' : false)
+                      .map((keyword) => (
+                        <option value={keyword.id} key={keyword.id}>
+                          {keywordTypeOf(keyword)} - {keyword.term}
+                        </option>
+                      ))}
+                  </select>
+                  <input name="landingUrl" placeholder="Landing URL" defaultValue={editingKeyword?.landingUrl ?? ''} />
+                  <input name="searchVolume" placeholder="Search Volume" type="number" min="0" defaultValue={editingKeyword?.searchVolume ?? ''} />
+                  <input name="keywordDifficulty" placeholder="Keyword Difficulty" type="number" min="0" max="100" defaultValue={editingKeyword?.keywordDifficulty ?? ''} />
+                  <select name="searchIntent" defaultValue={editingKeyword?.searchIntent ?? 'Informational'}>
                     <option>Informational</option>
                     <option>Commercial</option>
                     <option>Transactional</option>
                     <option>Navigational</option>
                   </select>
-                  <input name="position" placeholder="Position" type="number" min="1" />
-                  <input name="impressions" placeholder="Impressions" type="number" min="0" />
-                  <input name="clicks" placeholder="Clicks" type="number" min="0" />
-                  <input name="organicTraffic" placeholder="Organic Traffic" type="number" min="0" />
-                  <input name="ctr" placeholder="CTR (%)" type="number" min="0" step="0.01" />
-                  <button type="submit">Thêm key</button>
+                  <input name="position" placeholder="Position" type="number" min="1" defaultValue={editingKeyword?.position ?? ''} />
+                  <input name="impressions" placeholder="Impressions" type="number" min="0" defaultValue={editingKeyword?.impressions ?? ''} />
+                  <input name="clicks" placeholder="Clicks" type="number" min="0" defaultValue={editingKeyword?.clicks ?? ''} />
+                  <input name="organicTraffic" placeholder="Organic Traffic" type="number" min="0" defaultValue={editingKeyword?.organicTraffic ?? ''} />
+                  <input name="ctr" placeholder="CTR (%)" type="number" min="0" step="0.01" defaultValue={editingKeyword?.ctr ?? ''} />
+                  {editingKeyword && (
+                    <button className="secondary-button" type="button" onClick={() => { setEditingKeywordId(null); setKeywordFormType('A') }}>
+                      Hủy sửa
+                    </button>
+                  )}
+                  <button type="submit">{editingKeyword ? 'Sửa key' : 'Thêm key'}</button>
                 </form>
               ) : (
                 <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền chỉnh sửa keyword." />
@@ -3098,6 +3940,7 @@ function App() {
                 onToggleSelect={toggleKeywordSelection}
                 onDeleteSelected={deleteSelectedKeywords}
                 onDevelopKeyword={setKeywordBuilder}
+                onEditKeyword={startEditKeyword}
                 canEdit={canEditProjects}
               />
             </Panel>
@@ -3234,6 +4077,47 @@ function App() {
               />
             </Panel>
           </section>
+        )}
+
+        {view === 'knowledge' && canView(view) && (
+          <KnowledgeModule
+            notes={filteredInternalNotes}
+            allNotes={internalNotes}
+            files={internalNoteFiles}
+            versions={internalNoteVersions}
+            comments={internalNoteComments}
+            projects={data.projects}
+            users={data.users}
+            tab={knowledgeTab}
+            search={knowledgeSearch}
+            projectFilter={knowledgeProjectFilter}
+            typeFilter={knowledgeTypeFilter}
+            statusFilter={knowledgeStatusFilter}
+            priorityFilter={knowledgePriorityFilter}
+            tagFilter={knowledgeTagFilter}
+            tagOptions={internalTagOptions}
+            editingNote={editingInternalNote}
+            activeProjectId={activeProject?.id ?? ''}
+            currentUser={currentUser}
+            canEdit={canEdit('knowledge')}
+            onTab={setKnowledgeTab}
+            onSearch={setKnowledgeSearch}
+            onProjectFilter={setKnowledgeProjectFilter}
+            onTypeFilter={setKnowledgeTypeFilter}
+            onStatusFilter={setKnowledgeStatusFilter}
+            onPriorityFilter={setKnowledgePriorityFilter}
+            onTagFilter={setKnowledgeTagFilter}
+            onEdit={setEditingInternalNoteId}
+            onCancelEdit={() => setEditingInternalNoteId(null)}
+            onSave={saveInternalNote}
+            onArchive={archiveInternalNote}
+            onDelete={deleteInternalNote}
+            onRestore={restoreInternalNote}
+            onPermanentDelete={permanentlyDeleteInternalNote}
+            onApprove={approveInternalNote}
+            onAddFile={addInternalNoteFile}
+            onAddComment={addInternalNoteComment}
+          />
         )}
 
         {view === 'finance' && canView(view) && (
@@ -3434,7 +4318,8 @@ function App() {
         {view === 'system' && canView(view) && (
           <section className="view-stack">
             <div className="metric-grid">
-              <Metric title="Phiên bản" value={appVersion} note="Demo localStorage" />
+              <Metric title="Phiên bản" value={appVersion} note={apiEnabled ? 'Backend shared data' : 'LocalStorage fallback'} />
+              <Metric title="Dữ liệu chung" value={apiEnabled ? 'API' : 'Local'} note={apiEnabled ? 'Đang dùng backend chung' : 'Fallback localStorage'} />
               <Metric title="Storage key" value={storageKey} note="Giữ dữ liệu test hiện tại" />
               <Metric title="Nhật ký" value={activityLogs.length} note="Tối đa 300 dòng gần nhất" />
               <Metric title="Backup" value="JSON" note="Tải toàn bộ dữ liệu hiện tại" />
@@ -3444,8 +4329,8 @@ function App() {
                 <div className="project-detail">
                   <Detail label="Tên ứng dụng" value="SEO Ops Project Manager" />
                   <Detail label="Phiên bản" value={appVersion} />
-                  <Detail label="Cơ chế lưu trữ" value="LocalStorage demo" />
-                  <Detail label="Cập nhật dữ liệu" value="Không đổi storageKey để giữ dữ liệu test" />
+                  <Detail label="Cơ chế lưu trữ" value={apiEnabled ? 'Backend API + database file' : 'LocalStorage fallback'} />
+                  <Detail label="Cập nhật dữ liệu" value={apiEnabled ? 'Nhiều người dùng chung dữ liệu qua VPS' : 'Chưa kết nối backend, dữ liệu chỉ nằm trên trình duyệt'} />
                 </div>
               </Panel>
               <Panel title="Backup dữ liệu" action="Tải về">
@@ -3454,6 +4339,10 @@ function App() {
                   <button type="button" onClick={downloadBackup}>
                     Tải backup JSON
                   </button>
+                  <label className="backup-import">
+                    <span>Import backup JSON</span>
+                    <input type="file" accept="application/json,.json" onChange={importBackupFile} />
+                  </label>
                 </div>
               </Panel>
             </div>
@@ -3484,6 +4373,7 @@ function viewTitle(view: View) {
     keywords: 'Quản lý Keyword',
     articles: 'Bài viết',
     tasks: 'Task công việc',
+    knowledge: 'Ghi chú & Tài liệu nội bộ',
     finance: 'Tài chính',
     people: 'Nhân sự',
     progress: 'Tiến độ',
@@ -3649,6 +4539,7 @@ function MiniIcon({ name }: { name: string }) {
       {name === 'keywords' && <path d="M4 5h16v3H4V5Zm2 5h12v3H6v-3Zm-2 5h16v4H4v-4Z" />}
       {name === 'articles' && <path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z" />}
       {name === 'tasks' && <path d="M5 6h3v3H5V6Zm5 1h9v2h-9V7Zm-5 5h3v3H5v-3Zm5 1h9v2h-9v-2Zm-5 5h3v3H5v-3Zm5 1h9v2h-9v-2Z" />}
+      {name === 'knowledge' && <path d="M5 4h11l3 3v13H5V4Zm10 1.8V8h2.2L15 5.8ZM8 9h8V7H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z" />}
       {name === 'finance' && <path d="M5 19h14v-2H5v2Zm1-4h3V8H6v7Zm5 0h3V5h-3v10Zm5 0h3v-5h-3v5Z" />}
       {name === 'people' && <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8 1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5H3Zm10.5 0c.4-2 1.4-3.4 3.4-3.4 1.9 0 3.1 1.2 3.5 3.4h-6.9Z" />}
       {name === 'progress' && <path d="M5 12.5 9 16l10-10 1.5 1.5L9 19 3.5 14 5 12.5Z" />}
@@ -3771,6 +4662,473 @@ function AnalyticsTable({ points }: { points: AnalyticsPoint[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function KnowledgeModule({
+  notes,
+  allNotes,
+  files,
+  versions,
+  comments,
+  projects,
+  users,
+  tab,
+  search,
+  projectFilter,
+  typeFilter,
+  statusFilter,
+  priorityFilter,
+  tagFilter,
+  tagOptions,
+  editingNote,
+  activeProjectId,
+  currentUser,
+  canEdit,
+  onTab,
+  onSearch,
+  onProjectFilter,
+  onTypeFilter,
+  onStatusFilter,
+  onPriorityFilter,
+  onTagFilter,
+  onEdit,
+  onCancelEdit,
+  onSave,
+  onArchive,
+  onDelete,
+  onRestore,
+  onPermanentDelete,
+  onApprove,
+  onAddFile,
+  onAddComment,
+}: {
+  notes: InternalNote[]
+  allNotes: InternalNote[]
+  files: InternalNoteFile[]
+  versions: InternalNoteVersion[]
+  comments: InternalNoteComment[]
+  projects: Project[]
+  users: User[]
+  tab: KnowledgeTab
+  search: string
+  projectFilter: string
+  typeFilter: string
+  statusFilter: string
+  priorityFilter: string
+  tagFilter: string
+  tagOptions: string[]
+  editingNote?: InternalNote
+  activeProjectId: string
+  currentUser?: User
+  canEdit: boolean
+  onTab: (tab: KnowledgeTab) => void
+  onSearch: (value: string) => void
+  onProjectFilter: (value: string) => void
+  onTypeFilter: (value: string) => void
+  onStatusFilter: (value: string) => void
+  onPriorityFilter: (value: string) => void
+  onTagFilter: (value: string) => void
+  onEdit: (noteId: string | null) => void
+  onCancelEdit: () => void
+  onSave: (event: FormEvent<HTMLFormElement>) => void
+  onArchive: (noteId: string) => void
+  onDelete: (noteId: string) => void
+  onRestore: (noteId: string) => void
+  onPermanentDelete: (noteId: string) => void
+  onApprove: (noteId: string) => void
+  onAddFile: (event: FormEvent<HTMLFormElement>) => void
+  onAddComment: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const activeNotes = allNotes.filter((note) => !note.deletedAt && note.status !== 'Lưu trữ')
+  const completedNotes = activeNotes.filter((note) => ['Hoàn thành', 'Đã duyệt'].includes(note.status))
+  const issueNotes = activeNotes.filter((note) => note.noteType === 'Lỗi website')
+  const guideNotes = activeNotes.filter((note) => ['Hướng dẫn thao tác', 'Quy trình nội bộ'].includes(note.noteType))
+  const canApprove = canEdit && ['Quản trị viên', 'Trưởng nhóm SEO'].includes(currentUser?.role ?? '')
+  const userName = (id?: string) => users.find((user) => user.id === id)?.name ?? 'Chưa gán'
+  const projectName = (id?: string) => projects.find((project) => project.id === id)?.name ?? 'Không gắn dự án'
+  const defaultProjectId = editingNote?.projectId || activeProjectId || projects[0]?.id || ''
+  const selectedNoteForDetail = editingNote ?? notes[0]
+
+  return (
+    <section className="view-stack knowledge-module">
+      <div className="metric-grid">
+        <Metric title="Tổng ghi chú" value={activeNotes.length} note="Đang dùng nội bộ" />
+        <Metric title="Nhật ký web" value={activeNotes.filter((note) => note.noteType.startsWith('Chỉnh sửa')).length} note="UI / SEO / code / database" />
+        <Metric title="Lỗi đã lưu" value={issueNotes.length} note={`${issueNotes.filter((note) => note.status === 'Hoàn thành').length} đã xử lý`} />
+        <Metric title="Tài liệu hướng dẫn" value={guideNotes.length} note={`${completedNotes.length} ghi chú đã duyệt/xong`} />
+      </div>
+
+      <Panel title="Điều hướng Knowledge Base" action={`${notes.length} kết quả`}>
+        <div className="entity-tabs">
+          {knowledgeTabs.map((item) => (
+            <button className={tab === item.id ? 'active' : ''} key={item.id} type="button" onClick={() => onTab(item.id)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title="Tìm kiếm & bộ lọc" action="Từ khóa / URL / tag / người thực hiện">
+        <div className="knowledge-filters">
+          <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Tìm trong tiêu đề, nội dung, URL, tag, người thực hiện..." />
+          <select value={projectFilter} onChange={(event) => onProjectFilter(event.target.value)}>
+            <option value="all">Tất cả dự án</option>
+            {projects.map((project) => (
+              <option value={project.id} key={project.id}>{project.name}</option>
+            ))}
+          </select>
+          <select value={typeFilter} onChange={(event) => onTypeFilter(event.target.value)}>
+            <option value="all">Tất cả loại ghi chú</option>
+            {internalNoteTypes.map((type) => (
+              <option value={type} key={type}>{type}</option>
+            ))}
+          </select>
+          <select value={statusFilter} onChange={(event) => onStatusFilter(event.target.value)}>
+            <option value="all">Tất cả trạng thái</option>
+            {internalNoteStatuses.map((status) => (
+              <option value={status} key={status}>{status}</option>
+            ))}
+          </select>
+          <select value={priorityFilter} onChange={(event) => onPriorityFilter(event.target.value)}>
+            <option value="all">Tất cả mức độ</option>
+            {internalNotePriorities.map((priority) => (
+              <option value={priority} key={priority}>{priority}</option>
+            ))}
+          </select>
+          <select value={tagFilter} onChange={(event) => onTagFilter(event.target.value)}>
+            <option value="all">Tất cả tag</option>
+            {tagOptions.map((tag) => (
+              <option value={tag} key={tag}>{tag}</option>
+            ))}
+          </select>
+        </div>
+      </Panel>
+
+      {tab !== 'files' && (
+        <div className="wide-left dashboard-grid">
+          <Panel title={editingNote ? 'Sửa ghi chú' : 'Tạo ghi chú mới'} action={canEdit ? 'Knowledge Base' : 'Chỉ xem'}>
+            {canEdit ? (
+              <form className="knowledge-form" onSubmit={onSave} key={editingNote?.id ?? 'new-note'}>
+                <input name="title" placeholder="Tiêu đề ghi chú *" defaultValue={editingNote?.title ?? ''} required />
+                <select name="projectId" defaultValue={defaultProjectId}>
+                  <option value="">Không gắn dự án</option>
+                  {projects.map((project) => (
+                    <option value={project.id} key={project.id}>{project.name}</option>
+                  ))}
+                </select>
+                <input name="website" placeholder="Website / landing page" defaultValue={editingNote?.website ?? ''} />
+                <select name="noteType" defaultValue={editingNote?.noteType ?? 'Chỉnh sửa giao diện'}>
+                  {internalNoteTypes.map((type) => (
+                    <option value={type} key={type}>{type}</option>
+                  ))}
+                </select>
+                <select name="category" defaultValue={editingNote?.category ?? 'SEO'}>
+                  {internalNoteCategories.map((category) => (
+                    <option value={category} key={category}>{category}</option>
+                  ))}
+                </select>
+                <input name="affectedArea" placeholder="Khu vực ảnh hưởng: homepage, checkout, admin..." defaultValue={editingNote?.affectedArea ?? ''} />
+                <input name="relatedUrl" placeholder="URL liên quan: /san-pham/poster-arsenal" defaultValue={editingNote?.relatedUrl ?? ''} />
+                <select name="assignedTo" defaultValue={editingNote?.assignedTo ?? currentUser?.id ?? ''}>
+                  <option value="">Người thực hiện</option>
+                  {users.map((user) => (
+                    <option value={user.id} key={user.id}>{user.name}</option>
+                  ))}
+                </select>
+                <select name="requestedBy" defaultValue={editingNote?.requestedBy ?? ''}>
+                  <option value="">Người yêu cầu</option>
+                  {users.map((user) => (
+                    <option value={user.id} key={user.id}>{user.name}</option>
+                  ))}
+                </select>
+                <select name="status" defaultValue={editingNote?.status ?? 'Nháp'}>
+                  {internalNoteStatuses.map((status) => (
+                    <option value={status} key={status}>{status}</option>
+                  ))}
+                </select>
+                <select name="priority" defaultValue={editingNote?.priority ?? 'Trung bình'}>
+                  {internalNotePriorities.map((priority) => (
+                    <option value={priority} key={priority}>{priority}</option>
+                  ))}
+                </select>
+                <select name="visibility" defaultValue={editingNote?.visibility ?? 'Nội bộ'}>
+                  {internalNoteVisibilityOptions.map((visibility) => (
+                    <option value={visibility} key={visibility}>{visibility}</option>
+                  ))}
+                </select>
+                <input name="tags" placeholder="Tag, cách nhau bằng dấu phẩy: SEO, UI, schema..." defaultValue={editingNote?.tags.join(', ') ?? ''} />
+                <textarea name="problemDescription" placeholder="Mô tả vấn đề / trước khi sửa đang bị gì" defaultValue={editingNote?.problemDescription ?? ''} />
+                <textarea name="content" placeholder="Nội dung đã chỉnh sửa hoặc các bước hướng dẫn *" defaultValue={editingNote?.content ?? ''} required />
+                <textarea name="reason" placeholder="Lý do chỉnh sửa / mục đích tài liệu" defaultValue={editingNote?.reason ?? ''} />
+                <textarea name="extraNote" placeholder="Ghi chú thêm, checklist, lỗi thường gặp, cách xử lý..." defaultValue={editingNote?.extraNote ?? ''} />
+                <input name="changeNote" placeholder="Ghi chú phiên bản: bổ sung bước check index..." />
+                <div className="knowledge-form-actions">
+                  {editingNote && <button className="secondary-button" type="button" onClick={onCancelEdit}>Hủy sửa</button>}
+                  <button type="submit">{editingNote ? 'Lưu phiên bản mới' : 'Tạo ghi chú'}</button>
+                </div>
+              </form>
+            ) : (
+              <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền tạo hoặc sửa ghi chú nội bộ." />
+            )}
+          </Panel>
+
+          <Panel title="Chi tiết nhanh" action={selectedNoteForDetail ? `V${selectedNoteForDetail.version}` : 'Chưa chọn'}>
+            {selectedNoteForDetail ? (
+              <div className="knowledge-detail">
+                <Detail label="Tiêu đề" value={selectedNoteForDetail.title} />
+                <Detail label="Dự án" value={projectName(selectedNoteForDetail.projectId)} />
+                <Detail label="Website / URL" value={`${field(selectedNoteForDetail.website)} ${selectedNoteForDetail.relatedUrl ? `· ${selectedNoteForDetail.relatedUrl}` : ''}`} />
+                <Detail label="Loại / trạng thái" value={`${selectedNoteForDetail.noteType} · ${selectedNoteForDetail.status}`} />
+                <Detail label="Người thực hiện" value={userName(selectedNoteForDetail.assignedTo)} />
+                <Detail label="Cập nhật" value={formatDateTime(selectedNoteForDetail.updatedAt)} />
+                <p>{selectedNoteForDetail.content}</p>
+                <div className="knowledge-tags">
+                  {selectedNoteForDetail.tags.map((tag) => <span key={tag}>{tag}</span>)}
+                </div>
+              </div>
+            ) : (
+              <EmptyState title="Chưa có ghi chú phù hợp" text="Tạo ghi chú đầu tiên hoặc nới bộ lọc tìm kiếm để xem dữ liệu." />
+            )}
+          </Panel>
+        </div>
+      )}
+
+      {tab === 'files' ? (
+        <KnowledgeFilesPanel notes={allNotes} files={files} users={users} canEdit={canEdit} onAddFile={onAddFile} />
+      ) : (
+        <Panel title="Danh sách ghi chú" action={`${notes.length} ghi chú`}>
+          <KnowledgeNoteTable
+            notes={notes}
+            files={files}
+            versions={versions}
+            comments={comments}
+            projects={projects}
+            users={users}
+            canEdit={canEdit}
+            canApprove={canApprove}
+            onEdit={onEdit}
+            onArchive={onArchive}
+            onDelete={onDelete}
+            onRestore={onRestore}
+            onPermanentDelete={onPermanentDelete}
+            onApprove={onApprove}
+            onAddFile={onAddFile}
+            onAddComment={onAddComment}
+          />
+        </Panel>
+      )}
+    </section>
+  )
+}
+
+function KnowledgeNoteTable({
+  notes,
+  files,
+  versions,
+  comments,
+  projects,
+  users,
+  canEdit,
+  canApprove,
+  onEdit,
+  onArchive,
+  onDelete,
+  onRestore,
+  onPermanentDelete,
+  onApprove,
+  onAddFile,
+  onAddComment,
+}: {
+  notes: InternalNote[]
+  files: InternalNoteFile[]
+  versions: InternalNoteVersion[]
+  comments: InternalNoteComment[]
+  projects: Project[]
+  users: User[]
+  canEdit: boolean
+  canApprove: boolean
+  onEdit: (noteId: string | null) => void
+  onArchive: (noteId: string) => void
+  onDelete: (noteId: string) => void
+  onRestore: (noteId: string) => void
+  onPermanentDelete: (noteId: string) => void
+  onApprove: (noteId: string) => void
+  onAddFile: (event: FormEvent<HTMLFormElement>) => void
+  onAddComment: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const userName = (id?: string) => users.find((user) => user.id === id)?.name ?? 'Chưa gán'
+  const projectName = (id?: string) => projects.find((project) => project.id === id)?.name ?? 'Không gắn dự án'
+  if (notes.length === 0) {
+    return <EmptyState title="Không có ghi chú phù hợp" text="Thử tìm theo URL, tag, dự án hoặc tạo ghi chú mới cho lần chỉnh sửa tiếp theo." />
+  }
+
+  return (
+    <div className="knowledge-list">
+      {notes.map((note) => {
+        const noteFiles = files.filter((file) => file.noteId === note.id)
+        const noteVersions = versions.filter((version) => version.noteId === note.id)
+        const noteComments = comments.filter((comment) => comment.noteId === note.id)
+        const isArchived = Boolean(note.deletedAt || note.archivedAt || note.status === 'Lưu trữ')
+        return (
+          <article className="knowledge-card" key={note.id}>
+            <div className="knowledge-card-main">
+              <div className="knowledge-card-head">
+                <div>
+                  <span className={`note-priority priority-${note.priority.toLowerCase().replaceAll(' ', '-')}`}>{note.priority}</span>
+                  <h3>{note.title}</h3>
+                  <small>{projectName(note.projectId)} · {field(note.website)} · {field(note.relatedUrl)}</small>
+                </div>
+                <span className="note-status">{note.status}</span>
+              </div>
+              <p>{note.problemDescription || note.content}</p>
+              <div className="knowledge-meta">
+                <span>{note.noteType}</span>
+                <span>{note.affectedArea || 'Chưa ghi khu vực'}</span>
+                <span>Thực hiện: {userName(note.assignedTo)}</span>
+                <span>Cập nhật: {formatDateTime(note.updatedAt)}</span>
+              </div>
+              <div className="knowledge-tags">
+                {note.tags.map((tag) => <span key={tag}>{tag}</span>)}
+              </div>
+              <details className="knowledge-extra">
+                <summary>Nội dung, file, version và bình luận</summary>
+                <div className="knowledge-extra-grid">
+                  <div>
+                    <strong>Nội dung</strong>
+                    <p>{note.content || 'Chưa có nội dung.'}</p>
+                    {note.reason && <p><b>Lý do:</b> {note.reason}</p>}
+                    {note.extraNote && <p><b>Ghi chú thêm:</b> {note.extraNote}</p>}
+                  </div>
+                  <div>
+                    <strong>File đính kèm</strong>
+                    {noteFiles.length === 0 ? <p>Chưa có file.</p> : noteFiles.map((file) => (
+                      <a href={file.fileUrl || undefined} target="_blank" rel="noreferrer" key={file.id}>{file.fileName}</a>
+                    ))}
+                    {canEdit && (
+                      <form className="knowledge-mini-form" onSubmit={onAddFile}>
+                        <input type="hidden" name="noteId" value={note.id} />
+                        <input name="fileName" placeholder="Tên file/link" />
+                        <input name="fileUrl" placeholder="Link Drive/Figma/Github..." />
+                        <input name="fileType" placeholder="Loại file" />
+                        <input name="file" type="file" />
+                        <button type="submit">Thêm file</button>
+                      </form>
+                    )}
+                  </div>
+                  <div>
+                    <strong>Version</strong>
+                    {noteVersions.length === 0 ? <p>Chưa có version.</p> : noteVersions.map((version) => (
+                      <p key={version.id}>V{version.versionNumber}: {version.changeNote || version.title} · {formatDateTime(version.createdAt)}</p>
+                    ))}
+                  </div>
+                  <div>
+                    <strong>Bình luận</strong>
+                    {noteComments.length === 0 ? <p>Chưa có bình luận.</p> : noteComments.map((comment) => (
+                      <p key={comment.id}>{userName(comment.createdBy)}: {comment.content}</p>
+                    ))}
+                    {canEdit && (
+                      <form className="knowledge-mini-form" onSubmit={onAddComment}>
+                        <input type="hidden" name="noteId" value={note.id} />
+                        <input name="content" placeholder="Trao đổi nội bộ..." required />
+                        <button type="submit">Gửi</button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              </details>
+            </div>
+            {canEdit && (
+              <div className="knowledge-card-actions">
+                {!isArchived ? (
+                  <>
+                    <button className="secondary-button" type="button" onClick={() => onEdit(note.id)}>Sửa</button>
+                    {canApprove && note.status === 'Chờ duyệt' && <button type="button" onClick={() => onApprove(note.id)}>Duyệt</button>}
+                    <button className="secondary-button" type="button" onClick={() => onArchive(note.id)}>Lưu trữ</button>
+                    <button className="danger-button" type="button" onClick={() => onDelete(note.id)}>Xóa</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="secondary-button" type="button" onClick={() => onRestore(note.id)}>Khôi phục</button>
+                    <button className="danger-button" type="button" onClick={() => onPermanentDelete(note.id)}>Xóa vĩnh viễn</button>
+                  </>
+                )}
+              </div>
+            )}
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function KnowledgeFilesPanel({
+  notes,
+  files,
+  users,
+  canEdit,
+  onAddFile,
+}: {
+  notes: InternalNote[]
+  files: InternalNoteFile[]
+  users: User[]
+  canEdit: boolean
+  onAddFile: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const noteTitle = (id: string) => notes.find((note) => note.id === id)?.title ?? 'Ghi chú đã xóa'
+  const userName = (id?: string) => users.find((user) => user.id === id)?.name ?? 'Chưa rõ'
+  return (
+    <div className="dashboard-grid">
+      <Panel title="Thêm file đính kèm" action={canEdit ? 'Ảnh, video, Excel, PDF, link ngoài' : 'Chỉ xem'}>
+        {canEdit ? (
+          <form className="knowledge-file-form" onSubmit={onAddFile}>
+            <select name="noteId" required>
+              <option value="">Chọn ghi chú</option>
+              {notes.filter((note) => !note.deletedAt).map((note) => (
+                <option value={note.id} key={note.id}>{note.title}</option>
+              ))}
+            </select>
+            <input name="fileName" placeholder="Tên file hoặc mô tả" />
+            <input name="fileUrl" placeholder="Link Google Drive / Figma / Github / website" />
+            <input name="fileType" placeholder="Loại file: ảnh trước/sau, video, PDF..." />
+            <input name="file" type="file" />
+            <button type="submit">Lưu file</button>
+          </form>
+        ) : (
+          <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền thêm file đính kèm." />
+        )}
+      </Panel>
+      <Panel title="Kho file đính kèm" action={`${files.length} file`}>
+        {files.length === 0 ? (
+          <EmptyState title="Chưa có file" text="File đính kèm sẽ giúp lưu ảnh trước/sau, video hướng dẫn, file mẫu và link ngoài liên quan." />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Ghi chú</th>
+                  <th>Loại</th>
+                  <th>Người tải</th>
+                  <th>Ngày</th>
+                </tr>
+              </thead>
+              <tbody>
+                {files.map((file) => (
+                  <tr key={file.id}>
+                    <td>{file.fileUrl ? <a href={file.fileUrl} target="_blank" rel="noreferrer">{file.fileName}</a> : file.fileName}</td>
+                    <td>{noteTitle(file.noteId)}</td>
+                    <td>{file.fileType}</td>
+                    <td>{userName(file.uploadedBy)}</td>
+                    <td>{formatDateTime(file.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
     </div>
   )
 }
@@ -4749,6 +6107,7 @@ function KeywordTable({
   onToggleSelect,
   onDeleteSelected,
   onDevelopKeyword,
+  onEditKeyword,
   canEdit,
 }: {
   keywords: Keyword[]
@@ -4758,6 +6117,7 @@ function KeywordTable({
   onToggleSelect: (keywordId: string) => void
   onDeleteSelected: () => void
   onDevelopKeyword: (keyword: Keyword) => void
+  onEditKeyword: (keyword: Keyword) => void
   canEdit: boolean
 }) {
   if (keywords.length === 0) {
@@ -4811,13 +6171,18 @@ function KeywordTable({
           {rows.map(({ keyword, level, hidden, hasChildren }) => (
             <tr className={hidden ? 'keyword-row hidden' : `keyword-row level-${level}`} key={keyword.id}>
               <td>
-                <input
-                  checked={selectedKeywordIds.has(keyword.id)}
-                  onChange={() => onToggleSelect(keyword.id)}
-                  disabled={!canEdit}
-                  type="checkbox"
-                  aria-label={`Chọn keyword ${keyword.term}`}
-                />
+                <div className="keyword-row-actions">
+                  <input
+                    checked={selectedKeywordIds.has(keyword.id)}
+                    onChange={() => onToggleSelect(keyword.id)}
+                    disabled={!canEdit}
+                    type="checkbox"
+                    aria-label={`Chọn keyword ${keyword.term}`}
+                  />
+                  <button className="keyword-edit-button" type="button" onClick={() => onEditKeyword(keyword)} disabled={!canEdit} title="Sửa keyword" aria-label={`Sửa keyword ${keyword.term}`}>
+                    ✎
+                  </button>
+                </div>
               </td>
               <td>
                 <div className="keyword-tree-cell" style={{ paddingLeft: `${level * 22}px` }}>
@@ -4868,7 +6233,7 @@ function ArticleTable({
 }: {
   keywords: Keyword[]
   users: User[]
-  onUpdateKeyword: (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleAssigneeId' | 'articleUrl'>>) => void
+  onUpdateKeyword: (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleAssigneeId' | 'articleUrl'>>) => void
   onSendTask: (keywordId: string) => void
   canEdit: boolean
 }) {
@@ -4882,6 +6247,7 @@ function ArticleTable({
         <thead>
           <tr>
             <th>Keyword</th>
+            <th>Tiêu đề bài viết</th>
             <th>Loại key</th>
             <th>Loại bài viết</th>
             <th>Người phụ trách</th>
@@ -4893,6 +6259,14 @@ function ArticleTable({
           {keywords.map((keyword) => (
             <tr key={keyword.id}>
               <td>{keyword.term}</td>
+              <td>
+                <input
+                  value={keyword.articleTitle ?? ''}
+                  onChange={(event) => onUpdateKeyword(keyword.id, { articleTitle: event.target.value })}
+                  placeholder={`Tiêu đề bài viết # ${keyword.term}`}
+                  disabled={!canEdit}
+                />
+              </td>
               <td>
                 <span className={`keyword-type-badge type-${keywordTypeOf(keyword)}`}>{keywordTypeOf(keyword)}</span>
               </td>

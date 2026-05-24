@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:seo-ops": "node -e \"process.env.VITE_BASE_PATH='/seo-ops/'; require('child_process').execSync('npm run build',{stdio:'inherit'})\"",
+    "start": "node server/seo-ops-server.cjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
