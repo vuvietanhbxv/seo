@@ -1,7 +1,7 @@
 param(
   [int]$Port = 5173,
-  [string]$AppPath = 'C:\xampp\htdocs\phaohoashop\seo-ops',
-  [string]$BasePath = '/seo-ops'
+  [string]$AppPath = 'C:\xampp\htdocs\phaohoashop',
+  [string]$BasePath = '/'
 )
 
 $ErrorActionPreference = 'Stop'

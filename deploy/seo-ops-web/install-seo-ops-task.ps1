@@ -1,7 +1,7 @@
 param(
   [int]$Port = 5173,
   [string]$AppPath = $PSScriptRoot,
-  [string]$BasePath = '/seo-ops',
+  [string]$BasePath = '/',
   [string]$TaskName = 'SEO Ops Web'
 )
 

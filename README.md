@@ -19,6 +19,7 @@ PowerShell tren may nay dang chan `npm.ps1`, vi vay dung `npm.cmd`:
 npm.cmd install
 npm.cmd run dev
 npm.cmd run build
+npm.cmd run build:seo-domain
 npm.cmd run build:seo-ops
 npm.cmd start
 npm.cmd run lint
@@ -30,12 +31,12 @@ App local mac dinh:
 http://127.0.0.1:5173/
 ```
 
-## Deploy phaohoa.shop/seo-ops
+## Deploy seo.cuahangphaohoa.shop
 
-Build frontend cho subpath `/seo-ops`:
+Build frontend cho domain rieng, chay o root `/`:
 
 ```powershell
-npm.cmd run build:seo-ops
+npm.cmd run build:seo-domain
 ```
 
 Chay backend Node dung chung database:
@@ -43,7 +44,7 @@ Chay backend Node dung chung database:
 ```powershell
 $env:SEO_OPS_PORT='5173'
 $env:SEO_OPS_HOST='0.0.0.0'
-$env:SEO_OPS_BASE_PATH='/seo-ops'
+$env:SEO_OPS_BASE_PATH='/'
 $env:SEO_OPS_DB_DIR='.\db'
 npm.cmd start
 ```
@@ -51,7 +52,7 @@ npm.cmd start
 Reverse proxy domain:
 
 ```text
-https://phaohoa.shop/seo-ops -> http://127.0.0.1:5173/seo-ops
+https://seo.cuahangphaohoa.shop -> http://127.0.0.1:5173
 ```
 
 Database dung chung:
