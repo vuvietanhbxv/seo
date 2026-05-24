@@ -21,6 +21,7 @@ npm.cmd run dev
 npm.cmd run build
 npm.cmd run build:seo-domain
 npm.cmd run build:seo-ops
+npm.cmd run publish:plesk
 npm.cmd start
 npm.cmd run lint
 ```
@@ -37,6 +38,12 @@ Build frontend cho domain rieng, chay o root `/`:
 
 ```powershell
 npm.cmd run build:seo-domain
+```
+
+Neu deploy bang Git tren Plesk, sau khi pull code hay chay lenh nay de build va copy file production ra document root:
+
+```powershell
+npm.cmd run publish:plesk
 ```
 
 Chay backend Node dung chung database:

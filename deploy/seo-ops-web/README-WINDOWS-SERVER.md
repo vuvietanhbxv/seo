@@ -19,7 +19,13 @@ Application Startup File: app.js
 Application Mode: production
 ```
 
-Sau khi upload goi nay, bam:
+Neu deploy bang Git, sau khi pull code hay chay:
+
+```text
+npm run publish:plesk
+```
+
+Sau do bam:
 
 ```text
 NPM install

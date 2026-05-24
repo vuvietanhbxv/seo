@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "build:seo-domain": "node -e \"process.env.VITE_BASE_PATH='/'; require('child_process').execSync('npm run build',{stdio:'inherit'})\"",
     "build:seo-ops": "node -e \"process.env.VITE_BASE_PATH='/seo-ops/'; require('child_process').execSync('npm run build',{stdio:'inherit'})\"",
+    "publish:plesk": "npm run build:seo-domain && node scripts/publish-plesk.cjs",
     "start": "node server/seo-ops-server.cjs",
     "lint": "eslint .",
     "preview": "vite preview"
