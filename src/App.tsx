@@ -61,6 +61,7 @@ type ArticleType =
   | 'Commercial Investigation / Review Content'
   | 'Transactional Content'
   | 'Category Hub'
+type ArticleDraftStatus = 'Chua viet' | 'Ban nhap AI' | 'Cho duyet' | 'Da duyet' | 'Can chinh sua'
 
 type AnalyticsSettings = {
   propertyId: string
@@ -135,6 +136,11 @@ type Keyword = {
   ctr: number
   articleType?: ArticleType
   articleTitle?: string
+  articleMetaDescription?: string
+  articleContent?: string
+  articleStatus?: ArticleDraftStatus
+  articleUpdatedAt?: string
+  articleSource?: string
   articleAssigneeId?: string
   articleUrl?: string
   articleTaskId?: string
@@ -1465,6 +1471,11 @@ const normalizeData = (data: AppData): AppData => ({
     keywordType: keyword.keywordType ?? 'A',
     articleType: keyword.articleType ?? 'Informational Content',
     articleTitle: keyword.articleTitle ?? '',
+    articleMetaDescription: keyword.articleMetaDescription ?? '',
+    articleContent: keyword.articleContent ?? '',
+    articleStatus: keyword.articleStatus ?? 'Chua viet',
+    articleUpdatedAt: keyword.articleUpdatedAt ?? '',
+    articleSource: keyword.articleSource ?? '',
     articleAssigneeId: keyword.articleAssigneeId ?? '',
     articleUrl: keyword.articleUrl ?? '',
     articleTaskId: keyword.articleTaskId ?? '',
@@ -2433,7 +2444,7 @@ function App() {
     setSelectedKeywordIds(new Set())
   }
 
-  const updateKeywordArticle = (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleAssigneeId' | 'articleUrl'>>) => {
+  const updateKeywordArticle = (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleMetaDescription' | 'articleContent' | 'articleStatus' | 'articleUpdatedAt' | 'articleSource' | 'articleAssigneeId' | 'articleUrl'>>) => {
     saveData({
       ...data,
       keywords: data.keywords.map((keyword) => (keyword.id === keywordId ? { ...keyword, ...updates } : keyword)),
@@ -6233,15 +6244,26 @@ function ArticleTable({
 }: {
   keywords: Keyword[]
   users: User[]
-  onUpdateKeyword: (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleAssigneeId' | 'articleUrl'>>) => void
+  onUpdateKeyword: (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleMetaDescription' | 'articleContent' | 'articleStatus' | 'articleUpdatedAt' | 'articleSource' | 'articleAssigneeId' | 'articleUrl'>>) => void
   onSendTask: (keywordId: string) => void
   canEdit: boolean
 }) {
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
+  const editingDraft = keywords.find((keyword) => keyword.id === editingDraftId)
+  const statusLabels: Record<ArticleDraftStatus, string> = {
+    'Chua viet': 'Chưa viết',
+    'Ban nhap AI': 'Bản nháp AI',
+    'Cho duyet': 'Chờ duyệt',
+    'Da duyet': 'Đã duyệt',
+    'Can chinh sua': 'Cần chỉnh sửa',
+  }
+
   if (keywords.length === 0) {
     return <EmptyState title="Chưa có keyword" text="Thêm keyword ở module Quản lý Keyword, danh sách bài viết sẽ tự động đồng bộ tại đây." />
   }
 
   return (
+    <>
     <div className="table-wrap article-table-wrap">
       <table className="article-table">
         <thead>
@@ -6252,6 +6274,7 @@ function ArticleTable({
             <th>Loại bài viết</th>
             <th>Người phụ trách</th>
             <th>Gửi task</th>
+            <th>Bản nháp</th>
             <th>Link bài viết</th>
           </tr>
         </thead>
@@ -6301,6 +6324,14 @@ function ArticleTable({
                 </button>
               </td>
               <td>
+                <div className="article-draft-cell">
+                  <span>{statusLabels[keyword.articleStatus ?? 'Chua viet']}</span>
+                  <button className="secondary-button" type="button" onClick={() => setEditingDraftId(keyword.id)}>
+                    {keyword.articleContent ? 'Xem / sửa' : 'Soạn bài'}
+                  </button>
+                </div>
+              </td>
+              <td>
                 <input
                   value={keyword.articleUrl ?? ''}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleUrl: event.target.value })}
@@ -6313,6 +6344,49 @@ function ArticleTable({
         </tbody>
       </table>
     </div>
+    {editingDraft && (
+      <div className="modal-backdrop" role="presentation">
+        <section className="article-draft-modal" role="dialog" aria-modal="true" aria-labelledby="article-draft-title">
+          <div className="panel-head">
+            <div>
+              <h2 id="article-draft-title">Bản nháp bài viết</h2>
+              <span>{editingDraft.term}</span>
+            </div>
+            <button className="secondary-button" type="button" onClick={() => setEditingDraftId(null)}>Đóng</button>
+          </div>
+          <div className="article-draft-form">
+            <label>
+              <span>Tiêu đề</span>
+              <input value={editingDraft.articleTitle ?? ''} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleTitle: event.target.value })} disabled={!canEdit} />
+            </label>
+            <label>
+              <span>Trạng thái</span>
+              <select value={editingDraft.articleStatus ?? 'Chua viet'} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleStatus: event.target.value as ArticleDraftStatus })} disabled={!canEdit}>
+                {(Object.keys(statusLabels) as ArticleDraftStatus[]).map((status) => (
+                  <option key={status} value={status}>{statusLabels[status]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="wide">
+              <span>Meta description</span>
+              <textarea rows={2} value={editingDraft.articleMetaDescription ?? ''} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleMetaDescription: event.target.value })} disabled={!canEdit} />
+            </label>
+            <label className="wide">
+              <span>Nội dung bài viết (Markdown / HTML)</span>
+              <textarea
+                className="article-content-editor"
+                rows={18}
+                value={editingDraft.articleContent ?? ''}
+                onChange={(event) => onUpdateKeyword(editingDraft.id, { articleContent: event.target.value, articleUpdatedAt: appNowIso(), articleSource: 'SEO Ops' })}
+                disabled={!canEdit}
+              />
+            </label>
+            <p className="article-draft-meta">Nguồn: {editingDraft.articleSource || 'Chưa có'} | Cập nhật: {formatDateTime(editingDraft.articleUpdatedAt ?? '')}</p>
+          </div>
+        </section>
+      </div>
+    )}
+    </>
   )
 }
 

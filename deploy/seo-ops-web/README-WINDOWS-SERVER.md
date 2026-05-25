@@ -4,10 +4,12 @@ Cau hinh Plesk:
 
 ```text
 Application Root: /seo.cuahangphaohoa.shop
-Document Root: /seo.cuahangphaohoa.shop
+Document Root: /seo.cuahangphaohoa.shop/deploy/seo-ops-web
 Application Startup File: app.js
 Application Mode: production
 ```
+
+Khong dat Document Root vao thu muc goc vi `index.html` o do la file Vite dung cho che do dev.
 
 Sau khi Git pull/deploy:
 

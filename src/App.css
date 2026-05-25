@@ -1639,13 +1639,69 @@ table {
 }
 
 .article-table {
-  min-width: 1120px;
+  min-width: 1280px;
 }
 
 .article-table select,
 .article-table input {
   width: 100%;
   min-width: 190px;
+}
+
+.article-draft-cell {
+  display: grid;
+  gap: 8px;
+  min-width: 130px;
+}
+
+.article-draft-cell span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.article-draft-modal {
+  width: min(920px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+  padding: 18px;
+}
+
+.article-draft-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.article-draft-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.article-draft-form .wide {
+  grid-column: 1 / -1;
+}
+
+.article-content-editor {
+  resize: vertical;
+  min-height: 320px;
+  font-family: inherit;
+  line-height: 1.55;
+}
+
+.article-draft-meta {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .bulk-actions {

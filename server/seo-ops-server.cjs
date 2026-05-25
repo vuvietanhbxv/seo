@@ -1,6 +1,7 @@
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
+const { createMcpHandler } = require('./seo-ops-mcp.cjs')
 
 const rootDir = path.resolve(__dirname, '..')
 const distDir = path.join(rootDir, 'dist')
@@ -14,6 +15,7 @@ const seedPath = path.join(publicDir, 'seo-ops-seed.json')
 const port = Number(process.env.PORT || process.env.SEO_OPS_PORT || 5173)
 const host = process.env.HOST || process.env.SEO_OPS_HOST || '0.0.0.0'
 const apiToken = process.env.SEO_OPS_API_TOKEN || ''
+const mcpToken = process.env.SEO_OPS_MCP_TOKEN || ''
 const basePath = normalizeBasePath(process.env.SEO_OPS_BASE_PATH || '/')
 
 const mimeTypes = {
@@ -108,6 +110,8 @@ function isAuthorized(req) {
   return header === `Bearer ${apiToken}` || req.headers['x-seo-ops-server-token'] === apiToken
 }
 
+const mcp = createMcpHandler({ readDb, writeDb, token: mcpToken })
+
 function serveStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   const scopedPathname = stripBasePath(url.pathname)
@@ -140,7 +144,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (scopedPathname === '/api/health') {
-      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/' })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/', mcpConfigured: mcp.configured })
+      return
+    }
+
+    if (scopedPathname === '/mcp' || scopedPathname === '/api/mcp') {
+      await mcp.handle(req, res, readBody, sendJson)
       return
     }
 
