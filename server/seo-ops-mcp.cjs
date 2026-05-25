@@ -27,11 +27,13 @@ function secureEquals(left, right) {
   return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer)
 }
 
-function createMcpHandler({ readDb, writeDb, token }) {
+function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
   function authorized(req) {
-    if (!token) return false
     const header = req.headers.authorization || ''
-    return header.startsWith('Bearer ') && secureEquals(header.slice(7).trim(), token)
+    if (token && header.startsWith('Bearer ') && secureEquals(header.slice(7).trim(), token)) return true
+    if (!connectorKey) return false
+    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
+    return secureEquals(url.searchParams.get('key'), connectorKey)
   }
 
   function keywordOutput(data, keyword) {
@@ -194,8 +196,8 @@ function createMcpHandler({ readDb, writeDb, token }) {
   }
 
   async function handle(req, res, readBody, sendJson) {
-    if (!token) {
-      sendJson(res, 503, { ok: false, message: 'MCP disabled. Set SEO_OPS_MCP_TOKEN on the server.' })
+    if (!token && !connectorKey) {
+      sendJson(res, 503, { ok: false, message: 'MCP disabled. Set SEO_OPS_MCP_TOKEN or SEO_OPS_MCP_CONNECTOR_KEY on the server.' })
       return
     }
     if (!authorized(req)) {
@@ -241,7 +243,7 @@ function createMcpHandler({ readDb, writeDb, token }) {
     }
   }
 
-  return { handle, configured: Boolean(token) }
+  return { handle, configured: Boolean(token || connectorKey), connectorKeyConfigured: Boolean(connectorKey) }
 }
 
 module.exports = { createMcpHandler }

@@ -11,24 +11,23 @@ Application Mode: production
 
 Khong dat Document Root vao thu muc goc vi `index.html` o do la file Vite dung cho che do dev.
 
+Bien moi truong MCP cho Claude Connectors:
+
+```text
+SEO_OPS_MCP_CONNECTOR_KEY=mot-key-rieng-dai-ngau-nhien
+SEO_OPS_BASE_PATH=/
+SEO_OPS_DB_DIR=/mnt/data_web/cuahangphaohoa.shop/seo.cuahangphaohoa.shop/db
+```
+
+URL connector:
+
+```text
+https://seo.cuahangphaohoa.shop/mcp?key=mot-key-rieng-dai-ngau-nhien
+```
+
 Sau khi Git pull/deploy:
 
 ```text
 NPM install
 Restart App
 ```
-
-Neu trang chu van la ban dev co `/src/main.tsx`, chay them:
-
-```text
-npm run publish:plesk
-Restart App
-```
-
-Kiem tra:
-
-```text
-https://seo.cuahangphaohoa.shop/api/health
-```
-
-Ket qua dung co `ok: true`.

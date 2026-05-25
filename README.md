@@ -93,7 +93,25 @@ Dat Bearer token tren Plesk trong `Custom environment variables`, sau do restart
 SEO_OPS_MCP_TOKEN=mot-token-dai-ngau-nhien
 ```
 
-Cau hinh `.mcp.json` cua Claude Code:
+### Claude Connectors tren web/Desktop
+
+Claude Connectors khong nhan Bearer header thu cong nhu Claude Code. Neu chua trien khai OAuth, dat them mot key rieng tren Plesk:
+
+```text
+SEO_OPS_MCP_CONNECTOR_KEY=mot-key-rieng-dai-ngau-nhien
+```
+
+Trong `Customize -> Connectors -> Add custom connector`, nhap URL:
+
+```text
+https://seo.cuahangphaohoa.shop/mcp?key=mot-key-rieng-dai-ngau-nhien
+```
+
+Khong dien OAuth Client ID/Secret. URL nay chua quyen doc va ghi ban nhap, can giu bi mat va rotate neu bi lo.
+
+### Claude Code
+
+Cau hinh `.mcp.json`:
 
 ```json
 {
