@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Runtime data and generated deployment archives must never be committed.
+/db/seo-ops-data.json
+/deploy/**/db/seo-ops-data.json
+/deploy/*.zip
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

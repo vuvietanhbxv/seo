@@ -1,6 +1,6 @@
 # SEO Ops - Huong dan cai tren Windows Server
 
-Ban deploy nay la frontend tinh React/Vite. Du lieu hien dang luu trong localStorage cua trinh duyet, chua co backend/database rieng.
+Ban deploy Node.js dung database JSON chung. Database runtime phai nam ngoai thu muc app de cap nhat code khong ghi de du lieu.
 
 ## Cach 1: Chay bang Node.js co backend dung chung
 
@@ -16,6 +16,14 @@ C:\seo-ops-web
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start-seo-ops.ps1 -Port 5173 -BasePath /seo-ops
 ```
+
+Mac dinh script luu database tai thu muc `seo-ops-storage` nam canh thu muc app, vi du:
+
+```text
+C:\seo-ops-storage\seo-ops-data.json
+```
+
+Neu dang nang cap tu ban cu, copy `C:\seo-ops-web\db\seo-ops-data.json` sang thu muc storage nay truoc khi chay ban moi.
 
 Tu cai tu dong chay khi VPS khoi dong:
 
@@ -103,7 +111,7 @@ Khong them dau `/` o cuoi.
 
 ## Luu y quan trong
 
-- Goi deploy co kem `seo-ops-seed.json`. Neu trinh duyet chua co localStorage `seo-demo-data-v5`, app se tu nap du lieu test nay.
-- Khi chay bang `start-seo-ops.ps1`, nhieu nguoi dung chung cung mot data file tai `db/seo-ops-data.json`.
+- Goi deploy co kem `seo-ops-seed.json` sach chi de khoi tao cai dat moi, khong chua du lieu du an production.
+- Khi chay bang `start-seo-ops.ps1`, nhieu nguoi dung chung data file tai thu muc `seo-ops-storage` nam ngoai thu muc app.
 - Trinh duyet van giu localStorage fallback, nhung khi backend `/api/data` hoat dong thi du lieu chung tren VPS la nguon chinh.
-- Hay backup dinh ky file `db/seo-ops-data.json`.
+- Hay backup dinh ky file `seo-ops-storage\seo-ops-data.json`.

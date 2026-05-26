@@ -51,13 +51,41 @@ Build frontend cho domain rieng, chay o root `/`:
 npm.cmd run build:seo-domain
 ```
 
-Neu deploy bang Git tren Plesk, sau khi pull code hay chay lenh nay de build va copy file production ra document root:
+Neu deploy bang Git tren Plesk, file production da nam trong `deploy/seo-ops-web`. Khi tao cap nhat production tu may phat trien, chay lenh nay de dong bo code/assets; script khong dong vao database:
 
 ```powershell
 npm.cmd run publish:plesk
 ```
 
-Chay backend Node dung chung database:
+### Bao ve database production
+
+Database production bat buoc phai dat ngoai thu muc Git/application. Khong dung:
+
+```text
+/mnt/data_web/cuahangphaohoa.shop/seo.cuahangphaohoa.shop/db
+```
+
+Dung thu muc storage rieng:
+
+```text
+/mnt/data_web/cuahangphaohoa.shop/seo-ops-storage/seo-ops-data.json
+```
+
+Truoc lan pull/deploy ban code nay tren Plesk:
+
+1. Dung File Manager copy file `seo.cuahangphaohoa.shop/db/seo-ops-data.json` hien tai sang `seo-ops-storage/seo-ops-data.json`.
+2. Sua `Custom environment variables`:
+
+```text
+SEO_OPS_DB_DIR=/mnt/data_web/cuahangphaohoa.shop/seo-ops-storage
+```
+
+3. Restart app va truy cap `/api/health`. Kiem tra `dbPath` la duong dan storage rieng va `databaseProtected` la `true`.
+4. Chi sau khi xac nhan xong moi Git pull/deploy code moi.
+
+O che do `production`, server se tu choi khoi dong neu `SEO_OPS_DB_DIR` thieu hoac van tro vao ben trong thu muc ung dung. Quy tac nay ngan deploy code ghi de du lieu that.
+
+Chay backend Node local:
 
 ```powershell
 $env:SEO_OPS_PORT='5173'
@@ -73,11 +101,13 @@ Reverse proxy domain:
 https://seo.cuahangphaohoa.shop -> http://127.0.0.1:5173
 ```
 
-Database dung chung:
+Database local/runtime khong con duoc Git theo doi:
 
 ```text
 db/seo-ops-data.json
 ```
+
+File `public/seo-ops-seed.json` chi la seed khoi tao sach cho cai dat moi, khong chua du lieu du an production. Tai khoan khoi tao la `admin@seo-ops.local` / `123456`; doi mat khau ngay khi tao database moi.
 
 ## Google Search Console - Check Index
 

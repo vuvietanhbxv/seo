@@ -1,7 +1,8 @@
 param(
   [int]$Port = 5173,
   [string]$AppPath = $PSScriptRoot,
-  [string]$BasePath = '/'
+  [string]$BasePath = '/',
+  [string]$DataPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,9 +19,15 @@ if (-not (Test-Path -LiteralPath $serverPath)) {
   exit 1
 }
 
+if (-not $DataPath) {
+  $DataPath = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $AppPath).Path) 'seo-ops-storage'
+}
+New-Item -ItemType Directory -Path $DataPath -Force | Out-Null
+
+$env:NODE_ENV = 'production'
 $env:SEO_OPS_PORT = "$Port"
 $env:SEO_OPS_HOST = '0.0.0.0'
-$env:SEO_OPS_DB_DIR = Join-Path $AppPath 'db'
+$env:SEO_OPS_DB_DIR = (Resolve-Path -LiteralPath $DataPath).Path
 $env:SEO_OPS_BASE_PATH = $BasePath
 
 Write-Host "SEO Ops dang chay tai http://0.0.0.0:$Port$BasePath"

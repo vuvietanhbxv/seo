@@ -9,7 +9,8 @@ const packagedPublicDir = path.join(rootDir, 'deploy', 'seo-ops-web')
 const publicDir = process.env.SEO_OPS_PUBLIC_DIR
   ? path.resolve(process.env.SEO_OPS_PUBLIC_DIR)
   : choosePublicDir()
-const dbDir = process.env.SEO_OPS_DB_DIR ? path.resolve(process.env.SEO_OPS_DB_DIR) : path.join(rootDir, 'db')
+const configuredDbDir = process.env.SEO_OPS_DB_DIR ? path.resolve(process.env.SEO_OPS_DB_DIR) : ''
+const dbDir = configuredDbDir || path.join(rootDir, 'db')
 const dbPath = path.join(dbDir, 'seo-ops-data.json')
 const seedPath = path.join(publicDir, 'seo-ops-seed.json')
 const port = Number(process.env.PORT || process.env.SEO_OPS_PORT || 5173)
@@ -19,6 +20,7 @@ const mcpToken = process.env.SEO_OPS_MCP_TOKEN || ''
 const mcpConnectorKey = process.env.SEO_OPS_MCP_CONNECTOR_KEY || ''
 const searchConsoleToken = process.env.SEO_OPS_SEARCH_CONSOLE_TOKEN || ''
 const basePath = normalizeBasePath(process.env.SEO_OPS_BASE_PATH || '/')
+const productionMode = process.env.NODE_ENV === 'production'
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -37,6 +39,21 @@ function normalizeBasePath(value) {
   const raw = String(value || '/').trim()
   if (!raw || raw === '/') return ''
   return `/${raw.replace(/^\/+|\/+$/g, '')}`
+}
+
+function isInsideApp(targetPath) {
+  const relativePath = path.relative(rootDir, targetPath)
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
+}
+
+function validateDatabaseLocation() {
+  if (!productionMode) return
+  if (!configuredDbDir) {
+    throw new Error('Production requires SEO_OPS_DB_DIR outside the application directory. Configure external storage before starting the app.')
+  }
+  if (isInsideApp(dbDir)) {
+    throw new Error(`Unsafe production database location: ${dbDir}. Set SEO_OPS_DB_DIR outside ${rootDir}.`)
+  }
 }
 
 function hasBuiltFrontend(dir) {
@@ -146,7 +163,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (scopedPathname === '/api/health') {
-      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/', mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken) })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken) })
       return
     }
 
@@ -219,6 +236,7 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
+validateDatabaseLocation()
 ensureDb()
 server.listen(port, host, () => {
   console.log(`SEO Ops running at http://${host}:${port}${basePath || '/'}`)
