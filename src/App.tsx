@@ -10,6 +10,7 @@ type TransactionType = 'Thu' | 'Chi'
 type Role = 'Quản trị viên' | 'Trưởng nhóm SEO' | 'Nội dung' | 'Tài chính' | 'Chỉ xem'
 type SearchIntent = 'Informational' | 'Commercial' | 'Transactional' | 'Navigational'
 type KeywordType = 'A' | 'B' | 'C'
+type KeywordIndexStatus = 'Chua check' | 'Noindex' | 'Index'
 type SalaryType = 'Lương theo giờ' | 'Lương theo tháng' | 'Lương theo task'
 type ExpenseScope = 'Chi chung dự án' | 'Chi riêng dự án'
 type AnalyticsGranularity = 'day' | 'week' | 'month' | 'year'
@@ -62,6 +63,10 @@ type ArticleType =
   | 'Transactional Content'
   | 'Category Hub'
 type ArticleDraftStatus = 'Chua viet' | 'Ban nhap AI' | 'Cho duyet' | 'Da duyet' | 'Can chinh sua'
+type QuickKeywordIssue = {
+  line: number
+  text: string
+}
 
 type AnalyticsSettings = {
   propertyId: string
@@ -69,6 +74,13 @@ type AnalyticsSettings = {
   apiEndpoint: string
   accessToken: string
   lastSyncAt?: string
+}
+
+type SearchConsoleSettings = {
+  siteUrl: string
+  apiEndpoint: string
+  lastConnectedAt?: string
+  lastCheckAt?: string
 }
 
 type WordPressSettings = {
@@ -89,6 +101,17 @@ type WordPressContentItem = {
   seo?: {
     rankMathFocusKeyword?: string
     yoastFocusKeyword?: string
+  }
+}
+
+type SearchConsoleInspectionResult = {
+  inspectionResult?: {
+    inspectionResultLink?: string
+    indexStatusResult?: {
+      verdict?: string
+      coverageState?: string
+      lastCrawlTime?: string
+    }
   }
 }
 
@@ -116,6 +139,7 @@ type Project = {
   ownerId: string
   deletedAt?: string
   analytics?: AnalyticsSettings
+  searchConsole?: SearchConsoleSettings
   wordpress?: WordPressSettings
 }
 
@@ -144,6 +168,11 @@ type Keyword = {
   articleAssigneeId?: string
   articleUrl?: string
   articleTaskId?: string
+  indexStatus?: KeywordIndexStatus
+  indexCheckedAt?: string
+  indexCoverageState?: string
+  indexLastCrawlAt?: string
+  indexInspectionLink?: string
 }
 
 type Task = {
@@ -615,6 +644,11 @@ const emptyAnalyticsSettings: AnalyticsSettings = {
   measurementId: '',
   apiEndpoint: '',
   accessToken: '',
+}
+
+const emptySearchConsoleSettings: SearchConsoleSettings = {
+  siteUrl: '',
+  apiEndpoint: '/api/search-console/inspect',
 }
 
 const emptyWordPressSettings: WordPressSettings = {
@@ -1311,6 +1345,10 @@ const analyticsSettingsOf = (project?: Project): AnalyticsSettings => ({
   ...emptyAnalyticsSettings,
   ...(project?.analytics ?? {}),
 })
+const searchConsoleSettingsOf = (project?: Project): SearchConsoleSettings => ({
+  ...emptySearchConsoleSettings,
+  ...(project?.searchConsole ?? {}),
+})
 const wordpressSettingsOf = (project?: Project): WordPressSettings => ({
   ...emptyWordPressSettings,
   ...(project?.wordpress ?? {}),
@@ -1324,7 +1362,7 @@ const wordpressErrorMessage = async (response: Response) => {
     try {
       detail = await response.clone().text()
     } catch {
-      detail = ''
+      // Ignore unreadable error response bodies.
     }
   }
   if (response.status === 401 || response.status === 403) return `API key không đúng hoặc plugin chặn quyền truy cập. HTTP ${response.status}${detail ? ` - ${detail}` : ''}`
@@ -1338,6 +1376,24 @@ const formatFetchError = (error: unknown) => {
     return 'Không gọi được WordPress. Thường do sai URL, website không bật HTTPS hợp lệ, CORS Allowed Origin chưa đúng, hoặc hosting chặn REST API.'
   }
   return message
+}
+const normalizedSearchConsoleSiteUrl = (value: string) => {
+  const trimmed = value.trim()
+  return trimmed.startsWith('sc-domain:') ? trimmed : trimmed ? `${trimmed.replace(/\/+$/, '')}/` : ''
+}
+const searchConsoleErrorMessage = async (response: Response) => {
+  let detail = ''
+  try {
+    const payload = await response.clone().json()
+    detail = payload?.error?.message || payload?.message || ''
+  } catch {
+    // Ignore unreadable error response bodies.
+  }
+  if (response.status === 401) return 'Access Token trên server không hợp lệ hoặc đã hết hạn. Hãy cập nhật biến SEO_OPS_SEARCH_CONSOLE_TOKEN.'
+  if (response.status === 403) return 'Tài khoản Google chưa có quyền với Search Console property hoặc API chưa được bật.'
+  if (response.status === 429) return 'Đã vượt giới hạn kiểm tra URL của Google Search Console. Hãy thử lại sau.'
+  if (response.status === 503) return detail || 'Server chưa cấu hình SEO_OPS_SEARCH_CONSOLE_TOKEN.'
+  return `Google Search Console trả về HTTP ${response.status}${detail ? ` - ${detail}` : ''}`
 }
 const wordpressUrlWithKey = (endpoint: string, path: string, apiKey: string, params = '') => {
   const separator = params ? `?${params}&` : '?'
@@ -1455,6 +1511,7 @@ const normalizeData = (data: AppData): AppData => ({
   projects: data.projects.map((project) => ({
     ...project,
     analytics: analyticsSettingsOf(project),
+    searchConsole: searchConsoleSettingsOf(project),
     wordpress: wordpressSettingsOf(project),
   })),
   users: data.users.map((user) => ({
@@ -1479,6 +1536,11 @@ const normalizeData = (data: AppData): AppData => ({
     articleAssigneeId: keyword.articleAssigneeId ?? '',
     articleUrl: keyword.articleUrl ?? '',
     articleTaskId: keyword.articleTaskId ?? '',
+    indexStatus: keyword.indexStatus ?? 'Chua check',
+    indexCheckedAt: keyword.indexCheckedAt ?? '',
+    indexCoverageState: keyword.indexCoverageState ?? '',
+    indexLastCrawlAt: keyword.indexLastCrawlAt ?? '',
+    indexInspectionLink: keyword.indexInspectionLink ?? '',
   })),
   transactions: data.transactions.map((transaction) => ({
     ...transaction,
@@ -1633,10 +1695,16 @@ function App() {
   const [keywordBuilder, setKeywordBuilder] = useState<Keyword | null>(null)
   const [editingKeywordId, setEditingKeywordId] = useState<string | null>(null)
   const [keywordFormType, setKeywordFormType] = useState<KeywordType>('A')
+  const [quickKeywordOpen, setQuickKeywordOpen] = useState(false)
+  const [quickKeywordStatus, setQuickKeywordStatus] = useState('')
+  const [quickKeywordIssues, setQuickKeywordIssues] = useState<QuickKeywordIssue[]>([])
   const [collapsedKeywordIds, setCollapsedKeywordIds] = useState<Set<string>>(() => new Set())
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(() => new Set())
   const [analyticsGranularity, setAnalyticsGranularity] = useState<AnalyticsGranularity>('day')
   const [analyticsStatus, setAnalyticsStatus] = useState('')
+  const [searchConsoleStatus, setSearchConsoleStatus] = useState('')
+  const [checkingKeywordIds, setCheckingKeywordIds] = useState<Set<string>>(() => new Set())
+  const [checkingAllKeywords, setCheckingAllKeywords] = useState(false)
   const [wordpressStatus, setWordpressStatus] = useState('')
   const [financeFilter, setFinanceFilter] = useState<FinanceFilter>('all')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -2081,6 +2149,22 @@ function App() {
     setAnalyticsStatus('Đã lưu cấu hình Google Analytics cho dự án đang chọn.')
   }
 
+  const saveSearchConsoleSettings = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+    const form = new FormData(event.currentTarget)
+    const settings: SearchConsoleSettings = {
+      ...searchConsoleSettingsOf(activeProject),
+      siteUrl: normalizedSearchConsoleSiteUrl(String(form.get('siteUrl'))),
+      apiEndpoint: String(form.get('apiEndpoint')).trim() || emptySearchConsoleSettings.apiEndpoint,
+    }
+    saveData({
+      ...data,
+      projects: data.projects.map((project) => (project.id === activeProject.id ? { ...project, searchConsole: settings } : project)),
+    }, 'Cập nhật Google Search Console API', activeProject.name)
+    setSearchConsoleStatus('Đã lưu cấu hình Search Console. Hãy kiểm tra một URL trước khi chạy hàng loạt.')
+  }
+
   const saveWordPressSettings = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!activeProject) return
@@ -2206,6 +2290,8 @@ function App() {
             articleAssigneeId: '',
             articleUrl: String(item.url),
             articleTaskId: '',
+            indexStatus: 'Chua check',
+            indexCheckedAt: '',
           }
         })
       saveData({
@@ -2317,6 +2403,8 @@ function App() {
       articleAssigneeId: editingKeyword?.articleAssigneeId ?? '',
       articleUrl: editingKeyword?.articleUrl ?? '',
       articleTaskId: editingKeyword?.articleTaskId ?? '',
+      indexStatus: editingKeyword?.indexStatus ?? 'Chua check',
+      indexCheckedAt: editingKeyword?.indexCheckedAt ?? '',
     }
     saveData({
       ...data,
@@ -2360,6 +2448,8 @@ function App() {
       articleAssigneeId: '',
       articleUrl: '',
       articleTaskId: '',
+      indexStatus: 'Chua check',
+      indexCheckedAt: '',
     }
 
     const parentIndex = data.keywords.findIndex((item) => item.id === keywordBuilder.id)
@@ -2375,6 +2465,242 @@ function App() {
       return next
     })
     setKeywordBuilder(null)
+  }
+
+  const importQuickKeywords = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+
+    const lines = String(new FormData(event.currentTarget).get('quickKeywords') ?? '').split(/\r?\n/)
+    const projectTerms = new Map(projectKeywords.map((keyword) => [keyword.term.trim().toLocaleLowerCase('vi-VN'), keyword]))
+    const branch: Partial<Record<KeywordType, Keyword>> = {}
+    const imported: Keyword[] = []
+    const issues: QuickKeywordIssue[] = []
+
+    lines.forEach((rawLine, index) => {
+      const value = rawLine.trim()
+      if (!value) return
+
+      const match = value.match(/^([ABC])\s*:\s*(.+)$/i)
+      if (!match || !match[2].trim()) {
+        issues.push({ line: index + 1, text: 'Sai cú pháp. Dùng A: keyword, B: keyword hoặc C: keyword.' })
+        return
+      }
+
+      const keywordType = match[1].toUpperCase() as KeywordType
+      const term = match[2].trim()
+      let parentId = ''
+
+      if (keywordType === 'A') {
+        delete branch.B
+        delete branch.C
+      } else if (keywordType === 'B') {
+        if (!branch.A) {
+          issues.push({ line: index + 1, text: 'Keyword B cần nằm sau một keyword A.' })
+          return
+        }
+        parentId = branch.A.id
+        delete branch.C
+      } else {
+        if (!branch.B) {
+          issues.push({ line: index + 1, text: 'Keyword C cần nằm sau một keyword B.' })
+          return
+        }
+        parentId = branch.B.id
+      }
+
+      const termKey = term.toLocaleLowerCase('vi-VN')
+      const existing = projectTerms.get(termKey)
+      if (existing) {
+        issues.push({ line: index + 1, text: `Đã có keyword "${term}", bỏ qua dòng trùng.` })
+        branch[keywordType] = existing
+        return
+      }
+
+      const keyword: Keyword = {
+        id: uid('k'),
+        projectId: activeProject.id,
+        parentId,
+        keywordType,
+        term,
+        landingUrl: '',
+        searchVolume: 0,
+        keywordDifficulty: 0,
+        searchIntent: 'Informational',
+        position: 100,
+        impressions: 0,
+        clicks: 0,
+        organicTraffic: 0,
+        ctr: 0,
+        articleType: 'Informational Content',
+        articleTitle: '',
+        articleAssigneeId: '',
+        articleUrl: '',
+        articleTaskId: '',
+        indexStatus: 'Chua check',
+        indexCheckedAt: '',
+      }
+
+      imported.push(keyword)
+      projectTerms.set(termKey, keyword)
+      branch[keywordType] = keyword
+    })
+
+    setQuickKeywordIssues(issues)
+    if (imported.length === 0) {
+      setQuickKeywordStatus('Không có keyword hợp lệ để nhập.')
+      return
+    }
+
+    saveData({ ...data, keywords: [...data.keywords, ...imported] }, 'Nhập nhanh keyword', `${imported.length} keyword`)
+    setCollapsedKeywordIds(new Set())
+    setQuickKeywordStatus(`Đã nhập ${imported.length} keyword.${issues.length ? ` Có ${issues.length} dòng được bỏ qua.` : ''}`)
+    if (issues.length === 0) {
+      setQuickKeywordOpen(false)
+      event.currentTarget.reset()
+    }
+  }
+
+  const inspectKeywordIndex = async (keyword: Keyword, settings: SearchConsoleSettings) => {
+    const articleUrl = keyword.articleUrl?.trim()
+    const checkedAt = appNowIso()
+    if (!articleUrl) {
+      return {
+        indexStatus: 'Noindex' as KeywordIndexStatus,
+        indexCheckedAt: checkedAt,
+        indexCoverageState: 'Chưa có URL bài viết để kiểm tra',
+        indexLastCrawlAt: '',
+        indexInspectionLink: '',
+      }
+    }
+    if (!settings.siteUrl || !settings.apiEndpoint) {
+      throw new Error('Chưa cấu hình Google Search Console. Vào Dự án SEO để nhập Property URL và API Endpoint.')
+    }
+
+    const response = await fetch(settings.apiEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        inspectionUrl: articleUrl,
+        siteUrl: settings.siteUrl,
+        languageCode: 'vi-VN',
+      }),
+    })
+    if (!response.ok) throw new Error(await searchConsoleErrorMessage(response))
+    const payload: SearchConsoleInspectionResult = await response.json()
+    const result = payload.inspectionResult?.indexStatusResult
+    return {
+      indexStatus: result?.verdict === 'PASS' ? 'Index' as KeywordIndexStatus : 'Noindex' as KeywordIndexStatus,
+      indexCheckedAt: checkedAt,
+      indexCoverageState: result?.coverageState ?? 'Google không trả về chi tiết index',
+      indexLastCrawlAt: result?.lastCrawlTime ?? '',
+      indexInspectionLink: payload.inspectionResult?.inspectionResultLink ?? '',
+    }
+  }
+
+  const checkKeywordIndex = async (keywordId: string) => {
+    const keyword = projectKeywords.find((item) => item.id === keywordId)
+    if (!keyword || checkingAllKeywords) return
+    setCheckingKeywordIds((current) => new Set(current).add(keywordId))
+    setSearchConsoleStatus(`Đang kiểm tra index: ${keyword.term}`)
+    try {
+      const result = await inspectKeywordIndex(keyword, searchConsoleSettingsOf(activeProject))
+      saveData({
+        ...data,
+        keywords: data.keywords.map((item) => item.id === keywordId ? { ...item, ...result } : item),
+        projects: activeProject
+          ? data.projects.map((project) =>
+              project.id === activeProject.id
+                ? { ...project, searchConsole: { ...searchConsoleSettingsOf(project), lastCheckAt: result.indexCheckedAt } }
+                : project,
+            )
+          : data.projects,
+      }, 'Check index Google Search Console', keyword.term)
+      setSearchConsoleStatus(`${keyword.term}: ${result.indexStatus === 'Index' ? 'Đã index' : 'Noindex'} - ${result.indexCoverageState}`)
+    } catch (error) {
+      setSearchConsoleStatus(error instanceof Error ? error.message : 'Không kiểm tra được index.')
+    } finally {
+      setCheckingKeywordIds((current) => {
+        const next = new Set(current)
+        next.delete(keywordId)
+        return next
+      })
+    }
+  }
+
+  const checkAllKeywordIndexes = async () => {
+    if (!activeProject || projectKeywords.length === 0) return
+    const settings = searchConsoleSettingsOf(activeProject)
+    const updates = new Map<string, Partial<Keyword>>()
+    let indexed = 0
+    let noindex = 0
+    let failed = 0
+    setCheckingAllKeywords(true)
+    setSearchConsoleStatus(`Đang kiểm tra 0/${projectKeywords.length} URL qua Google Search Console...`)
+    try {
+      for (const [index, keyword] of projectKeywords.entries()) {
+        try {
+          const result = await inspectKeywordIndex(keyword, settings)
+          updates.set(keyword.id, result)
+          if (result.indexStatus === 'Index') indexed += 1
+          else noindex += 1
+        } catch (error) {
+          failed += 1
+          if (failed === 1) {
+            setSearchConsoleStatus(error instanceof Error ? error.message : 'Không kiểm tra được Google Search Console.')
+          }
+        }
+        if (keyword.articleUrl?.trim() && index < projectKeywords.length - 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 110))
+        }
+        if (failed === 0) {
+          setSearchConsoleStatus(`Đang kiểm tra ${index + 1}/${projectKeywords.length} URL qua Google Search Console...`)
+        }
+      }
+
+      if (updates.size > 0) {
+        const lastCheckAt = appNowIso()
+        saveData({
+          ...data,
+          keywords: data.keywords.map((keyword) => ({ ...keyword, ...(updates.get(keyword.id) ?? {}) })),
+          projects: data.projects.map((project) =>
+            project.id === activeProject.id
+              ? { ...project, searchConsole: { ...searchConsoleSettingsOf(project), lastCheckAt } }
+              : project,
+          ),
+        }, 'Check index Google Search Console hàng loạt', `${updates.size} keyword`)
+        setQuickKeywordStatus(`Đã kiểm tra index ${updates.size} keyword.`)
+      }
+      setSearchConsoleStatus(`Kết quả Google Search Console: ${indexed} Index, ${noindex} Noindex${failed ? `, ${failed} lỗi.` : '.'}`)
+    } finally {
+      setCheckingAllKeywords(false)
+    }
+  }
+
+  const testSearchConsoleConnection = async () => {
+    if (!activeProject) return
+    const keyword = projectKeywords.find((item) => item.articleUrl?.trim())
+    if (!keyword) {
+      setSearchConsoleStatus('Cần có ít nhất một keyword đã gắn URL bài viết để kiểm tra kết nối.')
+      return
+    }
+    setSearchConsoleStatus(`Đang kiểm tra kết nối bằng URL: ${keyword.articleUrl}`)
+    try {
+      const result = await inspectKeywordIndex(keyword, searchConsoleSettingsOf(activeProject))
+      saveData({
+        ...data,
+        projects: data.projects.map((project) =>
+          project.id === activeProject.id
+            ? { ...project, searchConsole: { ...searchConsoleSettingsOf(project), lastConnectedAt: appNowIso() } }
+            : project,
+        ),
+      }, 'Kiểm tra kết nối Google Search Console', activeProject.name)
+      setSearchConsoleStatus(`Kết nối thành công. URL mẫu: ${result.indexStatus === 'Index' ? 'Đã index' : 'Noindex'} - ${result.indexCoverageState}`)
+    } catch (error) {
+      setSearchConsoleStatus(error instanceof Error ? error.message : 'Không kết nối được Google Search Console.')
+    }
   }
 
   const toggleKeywordCollapse = (keywordId: string) => {
@@ -2447,7 +2773,17 @@ function App() {
   const updateKeywordArticle = (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleMetaDescription' | 'articleContent' | 'articleStatus' | 'articleUpdatedAt' | 'articleSource' | 'articleAssigneeId' | 'articleUrl'>>) => {
     saveData({
       ...data,
-      keywords: data.keywords.map((keyword) => (keyword.id === keywordId ? { ...keyword, ...updates } : keyword)),
+      keywords: data.keywords.map((keyword) =>
+        keyword.id === keywordId
+          ? {
+              ...keyword,
+              ...updates,
+              ...('articleUrl' in updates && updates.articleUrl !== keyword.articleUrl
+                ? { indexStatus: 'Chua check' as KeywordIndexStatus, indexCheckedAt: '' }
+                : {}),
+            }
+          : keyword,
+      ),
     }, 'Cập nhật bài viết keyword', data.keywords.find((keyword) => keyword.id === keywordId)?.term ?? keywordId)
   }
 
@@ -3781,6 +4117,39 @@ function App() {
                   </div>
                 </Panel>
 
+                <Panel title="Google Search Console / Check Index" action="URL Inspection API">
+                  <div className="analytics-layout">
+                    <form className="analytics-settings" onSubmit={saveSearchConsoleSettings} key={`${activeProject.id}-search-console`}>
+                      <label>
+                        <span>Search Console Property URL</span>
+                        <input name="siteUrl" placeholder="https://tenmien.vn/ hoặc sc-domain:tenmien.vn" defaultValue={searchConsoleSettingsOf(activeProject).siteUrl || normalizedSearchConsoleSiteUrl(activeProject.website)} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>URL Inspection API Endpoint</span>
+                        <input name="apiEndpoint" placeholder={emptySearchConsoleSettings.apiEndpoint} defaultValue={searchConsoleSettingsOf(activeProject).apiEndpoint} disabled={!canEditProjects} />
+                      </label>
+                      <div className="analytics-form-actions">
+                        <button type="submit" disabled={!canEditProjects}>Lưu cài đặt</button>
+                        <button className="secondary-button" type="button" onClick={testSearchConsoleConnection} disabled={!canEditProjects}>
+                          Kiểm tra kết nối
+                        </button>
+                      </div>
+                      <p>
+                        Trên máy chủ, đặt <code>SEO_OPS_SEARCH_CONSOLE_TOKEN</code> bằng OAuth token có scope <code>webmasters.readonly</code>. Property dạng URL-prefix phải có dấu <code>/</code> cuối; property domain dùng dạng <code>sc-domain:tenmien.vn</code>.
+                      </p>
+                    </form>
+                    <div className="analytics-report">
+                      <div className="project-detail">
+                        <Detail label="Property đang dùng" value={field(searchConsoleSettingsOf(activeProject).siteUrl)} />
+                        <Detail label="Endpoint" value={field(searchConsoleSettingsOf(activeProject).apiEndpoint)} />
+                        <Detail label="Kết nối gần nhất" value={formatDateTime(searchConsoleSettingsOf(activeProject).lastConnectedAt)} />
+                        <Detail label="Check index gần nhất" value={formatDateTime(searchConsoleSettingsOf(activeProject).lastCheckAt)} />
+                      </div>
+                      {searchConsoleStatus && <p className="analytics-status">{searchConsoleStatus}</p>}
+                    </div>
+                  </div>
+                </Panel>
+
                 <Panel title="Google Analytics" action="Tool nội bộ">
                   <div className="analytics-toolbar">
                     <div>
@@ -3898,6 +4267,17 @@ function App() {
 
             <Panel title={editingKeyword ? 'Sửa key' : 'Thêm key'} action={canEditProjects ? 'Keyword Mapping' : 'Chỉ xem'}>
               {canEditProjects ? (
+                <>
+                <div className="keyword-quick-toolbar">
+                  <button className="secondary-button" type="button" onClick={() => { setQuickKeywordOpen(true); setQuickKeywordStatus(''); setQuickKeywordIssues([]) }}>
+                    Nhập nhanh keyword
+                  </button>
+                  <button className="keyword-index-bulk-button" type="button" onClick={checkAllKeywordIndexes} disabled={checkingAllKeywords}>
+                    {checkingAllKeywords ? 'Đang check...' : 'Check index hàng loạt'}
+                  </button>
+                  {quickKeywordStatus && <span>{quickKeywordStatus}</span>}
+                </div>
+                {searchConsoleStatus && <p className="analytics-status keyword-index-status">{searchConsoleStatus}</p>}
                 <form className="keyword-form" onSubmit={saveKeyword} key={editingKeyword?.id ?? 'new-keyword'}>
                   <input name="term" placeholder="Keyword *" defaultValue={editingKeyword?.term ?? ''} required />
                   <select name="keywordType" value={keywordFormType} onChange={(event) => setKeywordFormType(event.target.value as KeywordType)}>
@@ -3937,6 +4317,7 @@ function App() {
                   )}
                   <button type="submit">{editingKeyword ? 'Sửa key' : 'Thêm key'}</button>
                 </form>
+                </>
               ) : (
                 <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền chỉnh sửa keyword." />
               )}
@@ -3952,6 +4333,9 @@ function App() {
                 onDeleteSelected={deleteSelectedKeywords}
                 onDevelopKeyword={setKeywordBuilder}
                 onEditKeyword={startEditKeyword}
+                onCheckIndex={checkKeywordIndex}
+                checkingKeywordIds={checkingKeywordIds}
+                checkingAllKeywords={checkingAllKeywords}
                 canEdit={canEditProjects}
               />
             </Panel>
@@ -4364,13 +4748,20 @@ function App() {
         )}
       </main>
 
-      {keywordBuilder && (
-        <KeywordBuilderModal
+        {keywordBuilder && (
+          <KeywordBuilderModal
           keyword={keywordBuilder}
           onClose={() => setKeywordBuilder(null)}
           onSubmit={developKeyword}
-        />
-      )}
+          />
+        )}
+        {quickKeywordOpen && (
+          <QuickKeywordModal
+            issues={quickKeywordIssues}
+            onClose={() => setQuickKeywordOpen(false)}
+            onSubmit={importQuickKeywords}
+          />
+        )}
     </div>
   )
 }
@@ -6086,8 +6477,8 @@ function EntityLinkTable({
 
 const keywordTooltips = {
   keyword: 'Từ khóa chính cần theo dõi và tối ưu.',
-  landingUrl: 'URL đích được map với từ khóa trong kế hoạch nội dung hoặc tối ưu sản phẩm.',
   article: 'Link bài viết đã xuất bản hoặc đang được cập nhật từ module Bài viết.',
+  indexStatus: 'Kiểm tra nhanh trạng thái index của URL bài viết. Trạng thái đỏ là chưa check, xám là noindex, xanh là index.',
   searchVolume: 'Lượng tìm kiếm trung bình mỗi tháng, thể hiện nhu cầu thị trường.',
   keywordDifficulty: 'Độ khó từ khóa từ 0-100. Dự án mới nên ưu tiên KD thấp.',
   searchIntent: 'Ý định tìm kiếm để quyết định định dạng nội dung phù hợp.',
@@ -6119,6 +6510,9 @@ function KeywordTable({
   onDeleteSelected,
   onDevelopKeyword,
   onEditKeyword,
+  onCheckIndex,
+  checkingKeywordIds,
+  checkingAllKeywords,
   canEdit,
 }: {
   keywords: Keyword[]
@@ -6129,6 +6523,9 @@ function KeywordTable({
   onDeleteSelected: () => void
   onDevelopKeyword: (keyword: Keyword) => void
   onEditKeyword: (keyword: Keyword) => void
+  onCheckIndex: (keywordId: string) => void
+  checkingKeywordIds: Set<string>
+  checkingAllKeywords: boolean
   canEdit: boolean
 }) {
   if (keywords.length === 0) {
@@ -6167,8 +6564,8 @@ function KeywordTable({
           <tr>
             <th>Chọn</th>
             <Th label="Keyword" tip={keywordTooltips.keyword} />
-            <Th label="Landing URL" tip={keywordTooltips.landingUrl} />
             <Th label="Bài viết" tip={keywordTooltips.article} />
+            <Th label="Check index" tip={keywordTooltips.indexStatus} />
             <Th label="Search Volume" tip={keywordTooltips.searchVolume} />
             <Th label="Keyword Difficulty" tip={keywordTooltips.keywordDifficulty} />
             <Th label="Search Intent" tip={keywordTooltips.searchIntent} />
@@ -6215,8 +6612,18 @@ function KeywordTable({
                   )}
                 </div>
               </td>
-              <td>{field(keyword.landingUrl)}</td>
               <td>{keyword.articleUrl ? <a href={keyword.articleUrl} target="_blank" rel="noreferrer">Mở bài viết</a> : 'Chưa cập nhật'}</td>
+              <td>
+                <button
+                  className={`keyword-index-button status-${keyword.indexStatus === 'Index' ? 'indexed' : keyword.indexStatus === 'Noindex' ? 'noindex' : 'unchecked'}`}
+                  type="button"
+                  disabled={!canEdit || checkingAllKeywords || checkingKeywordIds.has(keyword.id)}
+                  onClick={() => onCheckIndex(keyword.id)}
+                  title={keyword.indexCheckedAt ? `Kiểm tra lúc ${formatDateTime(keyword.indexCheckedAt)}` : 'Chưa kiểm tra'}
+                >
+                  {checkingKeywordIds.has(keyword.id) ? 'Đang check' : keyword.indexStatus === 'Index' ? 'Index' : keyword.indexStatus === 'Noindex' ? 'Noindex' : 'Check'}
+                </button>
+              </td>
               <td>{keyword.searchVolume.toLocaleString('vi-VN')}</td>
               <td>{keyword.keywordDifficulty}/100</td>
               <td>{keyword.searchIntent}</td>
@@ -6387,6 +6794,51 @@ function ArticleTable({
       </div>
     )}
     </>
+  )
+}
+
+function QuickKeywordModal({
+  issues,
+  onClose,
+  onSubmit,
+}: {
+  issues: QuickKeywordIssue[]
+  onClose: () => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="quick-keyword-modal" role="dialog" aria-modal="true" aria-labelledby="quick-keyword-title">
+        <div className="panel-head">
+          <h2 id="quick-keyword-title">Nhập nhanh keyword</h2>
+          <button className="secondary-button" type="button" onClick={onClose}>Đóng</button>
+        </div>
+        <form className="quick-keyword-form" onSubmit={onSubmit}>
+          <label>
+            <span>Mỗi dòng một keyword theo cấp A, B hoặc C</span>
+            <textarea
+              name="quickKeywords"
+              autoFocus
+              required
+              rows={13}
+              placeholder={'A: pháo hoa Bộ Công an\nB: mua pháo hoa Bộ Công an\nC: mua pháo hoa Bộ Công an ở đâu\nA: quy định pháo hoa'}
+            />
+          </label>
+          <p>Keyword B tự liên kết với keyword A gần nhất phía trên; keyword C tự liên kết với keyword B gần nhất trong cùng nhánh.</p>
+          {issues.length > 0 && (
+            <div className="quick-keyword-issues" role="alert">
+              {issues.map((issue) => (
+                <span key={`${issue.line}-${issue.text}`}>Dòng {issue.line}: {issue.text}</span>
+              ))}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button className="secondary-button" type="button" onClick={onClose}>Hủy</button>
+            <button type="submit">Nhập keyword</button>
+          </div>
+        </form>
+      </section>
+    </div>
   )
 }
 

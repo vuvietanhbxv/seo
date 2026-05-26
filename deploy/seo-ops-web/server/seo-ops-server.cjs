@@ -17,6 +17,7 @@ const host = process.env.HOST || process.env.SEO_OPS_HOST || '0.0.0.0'
 const apiToken = process.env.SEO_OPS_API_TOKEN || ''
 const mcpToken = process.env.SEO_OPS_MCP_TOKEN || ''
 const mcpConnectorKey = process.env.SEO_OPS_MCP_CONNECTOR_KEY || ''
+const searchConsoleToken = process.env.SEO_OPS_SEARCH_CONSOLE_TOKEN || ''
 const basePath = normalizeBasePath(process.env.SEO_OPS_BASE_PATH || '/')
 
 const mimeTypes = {
@@ -145,7 +146,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (scopedPathname === '/api/health') {
-      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/', mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/', mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken) })
       return
     }
 
@@ -178,6 +179,37 @@ const server = http.createServer(async (req, res) => {
       }
 
       sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+      return
+    }
+
+    if (scopedPathname === '/api/search-console/inspect') {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      if (!searchConsoleToken) {
+        sendJson(res, 503, { ok: false, message: 'Server chưa cấu hình SEO_OPS_SEARCH_CONSOLE_TOKEN.' })
+        return
+      }
+      const payload = JSON.parse(await readBody(req))
+      if (!payload.inspectionUrl || !payload.siteUrl) {
+        sendJson(res, 400, { ok: false, message: 'Thiếu inspectionUrl hoặc siteUrl.' })
+        return
+      }
+      const googleResponse = await fetch('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${searchConsoleToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          inspectionUrl: String(payload.inspectionUrl),
+          siteUrl: String(payload.siteUrl),
+          languageCode: String(payload.languageCode || 'vi-VN'),
+        }),
+      })
+      const result = await googleResponse.json().catch(() => ({ ok: false, message: 'Google Search Console trả về dữ liệu không hợp lệ.' }))
+      sendJson(res, googleResponse.status, result)
       return
     }
 

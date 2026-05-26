@@ -79,6 +79,31 @@ Database dung chung:
 db/seo-ops-data.json
 ```
 
+## Google Search Console - Check Index
+
+Module `Quan ly Keyword` dung Google Search Console URL Inspection API de check trang thai index cua URL bai viet.
+
+Trong `Du an SEO -> Google Search Console / Check Index`, cau hinh:
+
+```text
+Search Console Property URL: https://tenmien.vn/ hoac sc-domain:tenmien.vn
+URL Inspection API Endpoint: /api/search-console/inspect
+```
+
+URL-prefix property phai co dau `/` cuoi. Token Google khong luu trong frontend hoac database. Tren Plesk, them bien moi truong va restart app:
+
+```text
+SEO_OPS_SEARCH_CONSOLE_TOKEN=oauth-access-token-co-scope-webmasters-readonly
+```
+
+OAuth token can scope:
+
+```text
+https://www.googleapis.com/auth/webmasters.readonly
+```
+
+Token OAuth co the het han; khi nut check bao loi `401`, cap nhat token tren server va restart app. Google gioi han URL Inspection theo site, hien tai 2.000 request/ngay va 600 request/phut; nut check hang loat gui lan luot de tranh tang tai dot bien.
+
 ## MCP cho Claude Code
 
 Backend co endpoint MCP de Claude doc keyword va luu ban nhap bai viet vao module `Bai viet`:
