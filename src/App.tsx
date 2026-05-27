@@ -91,6 +91,13 @@ type WordPressSettings = {
   lastSyncAt?: string
 }
 
+type GoogleOAuthStatus = {
+  configured: boolean
+  connected: boolean
+  connectedAt: string
+  scope: string
+}
+
 type WordPressContentItem = {
   id?: number
   type?: string
@@ -655,6 +662,13 @@ const emptyWordPressSettings: WordPressSettings = {
   siteUrl: '',
   connectorEndpoint: '',
   apiKey: '',
+}
+
+const emptyGoogleOAuthStatus: GoogleOAuthStatus = {
+  configured: false,
+  connected: false,
+  connectedAt: '',
+  scope: '',
 }
 
 const initialData: AppData = {
@@ -1341,6 +1355,20 @@ const childTypeOf = (keyword: Keyword): KeywordType | null => {
   if (type === 'B') return 'C'
   return null
 }
+const keywordDuplicateKey = (keyword: Keyword) =>
+  `${keyword.projectId}:${keyword.term.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN')}`
+const duplicateKeywordIdsOf = (keywords: Keyword[]) => {
+  const groups = keywords.reduce<Map<string, Keyword[]>>((result, keyword) => {
+    const key = keywordDuplicateKey(keyword)
+    result.set(key, [...(result.get(key) ?? []), keyword])
+    return result
+  }, new Map())
+  return new Set(
+    Array.from(groups.values())
+      .filter((group) => group.length > 1)
+      .flatMap((group) => group.map((keyword) => keyword.id)),
+  )
+}
 const analyticsSettingsOf = (project?: Project): AnalyticsSettings => ({
   ...emptyAnalyticsSettings,
   ...(project?.analytics ?? {}),
@@ -1389,10 +1417,10 @@ const searchConsoleErrorMessage = async (response: Response) => {
   } catch {
     // Ignore unreadable error response bodies.
   }
-  if (response.status === 401) return 'Access Token trên server không hợp lệ hoặc đã hết hạn. Hãy cập nhật biến SEO_OPS_SEARCH_CONSOLE_TOKEN.'
+  if (response.status === 401) return 'Quyền Google không hợp lệ hoặc đã hết hạn. Hãy ngắt kết nối và đăng nhập Google lại.'
   if (response.status === 403) return 'Tài khoản Google chưa có quyền với Search Console property hoặc API chưa được bật.'
   if (response.status === 429) return 'Đã vượt giới hạn kiểm tra URL của Google Search Console. Hãy thử lại sau.'
-  if (response.status === 503) return detail || 'Server chưa cấu hình SEO_OPS_SEARCH_CONSOLE_TOKEN.'
+  if (response.status === 503) return detail || 'Dự án chưa kết nối Google OAuth và server chưa có token Search Console dự phòng.'
   return `Google Search Console trả về HTTP ${response.status}${detail ? ` - ${detail}` : ''}`
 }
 const wordpressUrlWithKey = (endpoint: string, path: string, apiKey: string, params = '') => {
@@ -1631,6 +1659,13 @@ const appBaseUrl = import.meta.env.BASE_URL || '/'
 const appUrl = (path: string) => `${appBaseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
 const seedDataUrl = appUrl('seo-ops-seed.json')
 const apiDataUrl = appUrl('api/data')
+const googleOAuthMessageFromUrl = () => {
+  const params = new URLSearchParams(window.location.search)
+  const status = params.get('google_oauth')
+  if (status === 'connected') return 'Đã kết nối tài khoản Google. Search Console và Google Analytics có thể dùng quyền vừa cấp.'
+  if (status === 'error') return params.get('message') || 'Không kết nối được tài khoản Google.'
+  return ''
+}
 const readStoredData = () => {
   const raw = localStorage.getItem(storageKey)
   return raw ? normalizeData(JSON.parse(raw)) : initialData
@@ -1698,11 +1733,14 @@ function App() {
   const [quickKeywordOpen, setQuickKeywordOpen] = useState(false)
   const [quickKeywordStatus, setQuickKeywordStatus] = useState('')
   const [quickKeywordIssues, setQuickKeywordIssues] = useState<QuickKeywordIssue[]>([])
-  const [collapsedKeywordIds, setCollapsedKeywordIds] = useState<Set<string>>(() => new Set())
+  const [expandedKeywordIds, setExpandedKeywordIds] = useState<Set<string>>(() => new Set())
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(() => new Set())
   const [analyticsGranularity, setAnalyticsGranularity] = useState<AnalyticsGranularity>('day')
   const [analyticsStatus, setAnalyticsStatus] = useState('')
   const [searchConsoleStatus, setSearchConsoleStatus] = useState('')
+  const [googleOAuthStatus, setGoogleOAuthStatus] = useState<GoogleOAuthStatus>(emptyGoogleOAuthStatus)
+  const [googleOAuthLoading, setGoogleOAuthLoading] = useState(true)
+  const [googleOAuthMessage, setGoogleOAuthMessage] = useState(googleOAuthMessageFromUrl)
   const [checkingKeywordIds, setCheckingKeywordIds] = useState<Set<string>>(() => new Set())
   const [checkingAllKeywords, setCheckingAllKeywords] = useState(false)
   const [wordpressStatus, setWordpressStatus] = useState('')
@@ -1739,11 +1777,22 @@ function App() {
       .catch(() => undefined)
   }, [importData])
 
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('google_oauth')) return
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash || '#projects'}`)
+  }, [])
+
   const activeProjects = data.projects.filter((project) => !project.deletedAt)
   const deletedProjects = data.projects.filter((project) => project.deletedAt)
   const activeProjectIds = new Set(activeProjects.map((project) => project.id))
-  const activeTasks = data.tasks.filter((task) => activeProjectIds.has(task.projectId))
-  const activeKeywords = data.keywords.filter((keyword) => activeProjectIds.has(keyword.projectId))
+  const duplicateKeywordIds = duplicateKeywordIdsOf(data.keywords)
+  const duplicateKeywordTaskIds = new Set(
+    data.keywords
+      .filter((keyword) => duplicateKeywordIds.has(keyword.id) && keyword.articleTaskId)
+      .map((keyword) => keyword.articleTaskId as string),
+  )
+  const activeTasks = data.tasks.filter((task) => activeProjectIds.has(task.projectId) && !duplicateKeywordTaskIds.has(task.id))
+  const activeKeywords = data.keywords.filter((keyword) => activeProjectIds.has(keyword.projectId) && !duplicateKeywordIds.has(keyword.id))
   const activeTransactions = data.transactions.filter((item) => !item.projectId || activeProjectIds.has(item.projectId))
   const companyTransactions = activeTransactions
   const visibleFinanceTransactions = companyTransactions.filter((item) => {
@@ -1763,6 +1812,32 @@ function App() {
     })
     .filter((item) => item.count > 0)
   const activeProject = activeProjects.find((project) => project.id === activeProjectId) ?? activeProjects[0]
+  useEffect(() => {
+    if (!activeProject?.id || view !== 'projects') return
+    let cancelled = false
+    fetch(`${appUrl('api/google/oauth/status')}?projectId=${encodeURIComponent(activeProject.id)}`)
+      .then(async (response) => {
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+        if (!cancelled) setGoogleOAuthStatus({
+          configured: Boolean(payload.configured),
+          connected: Boolean(payload.connected),
+          connectedAt: String(payload.connectedAt || ''),
+          scope: String(payload.scope || ''),
+        })
+        if (!cancelled) setGoogleOAuthLoading(false)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setGoogleOAuthStatus(emptyGoogleOAuthStatus)
+          setGoogleOAuthLoading(false)
+          setGoogleOAuthMessage(`Không đọc được trạng thái kết nối Google. ${error instanceof Error ? error.message : ''}`)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject?.id, view])
   const currentUser = data.users.find((user) => user.id === currentUserId && user.active)
   const isAdmin = currentUser?.role === 'Quản trị viên'
   const canAccessPermission = (permission: string, action: PermissionAction = 'view') => {
@@ -1776,7 +1851,7 @@ function App() {
   const canEdit = (targetView: View) => canAccessPermission(permissionForView(targetView), 'edit')
   const canEditProjects = canEdit('projects')
   const canEditTasks = canEdit('tasks')
-  const projectTasks = data.tasks.filter((task) => task.projectId === activeProject?.id)
+  const projectTasks = data.tasks.filter((task) => task.projectId === activeProject?.id && !duplicateKeywordTaskIds.has(task.id))
   const currentUserTasks = activeTasks.filter((task) => task.assigneeId === currentUser?.id)
   const pendingUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Chờ nhận')
   const activeUserTasks = currentUserTasks.filter((task) => ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task)))
@@ -1794,6 +1869,8 @@ function App() {
   const monthlySalaryRate = monthlyUserTasks.length ? (monthlyUserDone / monthlyUserTasks.length) * 100 : 0
   const monthlySalaryEstimate = ((currentUser?.salaryAmount ?? 0) * monthlySalaryRate) / 100
   const projectKeywords = data.keywords.filter((keyword) => keyword.projectId === activeProject?.id)
+  const acceptedProjectKeywords = projectKeywords.filter((keyword) => !duplicateKeywordIds.has(keyword.id))
+  const duplicateProjectKeywordCount = projectKeywords.length - acceptedProjectKeywords.length
   const editingKeyword = editingKeywordId ? projectKeywords.find((keyword) => keyword.id === editingKeywordId) : undefined
   const projectTransactions = data.transactions.filter((item) => item.projectId === activeProject?.id)
   const projectEntities = (data.seoEntities ?? []).filter((entity) => entity.projectId === activeProject?.id)
@@ -1968,6 +2045,13 @@ function App() {
       activityLogs: [log, ...(nextData.activityLogs ?? [])].slice(0, 300),
     })
   }
+  const selectActiveProject = (projectId: string) => {
+    setActiveProjectId(projectId)
+    setExpandedKeywordIds(new Set())
+    setSelectedKeywordIds(new Set())
+    setGoogleOAuthStatus(emptyGoogleOAuthStatus)
+    setGoogleOAuthLoading(true)
+  }
   const openNotification = (notification: NotificationItem) => {
     const nextData = {
       ...data,
@@ -1976,7 +2060,7 @@ function App() {
       ),
     }
     setData(nextData)
-    if (notification.projectId) setActiveProjectId(notification.projectId)
+    if (notification.projectId) selectActiveProject(notification.projectId)
     if (notification.linkView && canView(notification.linkView)) goTo(notification.linkView)
     setNotificationsOpen(false)
   }
@@ -2078,7 +2162,7 @@ function App() {
       ownerId: String(form.get('ownerId')),
     }
     saveData({ ...data, projects: [project, ...data.projects] }, 'Tạo dự án', project.name)
-    setActiveProjectId(project.id)
+    selectActiveProject(project.id)
     event.currentTarget.reset()
   }
 
@@ -2093,7 +2177,7 @@ function App() {
     )
     const remainingProjects = projects.filter((item) => !item.deletedAt)
     saveData({ ...data, projects }, 'Xóa dự án', project.name)
-    setActiveProjectId(remainingProjects[0]?.id ?? '')
+    selectActiveProject(remainingProjects[0]?.id ?? '')
   }
 
   const restoreProject = (projectId: string) => {
@@ -2107,7 +2191,7 @@ function App() {
       return restoredProject
     })
     saveData({ ...data, projects }, 'Khôi phục dự án', project.name)
-    setActiveProjectId(projectId)
+    selectActiveProject(projectId)
   }
 
   const permanentlyDeleteProject = (projectId: string) => {
@@ -2163,6 +2247,29 @@ function App() {
       projects: data.projects.map((project) => (project.id === activeProject.id ? { ...project, searchConsole: settings } : project)),
     }, 'Cập nhật Google Search Console API', activeProject.name)
     setSearchConsoleStatus('Đã lưu cấu hình Search Console. Hãy kiểm tra một URL trước khi chạy hàng loạt.')
+  }
+
+  const connectGoogleAccount = () => {
+    if (!activeProject) return
+    window.location.assign(`${appUrl('api/google/oauth/start')}?projectId=${encodeURIComponent(activeProject.id)}`)
+  }
+
+  const disconnectGoogleAccount = async () => {
+    if (!activeProject || !window.confirm('Ngắt kết nối Google khỏi dự án này? Search Console và Analytics sẽ không còn lấy dữ liệu qua tài khoản đã cấp quyền.')) return
+    setGoogleOAuthMessage('Đang ngắt kết nối Google...')
+    try {
+      const response = await fetch(appUrl('api/google/oauth/disconnect'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: activeProject.id }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setGoogleOAuthStatus({ ...googleOAuthStatus, connected: false, connectedAt: '', scope: '' })
+      setGoogleOAuthMessage('Đã ngắt kết nối tài khoản Google khỏi dự án.')
+    } catch (error) {
+      setGoogleOAuthMessage(`Không ngắt được kết nối Google. ${error instanceof Error ? error.message : ''}`)
+    }
   }
 
   const saveWordPressSettings = (event: FormEvent<HTMLFormElement>) => {
@@ -2315,15 +2422,18 @@ function App() {
     let points: AnalyticsPoint[]
     let action = 'Đồng bộ Google Analytics demo'
     try {
-      if (settings.apiEndpoint && settings.propertyId) {
-        const response = await fetch(settings.apiEndpoint, {
+      const oauthEndpoint = googleOAuthStatus.connected ? appUrl('api/google/analytics/report') : ''
+      const endpoint = oauthEndpoint || settings.apiEndpoint
+      if (endpoint && settings.propertyId) {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(settings.accessToken ? { 'X-SEO-OPS-KEY': settings.accessToken } : {}),
-            ...(settings.accessToken ? { Authorization: `Bearer ${settings.accessToken}` } : {}),
+            ...(!oauthEndpoint && settings.accessToken ? { 'X-SEO-OPS-KEY': settings.accessToken } : {}),
+            ...(!oauthEndpoint && settings.accessToken ? { Authorization: `Bearer ${settings.accessToken}` } : {}),
           },
           body: JSON.stringify({
+            projectId: activeProject.id,
             property: `properties/${settings.propertyId}`,
             propertyId: settings.propertyId,
             measurementId: settings.measurementId,
@@ -2338,10 +2448,13 @@ function App() {
             ],
           }),
         })
-        if (!response.ok) throw new Error(`API trả về HTTP ${response.status}`)
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => undefined)
+          throw new Error(errorPayload?.message || `API trả về HTTP ${response.status}`)
+        }
         points = normalizeAnalyticsRows(await response.json(), activeProject.id, analyticsGranularity)
         if (points.length === 0) throw new Error('API chưa trả về dòng dữ liệu hợp lệ')
-        action = 'Đồng bộ Google Analytics API'
+        action = oauthEndpoint ? 'Đồng bộ Google Analytics OAuth' : 'Đồng bộ Google Analytics API'
       } else {
         points = generateDemoAnalytics(activeProject.id, analyticsGranularity)
       }
@@ -2366,10 +2479,12 @@ function App() {
       ],
     }, action, activeProject.name)
 
-    if (action === 'Đồng bộ Google Analytics API') {
-      setAnalyticsStatus('Đồng bộ API thành công. Dữ liệu đã được cập nhật cho dự án đang chọn.')
-    } else if (!settings.apiEndpoint || !settings.propertyId) {
-      setAnalyticsStatus('Chưa có đủ Property ID/API Endpoint nên hệ thống đang dùng dữ liệu demo nội bộ.')
+    if (action === 'Đồng bộ Google Analytics OAuth') {
+      setAnalyticsStatus('Đồng bộ Google Analytics qua tài khoản Google thành công.')
+    } else if (action === 'Đồng bộ Google Analytics API') {
+      setAnalyticsStatus('Đồng bộ API nội bộ thành công. Dữ liệu đã được cập nhật cho dự án đang chọn.')
+    } else if ((!settings.apiEndpoint && !googleOAuthStatus.connected) || !settings.propertyId) {
+      setAnalyticsStatus('Chưa có kết nối Google/Property ID hoặc API Endpoint nên hệ thống đang dùng dữ liệu demo nội bộ.')
     }
   }
 
@@ -2406,12 +2521,18 @@ function App() {
       indexStatus: editingKeyword?.indexStatus ?? 'Chua check',
       indexCheckedAt: editingKeyword?.indexCheckedAt ?? '',
     }
+    const nextKeywords = editingKeyword
+      ? data.keywords.map((item) => (item.id === editingKeyword.id ? keyword : item))
+      : [keyword, ...data.keywords]
+    const nextDuplicateIds = duplicateKeywordIdsOf(nextKeywords)
+    const duplicateCount = nextKeywords
+      .filter((item) => item.projectId === activeProject.id && nextDuplicateIds.has(item.id))
+      .length
     saveData({
       ...data,
-      keywords: editingKeyword
-        ? data.keywords.map((item) => (item.id === editingKeyword.id ? keyword : item))
-        : [keyword, ...data.keywords],
+      keywords: nextKeywords,
     }, editingKeyword ? 'Sửa keyword' : 'Thêm keyword', keyword.term)
+    setQuickKeywordStatus(duplicateCount ? `Hiện có ${duplicateCount} keyword trùng trong dự án đang chờ xử lý.` : '')
     setEditingKeywordId(null)
     setKeywordFormType('A')
     event.currentTarget.reset()
@@ -2459,9 +2580,9 @@ function App() {
         : [keyword, ...data.keywords]
 
     saveData({ ...data, keywords }, 'Phát triển keyword', keyword.term)
-    setCollapsedKeywordIds((current) => {
+    setExpandedKeywordIds((current) => {
       const next = new Set(current)
-      next.delete(keywordBuilder.id)
+      next.add(keywordBuilder.id)
       return next
     })
     setKeywordBuilder(null)
@@ -2472,7 +2593,6 @@ function App() {
     if (!activeProject) return
 
     const lines = String(new FormData(event.currentTarget).get('quickKeywords') ?? '').split(/\r?\n/)
-    const projectTerms = new Map(projectKeywords.map((keyword) => [keyword.term.trim().toLocaleLowerCase('vi-VN'), keyword]))
     const branch: Partial<Record<KeywordType, Keyword>> = {}
     const imported: Keyword[] = []
     const issues: QuickKeywordIssue[] = []
@@ -2509,14 +2629,6 @@ function App() {
         parentId = branch.B.id
       }
 
-      const termKey = term.toLocaleLowerCase('vi-VN')
-      const existing = projectTerms.get(termKey)
-      if (existing) {
-        issues.push({ line: index + 1, text: `Đã có keyword "${term}", bỏ qua dòng trùng.` })
-        branch[keywordType] = existing
-        return
-      }
-
       const keyword: Keyword = {
         id: uid('k'),
         projectId: activeProject.id,
@@ -2542,7 +2654,6 @@ function App() {
       }
 
       imported.push(keyword)
-      projectTerms.set(termKey, keyword)
       branch[keywordType] = keyword
     })
 
@@ -2552,9 +2663,12 @@ function App() {
       return
     }
 
-    saveData({ ...data, keywords: [...data.keywords, ...imported] }, 'Nhập nhanh keyword', `${imported.length} keyword`)
-    setCollapsedKeywordIds(new Set())
-    setQuickKeywordStatus(`Đã nhập ${imported.length} keyword.${issues.length ? ` Có ${issues.length} dòng được bỏ qua.` : ''}`)
+    const nextKeywords = [...data.keywords, ...imported]
+    const nextDuplicateIds = duplicateKeywordIdsOf(nextKeywords)
+    const duplicateCount = nextKeywords.filter((keyword) => keyword.projectId === activeProject.id && nextDuplicateIds.has(keyword.id)).length
+    saveData({ ...data, keywords: nextKeywords }, 'Nhập nhanh keyword', `${imported.length} keyword`)
+    setExpandedKeywordIds(new Set())
+    setQuickKeywordStatus(`Đã nhập ${imported.length} keyword.${duplicateCount ? ` Hiện có ${duplicateCount} keyword trùng trong dự án đang chờ xử lý.` : ''}${issues.length ? ` Có ${issues.length} dòng lỗi được bỏ qua.` : ''}`)
     if (issues.length === 0) {
       setQuickKeywordOpen(false)
       event.currentTarget.reset()
@@ -2583,6 +2697,7 @@ function App() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        projectId: keyword.projectId,
         inspectionUrl: articleUrl,
         siteUrl: settings.siteUrl,
         languageCode: 'vi-VN',
@@ -2601,7 +2716,7 @@ function App() {
   }
 
   const checkKeywordIndex = async (keywordId: string) => {
-    const keyword = projectKeywords.find((item) => item.id === keywordId)
+    const keyword = acceptedProjectKeywords.find((item) => item.id === keywordId)
     if (!keyword || checkingAllKeywords) return
     setCheckingKeywordIds((current) => new Set(current).add(keywordId))
     setSearchConsoleStatus(`Đang kiểm tra index: ${keyword.term}`)
@@ -2631,16 +2746,16 @@ function App() {
   }
 
   const checkAllKeywordIndexes = async () => {
-    if (!activeProject || projectKeywords.length === 0) return
+    if (!activeProject || acceptedProjectKeywords.length === 0) return
     const settings = searchConsoleSettingsOf(activeProject)
     const updates = new Map<string, Partial<Keyword>>()
     let indexed = 0
     let noindex = 0
     let failed = 0
     setCheckingAllKeywords(true)
-    setSearchConsoleStatus(`Đang kiểm tra 0/${projectKeywords.length} URL qua Google Search Console...`)
+    setSearchConsoleStatus(`Đang kiểm tra 0/${acceptedProjectKeywords.length} URL qua Google Search Console...`)
     try {
-      for (const [index, keyword] of projectKeywords.entries()) {
+      for (const [index, keyword] of acceptedProjectKeywords.entries()) {
         try {
           const result = await inspectKeywordIndex(keyword, settings)
           updates.set(keyword.id, result)
@@ -2652,11 +2767,11 @@ function App() {
             setSearchConsoleStatus(error instanceof Error ? error.message : 'Không kiểm tra được Google Search Console.')
           }
         }
-        if (keyword.articleUrl?.trim() && index < projectKeywords.length - 1) {
+        if (keyword.articleUrl?.trim() && index < acceptedProjectKeywords.length - 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 110))
         }
         if (failed === 0) {
-          setSearchConsoleStatus(`Đang kiểm tra ${index + 1}/${projectKeywords.length} URL qua Google Search Console...`)
+          setSearchConsoleStatus(`Đang kiểm tra ${index + 1}/${acceptedProjectKeywords.length} URL qua Google Search Console...`)
         }
       }
 
@@ -2681,7 +2796,7 @@ function App() {
 
   const testSearchConsoleConnection = async () => {
     if (!activeProject) return
-    const keyword = projectKeywords.find((item) => item.articleUrl?.trim())
+    const keyword = acceptedProjectKeywords.find((item) => item.articleUrl?.trim())
     if (!keyword) {
       setSearchConsoleStatus('Cần có ít nhất một keyword đã gắn URL bài viết để kiểm tra kết nối.')
       return
@@ -2704,7 +2819,7 @@ function App() {
   }
 
   const toggleKeywordCollapse = (keywordId: string) => {
-    setCollapsedKeywordIds((current) => {
+    setExpandedKeywordIds((current) => {
       const next = new Set(current)
       if (next.has(keywordId)) {
         next.delete(keywordId)
@@ -2712,6 +2827,29 @@ function App() {
         next.add(keywordId)
       }
       return next
+    })
+  }
+
+  const revealDuplicateKeyword = (keywordId: string) => {
+    const source = projectKeywords.find((keyword) => keyword.id === keywordId)
+    if (!source) return
+    const target = projectKeywords.find((keyword) => keyword.id !== keywordId && keywordDuplicateKey(keyword) === keywordDuplicateKey(source))
+    if (!target) return
+
+    setExpandedKeywordIds((current) => {
+      const next = new Set(current)
+      let parentId = target.parentId
+      while (parentId) {
+        next.add(parentId)
+        parentId = projectKeywords.find((keyword) => keyword.id === parentId)?.parentId
+      }
+      return next
+    })
+    window.requestAnimationFrame(() => {
+      const row = document.getElementById(`keyword-row-${target.id}`)
+      row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      row?.classList.add('duplicate-focus')
+      window.setTimeout(() => row?.classList.remove('duplicate-focus'), 1600)
     })
   }
 
@@ -3895,7 +4033,7 @@ function App() {
             {activeProjects.length > 0 && (
               <label className="project-switcher">
                 <span>Dự án đang xem</span>
-                <select value={activeProject?.id ?? ''} onChange={(event) => setActiveProjectId(event.target.value)}>
+                <select value={activeProject?.id ?? ''} onChange={(event) => selectActiveProject(event.target.value)}>
                   {activeProjects.map((project) => (
                     <option value={project.id} key={project.id}>
                       {project.name}
@@ -3989,10 +4127,10 @@ function App() {
                     {activeProjects.map((project) => {
                       const tasks = data.tasks.filter((task) => task.projectId === project.id)
                       const done = tasks.filter((task) => task.status === 'Hoàn thành').length
-                      const keywords = data.keywords.filter((keyword) => keyword.projectId === project.id)
+                      const keywords = data.keywords.filter((keyword) => keyword.projectId === project.id && !duplicateKeywordIds.has(keyword.id))
                       const isActive = activeProject?.id === project.id
                       return (
-                        <button className={isActive ? 'project-card selected' : 'project-card'} key={project.id} onClick={() => setActiveProjectId(project.id)} type="button">
+                        <button className={isActive ? 'project-card selected' : 'project-card'} key={project.id} onClick={() => selectActiveProject(project.id)} type="button">
                           <span>{project.status}</span>
                           <strong>{project.name}</strong>
                           <small>{project.website}</small>
@@ -4040,7 +4178,7 @@ function App() {
               <>
                 <div className="metric-grid">
                   <Metric title="Tiến độ dự án" value={pct(projectCompletion)} note={`${projectTasks.filter((task) => task.status === 'Hoàn thành').length}/${projectTasks.length} công việc`} />
-                  <Metric title="Keyword" value={projectKeywords.length} note={`Position TB ${projectKeywords.length ? (projectKeywords.reduce((sum, item) => sum + item.position, 0) / projectKeywords.length).toFixed(1) : '0'}`} />
+                  <Metric title="Keyword" value={acceptedProjectKeywords.length} note={`Position TB ${acceptedProjectKeywords.length ? (acceptedProjectKeywords.reduce((sum, item) => sum + item.position, 0) / acceptedProjectKeywords.length).toFixed(1) : '0'}`} />
                   <Metric title="Chi phí dự án" value={currency.format(projectExpense)} note="Tổng chi đang ghi nhận" />
                   <Metric title="Công nợ" value={projectTransactions.filter((item) => !item.settlementDate).length} note={activeProject.status} />
                 </div>
@@ -4065,11 +4203,46 @@ function App() {
                   <Panel title="Thống kê thực thi" action="Dự án đang chọn">
                     <div className="progress-list">
                       <ProgressRow label="Tiến độ công việc" value={projectCompletion} meta={`${projectTasks.length} công việc`} />
-                      <ProgressRow label="CTR trung bình" value={projectKeywords.length ? projectKeywords.reduce((sum, keyword) => sum + keyword.ctr, 0) / projectKeywords.length : 0} meta={`${projectKeywords.length} keyword`} />
+                      <ProgressRow label="CTR trung bình" value={acceptedProjectKeywords.length ? acceptedProjectKeywords.reduce((sum, keyword) => sum + keyword.ctr, 0) / acceptedProjectKeywords.length : 0} meta={`${acceptedProjectKeywords.length} keyword hợp lệ`} />
                       <ProgressRow label="Đã giải ngân" value={projectTransactions.length ? (projectTransactions.filter((item) => item.settlementDate).length / projectTransactions.length) * 100 : 0} meta={`${projectTransactions.filter((item) => item.settlementDate).length}/${projectTransactions.length} khoản chi`} />
                     </div>
                   </Panel>
                 </div>
+
+                <Panel title="Kết nối Google" action={googleOAuthStatus.connected ? 'Đã kết nối' : 'OAuth 2.0'}>
+                  <div className="analytics-layout">
+                    <div className="analytics-settings google-oauth-settings">
+                      <div className="google-oauth-state">
+                        <span className={googleOAuthStatus.connected ? 'pill income' : 'pill'}>
+                          {googleOAuthLoading ? 'Đang kiểm tra' : googleOAuthStatus.connected ? 'Đã cấp quyền' : 'Chưa kết nối'}
+                        </span>
+                        <strong>Search Console và Google Analytics</strong>
+                      </div>
+                      <div className="analytics-form-actions">
+                        <button type="button" onClick={connectGoogleAccount} disabled={!canEditProjects || googleOAuthLoading || !googleOAuthStatus.configured}>
+                          {googleOAuthStatus.connected ? 'Kết nối lại Google' : 'Đăng nhập với Google'}
+                        </button>
+                        <button className="secondary-button" type="button" onClick={disconnectGoogleAccount} disabled={!canEditProjects || !googleOAuthStatus.connected}>
+                          Ngắt kết nối
+                        </button>
+                      </div>
+                      {!googleOAuthLoading && !googleOAuthStatus.configured && (
+                        <p className="analytics-status">
+                          Server chưa cấu hình Google OAuth Client hoặc khóa mã hóa token.
+                        </p>
+                      )}
+                    </div>
+                    <div className="analytics-report">
+                      <div className="project-detail">
+                        <Detail label="Trạng thái" value={googleOAuthStatus.connected ? 'Đã kết nối Google OAuth' : 'Chưa có quyền truy cập'} />
+                        <Detail label="Kết nối gần nhất" value={formatDateTime(googleOAuthStatus.connectedAt)} />
+                        <Detail label="Quyền sử dụng" value={googleOAuthStatus.connected ? 'Search Console, Analytics (chỉ đọc)' : '-'} />
+                        <Detail label="Lưu token" value="Mã hóa tại backend" />
+                      </div>
+                      {googleOAuthMessage && <p className="analytics-status">{googleOAuthMessage}</p>}
+                    </div>
+                  </div>
+                </Panel>
 
                 <Panel title="Kết nối WordPress / Site Kit" action="SEO Ops Connector">
                   <div className="analytics-layout">
@@ -4135,7 +4308,7 @@ function App() {
                         </button>
                       </div>
                       <p>
-                        Trên máy chủ, đặt <code>SEO_OPS_SEARCH_CONSOLE_TOKEN</code> bằng OAuth token có scope <code>webmasters.readonly</code>. Property dạng URL-prefix phải có dấu <code>/</code> cuối; property domain dùng dạng <code>sc-domain:tenmien.vn</code>.
+                        Check Index dùng kết nối Google của dự án. Biến <code>SEO_OPS_SEARCH_CONSOLE_TOKEN</code> chỉ là cấu hình dự phòng cũ.
                       </p>
                     </form>
                     <div className="analytics-report">
@@ -4181,11 +4354,11 @@ function App() {
                         <input name="measurementId" placeholder="G-XXXXXXXXXX" defaultValue={analyticsSettingsOf(activeProject).measurementId} disabled={!canEditProjects} />
                       </label>
                       <label>
-                        <span>API Endpoint nội bộ</span>
+                        <span>API Endpoint nội bộ dự phòng</span>
                         <input name="apiEndpoint" placeholder="https://api.tenmien.vn/google-analytics/report" defaultValue={analyticsSettingsOf(activeProject).apiEndpoint} disabled={!canEditProjects} />
                       </label>
                       <label>
-                        <span>Access Token</span>
+                        <span>Access Token API dự phòng</span>
                         <input name="accessToken" placeholder="Bearer token nếu API nội bộ yêu cầu" defaultValue={analyticsSettingsOf(activeProject).accessToken} type="password" disabled={!canEditProjects} />
                       </label>
                       <div className="analytics-form-actions">
@@ -4195,7 +4368,7 @@ function App() {
                         </button>
                       </div>
                       <p>
-                        Endpoint nội bộ nên gọi GA4 Data API bằng backend riêng, tránh đưa service account hoặc secret thật vào frontend.
+                        Khi tài khoản Google đã kết nối, hệ thống ưu tiên lấy GA4 qua OAuth backend; cấu hình dự phòng chỉ được dùng khi chưa kết nối.
                       </p>
                     </form>
 
@@ -4259,10 +4432,10 @@ function App() {
         {view === 'keywords' && canView(view) && (
           <section className="view-stack">
             <div className="metric-grid">
-              <Metric title="Keyword của dự án" value={projectKeywords.length} note={activeProject?.name ?? 'Chưa có dự án'} />
-              <Metric title="Search Volume" value={projectKeywords.reduce((sum, item) => sum + item.searchVolume, 0).toLocaleString('vi-VN')} note="Tổng lượng tìm kiếm" />
-              <Metric title="Position TB" value={projectKeywords.length ? (projectKeywords.reduce((sum, item) => sum + item.position, 0) / projectKeywords.length).toFixed(1) : '0'} note="Thứ hạng trung bình" />
-              <Metric title="CTR TB" value={`${projectKeywords.length ? (projectKeywords.reduce((sum, item) => sum + item.ctr, 0) / projectKeywords.length).toFixed(2) : '0'}%`} note="Tỷ lệ nhấp trung bình" />
+              <Metric title="Keyword hợp lệ" value={acceptedProjectKeywords.length} note={duplicateProjectKeywordCount ? `${duplicateProjectKeywordCount} key trùng chờ xử lý` : activeProject?.name ?? 'Chưa có dự án'} />
+              <Metric title="Search Volume" value={acceptedProjectKeywords.reduce((sum, item) => sum + item.searchVolume, 0).toLocaleString('vi-VN')} note="Không tính key trùng" />
+              <Metric title="Position TB" value={acceptedProjectKeywords.length ? (acceptedProjectKeywords.reduce((sum, item) => sum + item.position, 0) / acceptedProjectKeywords.length).toFixed(1) : '0'} note="Không tính key trùng" />
+              <Metric title="CTR TB" value={`${acceptedProjectKeywords.length ? (acceptedProjectKeywords.reduce((sum, item) => sum + item.ctr, 0) / acceptedProjectKeywords.length).toFixed(2) : '0'}%`} note="Không tính key trùng" />
             </div>
 
             <Panel title={editingKeyword ? 'Sửa key' : 'Thêm key'} action={canEditProjects ? 'Keyword Mapping' : 'Chỉ xem'}>
@@ -4323,10 +4496,11 @@ function App() {
               )}
             </Panel>
 
-            <Panel title="Quản lý Keyword" action={`${projectKeywords.length} keyword`}>
+            <Panel title="Quản lý Keyword" action={`${projectKeywords.length} keyword${duplicateProjectKeywordCount ? ` · ${duplicateProjectKeywordCount} trùng` : ''}`}>
               <KeywordTable
+                key={`keywords-${activeProject?.id ?? 'none'}`}
                 keywords={projectKeywords}
-                collapsedKeywordIds={collapsedKeywordIds}
+                expandedKeywordIds={expandedKeywordIds}
                 selectedKeywordIds={selectedKeywordIds}
                 onToggleCollapse={toggleKeywordCollapse}
                 onToggleSelect={toggleKeywordSelection}
@@ -4336,6 +4510,8 @@ function App() {
                 onCheckIndex={checkKeywordIndex}
                 checkingKeywordIds={checkingKeywordIds}
                 checkingAllKeywords={checkingAllKeywords}
+                duplicateKeywordIds={duplicateKeywordIds}
+                onRevealDuplicate={revealDuplicateKeyword}
                 canEdit={canEditProjects}
               />
             </Panel>
@@ -4345,14 +4521,15 @@ function App() {
         {view === 'articles' && canView(view) && (
           <section className="view-stack">
             <div className="metric-grid">
-              <Metric title="Keyword cần bài viết" value={projectKeywords.length} note={activeProject?.name ?? 'Chưa có dự án'} />
-              <Metric title="Đã gửi task" value={projectKeywords.filter((keyword) => keyword.articleTaskId).length} note="Đã phân việc" />
-              <Metric title="Đã có link" value={projectKeywords.filter((keyword) => keyword.articleUrl).length} note="Đã cập nhật URL bài viết" />
-              <Metric title="Chưa phân công" value={projectKeywords.filter((keyword) => !keyword.articleAssigneeId).length} note="Cần chọn phụ trách" />
+              <Metric title="Keyword cần bài viết" value={acceptedProjectKeywords.length} note={duplicateProjectKeywordCount ? `${duplicateProjectKeywordCount} key trùng đang ẩn` : activeProject?.name ?? 'Chưa có dự án'} />
+              <Metric title="Đã gửi task" value={acceptedProjectKeywords.filter((keyword) => keyword.articleTaskId).length} note="Đã phân việc" />
+              <Metric title="Đã có link" value={acceptedProjectKeywords.filter((keyword) => keyword.articleUrl).length} note="Đã cập nhật URL bài viết" />
+              <Metric title="Chưa phân công" value={acceptedProjectKeywords.filter((keyword) => !keyword.articleAssigneeId).length} note="Cần chọn phụ trách" />
             </div>
-            <Panel title="Bài viết" action={`${projectKeywords.length} keyword`}>
+            <Panel title="Bài viết" action={`${acceptedProjectKeywords.length} keyword hợp lệ`}>
               <ArticleTable
-                keywords={projectKeywords}
+                key={`articles-${activeProject?.id ?? 'none'}`}
+                keywords={acceptedProjectKeywords}
                 users={data.users}
                 onUpdateKeyword={updateKeywordArticle}
                 onSendTask={sendArticleTask}
@@ -6501,9 +6678,50 @@ function Th({ label, tip }: { label: string; tip: string }) {
   )
 }
 
+function TablePagination({
+  currentPage,
+  pageSize,
+  totalItems,
+  totalPages,
+  itemLabel,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  currentPage: number
+  pageSize: number
+  totalItems: number
+  totalPages: number
+  itemLabel: string
+  onPageChange: (page: number) => void
+  onPageSizeChange: (pageSize: number) => void
+}) {
+  const firstItem = totalItems ? (currentPage - 1) * pageSize + 1 : 0
+  const lastItem = Math.min(totalItems, currentPage * pageSize)
+
+  return (
+    <div className="table-pagination">
+      <label className="table-page-size">
+        <span>Hiển thị</span>
+        <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
+          {[25, 50, 100].map((size) => (
+            <option value={size} key={size}>{size}</option>
+          ))}
+        </select>
+        <span>{itemLabel} / trang</span>
+      </label>
+      <div className="table-page-controls">
+        <span>{firstItem}-{lastItem} / {totalItems}</span>
+        <button className="secondary-button" type="button" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>Trước</button>
+        <strong>Trang {currentPage} / {totalPages}</strong>
+        <button className="secondary-button" type="button" disabled={currentPage >= totalPages} onClick={() => onPageChange(currentPage + 1)}>Sau</button>
+      </div>
+    </div>
+  )
+}
+
 function KeywordTable({
   keywords,
-  collapsedKeywordIds,
+  expandedKeywordIds,
   selectedKeywordIds,
   onToggleCollapse,
   onToggleSelect,
@@ -6513,10 +6731,12 @@ function KeywordTable({
   onCheckIndex,
   checkingKeywordIds,
   checkingAllKeywords,
+  duplicateKeywordIds,
+  onRevealDuplicate,
   canEdit,
 }: {
   keywords: Keyword[]
-  collapsedKeywordIds: Set<string>
+  expandedKeywordIds: Set<string>
   selectedKeywordIds: Set<string>
   onToggleCollapse: (keywordId: string) => void
   onToggleSelect: (keywordId: string) => void
@@ -6526,38 +6746,88 @@ function KeywordTable({
   onCheckIndex: (keywordId: string) => void
   checkingKeywordIds: Set<string>
   checkingAllKeywords: boolean
+  duplicateKeywordIds: Set<string>
+  onRevealDuplicate: (keywordId: string) => void
   canEdit: boolean
 }) {
-  if (keywords.length === 0) {
-    return <EmptyState title="Chưa có keyword" text="Thêm key đầu tiên để lập bản đồ từ khóa và theo dõi hiệu suất SEO cho dự án này." />
-  }
+  const [pageSize, setPageSize] = useState(25)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [showUnlinkedKeywords, setShowUnlinkedKeywords] = useState(false)
 
   const keywordByParent = keywords.reduce<Record<string, Keyword[]>>((groups, keyword) => {
     const parentId = keyword.parentId || 'root'
     groups[parentId] = [...(groups[parentId] || []), keyword]
     return groups
   }, {})
+  const keywordIds = new Set(keywords.map((keyword) => keyword.id))
+  const rootKeywords = keywords.filter((keyword) => keywordTypeOf(keyword) === 'A')
+  const unlinkedKeywords = keywords.filter((keyword) =>
+    keywordTypeOf(keyword) !== 'A' && (!keyword.parentId || !keywordIds.has(keyword.parentId)),
+  )
+  const totalPages = Math.max(1, Math.ceil(rootKeywords.length / pageSize))
+  const page = Math.min(currentPage, totalPages)
+  const paginatedRoots = rootKeywords.slice((page - 1) * pageSize, page * pageSize)
 
   const rows: { keyword: Keyword; level: number; hidden: boolean; hasChildren: boolean }[] = []
   const pushRows = (items: Keyword[], level: number, hidden: boolean) => {
     items.forEach((keyword) => {
       const children = keywordByParent[keyword.id] || []
-      const isCollapsed = collapsedKeywordIds.has(keyword.id)
+      const isCollapsed = children.length > 0 && !expandedKeywordIds.has(keyword.id)
       rows.push({ keyword, level, hidden, hasChildren: children.length > 0 })
       pushRows(children, level + 1, hidden || isCollapsed)
     })
   }
 
-  pushRows(keywordByParent.root || [], 0, false)
+  pushRows(paginatedRoots, 0, false)
+  if (showUnlinkedKeywords) pushRows(unlinkedKeywords, 0, false)
+
+  const revealDuplicateOnPage = (keywordId: string) => {
+    const source = keywords.find((keyword) => keyword.id === keywordId)
+    const target = source && keywords.find((keyword) => keyword.id !== keywordId && keywordDuplicateKey(keyword) === keywordDuplicateKey(source))
+    if (target) {
+      let rootId = target.id
+      let parentId = target.parentId
+      while (parentId) {
+        rootId = parentId
+        parentId = keywords.find((keyword) => keyword.id === parentId)?.parentId ?? ''
+      }
+      const rootIndex = rootKeywords.findIndex((keyword) => keyword.id === rootId)
+      if (rootIndex >= 0) setCurrentPage(Math.floor(rootIndex / pageSize) + 1)
+    }
+    onRevealDuplicate(keywordId)
+  }
+
+  if (keywords.length === 0) {
+    return <EmptyState title="Chưa có keyword" text="Thêm key đầu tiên để lập bản đồ từ khóa và theo dõi hiệu suất SEO cho dự án này." />
+  }
 
   return (
     <>
       <div className="bulk-actions">
         <span>{selectedKeywordIds.size} keyword được chọn</span>
-        <button className="danger-button" disabled={!canEdit || selectedKeywordIds.size === 0} onClick={onDeleteSelected} type="button">
-          Xóa key đã chọn
-        </button>
+        <div className="bulk-action-buttons">
+          {unlinkedKeywords.length > 0 && (
+            <button className="secondary-button" onClick={() => setShowUnlinkedKeywords((current) => !current)} type="button">
+              {showUnlinkedKeywords ? 'Ẩn' : 'Hiện'} {unlinkedKeywords.length} key B/C chưa liên kết
+            </button>
+          )}
+          <button className="danger-button" disabled={!canEdit || selectedKeywordIds.size === 0} onClick={onDeleteSelected} type="button">
+            Xóa key đã chọn
+          </button>
+        </div>
       </div>
+      <TablePagination
+        currentPage={page}
+        pageSize={pageSize}
+        totalItems={rootKeywords.length}
+        totalPages={totalPages}
+        itemLabel="nhóm key A"
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size)
+          setCurrentPage(1)
+        }}
+      />
       <div className="table-wrap keyword-table-wrap">
         <table className="keyword-table">
         <thead>
@@ -6576,8 +6846,14 @@ function KeywordTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ keyword, level, hidden, hasChildren }) => (
-            <tr className={hidden ? 'keyword-row hidden' : `keyword-row level-${level}`} key={keyword.id}>
+          {rows.map(({ keyword, level, hidden, hasChildren }) => {
+            const isDuplicate = duplicateKeywordIds.has(keyword.id)
+            return (
+            <tr
+              className={`${hidden ? 'keyword-row hidden' : `keyword-row level-${level}`} ${isDuplicate ? 'duplicate' : ''}`}
+              id={`keyword-row-${keyword.id}`}
+              key={keyword.id}
+            >
               <td>
                 <div className="keyword-row-actions">
                   <input
@@ -6599,12 +6875,23 @@ function KeywordTable({
                     disabled={!hasChildren}
                     onClick={() => onToggleCollapse(keyword.id)}
                     type="button"
-                    aria-label={collapsedKeywordIds.has(keyword.id) ? 'Mở rộng keyword' : 'Thu gọn keyword'}
+                    aria-label={expandedKeywordIds.has(keyword.id) ? 'Thu gọn keyword' : 'Mở rộng keyword'}
                   >
-                    {hasChildren ? (collapsedKeywordIds.has(keyword.id) ? '+' : '-') : ''}
+                    {hasChildren ? (expandedKeywordIds.has(keyword.id) ? '-' : '+') : ''}
                   </button>
                   <span className={`keyword-type-badge type-${keywordTypeOf(keyword)}`}>{keywordTypeOf(keyword)}</span>
                   <strong>{keyword.term}</strong>
+                  {isDuplicate && (
+                    <button
+                      className="keyword-duplicate-warning"
+                      onClick={() => revealDuplicateOnPage(keyword.id)}
+                      type="button"
+                      title="Keyword bị trùng. Nhấn để tới keyword trùng."
+                      aria-label={`Tới keyword trùng của ${keyword.term}`}
+                    >
+                      !
+                    </button>
+                  )}
                   {canEdit && childTypeOf(keyword) && (
                     <button className="develop-keyword-button" onClick={() => onDevelopKeyword(keyword)} type="button" title={`Phát triển lên keyword loại ${childTypeOf(keyword)}`}>
                       +
@@ -6612,12 +6899,12 @@ function KeywordTable({
                   )}
                 </div>
               </td>
-              <td>{keyword.articleUrl ? <a href={keyword.articleUrl} target="_blank" rel="noreferrer">Mở bài viết</a> : 'Chưa cập nhật'}</td>
+              <td>{isDuplicate ? <span className="keyword-duplicate-pending">Chờ xử lý trùng</span> : keyword.articleUrl ? <a href={keyword.articleUrl} target="_blank" rel="noreferrer">Mở bài viết</a> : 'Chưa cập nhật'}</td>
               <td>
                 <button
                   className={`keyword-index-button status-${keyword.indexStatus === 'Index' ? 'indexed' : keyword.indexStatus === 'Noindex' ? 'noindex' : 'unchecked'}`}
                   type="button"
-                  disabled={!canEdit || checkingAllKeywords || checkingKeywordIds.has(keyword.id)}
+                  disabled={!canEdit || isDuplicate || checkingAllKeywords || checkingKeywordIds.has(keyword.id)}
                   onClick={() => onCheckIndex(keyword.id)}
                   title={keyword.indexCheckedAt ? `Kiểm tra lúc ${formatDateTime(keyword.indexCheckedAt)}` : 'Chưa kiểm tra'}
                 >
@@ -6634,10 +6921,23 @@ function KeywordTable({
               </td>
               <td>{keyword.ctr.toFixed(2)}%</td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
         </table>
       </div>
+      <TablePagination
+        currentPage={page}
+        pageSize={pageSize}
+        totalItems={rootKeywords.length}
+        totalPages={totalPages}
+        itemLabel="nhóm key A"
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size)
+          setCurrentPage(1)
+        }}
+      />
     </>
   )
 }
@@ -6656,7 +6956,12 @@ function ArticleTable({
   canEdit: boolean
 }) {
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
+  const [pageSize, setPageSize] = useState(25)
+  const [currentPage, setCurrentPage] = useState(1)
   const editingDraft = keywords.find((keyword) => keyword.id === editingDraftId)
+  const totalPages = Math.max(1, Math.ceil(keywords.length / pageSize))
+  const page = Math.min(currentPage, totalPages)
+  const paginatedKeywords = keywords.slice((page - 1) * pageSize, page * pageSize)
   const statusLabels: Record<ArticleDraftStatus, string> = {
     'Chua viet': 'Chưa viết',
     'Ban nhap AI': 'Bản nháp AI',
@@ -6671,6 +6976,18 @@ function ArticleTable({
 
   return (
     <>
+    <TablePagination
+      currentPage={page}
+      pageSize={pageSize}
+      totalItems={keywords.length}
+      totalPages={totalPages}
+      itemLabel="bài viết"
+      onPageChange={setCurrentPage}
+      onPageSizeChange={(size) => {
+        setPageSize(size)
+        setCurrentPage(1)
+      }}
+    />
     <div className="table-wrap article-table-wrap">
       <table className="article-table">
         <thead>
@@ -6686,7 +7003,7 @@ function ArticleTable({
           </tr>
         </thead>
         <tbody>
-          {keywords.map((keyword) => (
+          {paginatedKeywords.map((keyword) => (
             <tr key={keyword.id}>
               <td>{keyword.term}</td>
               <td>
@@ -6751,6 +7068,18 @@ function ArticleTable({
         </tbody>
       </table>
     </div>
+    <TablePagination
+      currentPage={page}
+      pageSize={pageSize}
+      totalItems={keywords.length}
+      totalPages={totalPages}
+      itemLabel="bài viết"
+      onPageChange={setCurrentPage}
+      onPageSizeChange={(size) => {
+        setPageSize(size)
+        setCurrentPage(1)
+      }}
+    />
     {editingDraft && (
       <div className="modal-backdrop" role="presentation">
         <section className="article-draft-modal" role="dialog" aria-modal="true" aria-labelledby="article-draft-title">
@@ -6825,6 +7154,7 @@ function QuickKeywordModal({
             />
           </label>
           <p>Keyword B tự liên kết với keyword A gần nhất phía trên; keyword C tự liên kết với keyword B gần nhất trong cùng nhánh.</p>
+          <p>Keyword trùng vẫn được nhập để xử lý trong bảng quản lý, nhưng tạm thời không đồng bộ sang module Bài viết cho tới khi chỉ còn một keyword cùng tên.</p>
           {issues.length > 0 && (
             <div className="quick-keyword-issues" role="alert">
               {issues.map((issue) => (

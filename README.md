@@ -113,6 +113,37 @@ File `public/seo-ops-seed.json` chi la seed khoi tao sach cho cai dat moi, khong
 
 Module `Quan ly Keyword` dung Google Search Console URL Inspection API de check trang thai index cua URL bai viet.
 
+## Ket noi Google OAuth cho Search Console va GA4
+
+SEO Ops ho tro nguoi dung dang nhap Google va cap quyen doc Search Console/Google Analytics theo tung du an. Refresh token duoc ma hoa tai backend va luu trong thu muc `SEO_OPS_DB_DIR`, khong ghi vao frontend, localStorage hoac file du lieu du an.
+
+Trong Google Cloud Console:
+
+```text
+1. Bat Google Search Console API va Google Analytics Data API.
+2. Tao OAuth Client loai Web application.
+3. Them Authorized redirect URI:
+   https://seo.cuahangphaohoa.shop/api/google/oauth/callback
+```
+
+Them bien moi truong tren Plesk va restart app:
+
+```text
+SEO_OPS_GOOGLE_CLIENT_ID=google-oauth-client-id
+SEO_OPS_GOOGLE_CLIENT_SECRET=google-oauth-client-secret
+SEO_OPS_GOOGLE_REDIRECT_URI=https://seo.cuahangphaohoa.shop/api/google/oauth/callback
+SEO_OPS_GOOGLE_TOKEN_SECRET=chuoi-bi-mat-dai-ngau-nhien-de-ma-hoa-refresh-token
+```
+
+Sau khi restart, vao `Du an SEO -> Ket noi Google`, bam `Dang nhap voi Google`. App yeu cau hai scope chi doc:
+
+```text
+https://www.googleapis.com/auth/webmasters.readonly
+https://www.googleapis.com/auth/analytics.readonly
+```
+
+Google Analytics van can nhap `GA4 Property ID` cua du an. Khi du an da ket noi Google, nut dong bo se tu dong goi GA4 Data API qua backend SEO Ops.
+
 Trong `Du an SEO -> Google Search Console / Check Index`, cau hinh:
 
 ```text
@@ -120,7 +151,7 @@ Search Console Property URL: https://tenmien.vn/ hoac sc-domain:tenmien.vn
 URL Inspection API Endpoint: /api/search-console/inspect
 ```
 
-URL-prefix property phai co dau `/` cuoi. Token Google khong luu trong frontend hoac database. Tren Plesk, them bien moi truong va restart app:
+URL-prefix property phai co dau `/` cuoi. Cau hinh token tinh duoi day chi dung lam fallback neu chua ket noi Google OAuth:
 
 ```text
 SEO_OPS_SEARCH_CONSOLE_TOKEN=oauth-access-token-co-scope-webmasters-readonly
@@ -132,7 +163,7 @@ OAuth token can scope:
 https://www.googleapis.com/auth/webmasters.readonly
 ```
 
-Token OAuth co the het han; khi nut check bao loi `401`, cap nhat token tren server va restart app. Google gioi han URL Inspection theo site, hien tai 2.000 request/ngay va 600 request/phut; nut check hang loat gui lan luot de tranh tang tai dot bien.
+Khi dung Google OAuth, backend tu lay access token moi bang refresh token da ma hoa. Neu nguoi dung thu hoi quyen Google, ket noi lai trong giao dien du an. Google gioi han URL Inspection theo site; nut check hang loat gui lan luot de tranh tang tai dot bien.
 
 ## MCP cho Claude Code
 

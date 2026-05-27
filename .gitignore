@@ -14,7 +14,9 @@ dist-ssr
 
 # Runtime data and generated deployment archives must never be committed.
 /db/seo-ops-data.json
+/db/seo-ops-google-oauth.json
 /deploy/**/db/seo-ops-data.json
+/deploy/**/db/seo-ops-google-oauth.json
 /deploy/*.zip
 
 # Editor directories and files

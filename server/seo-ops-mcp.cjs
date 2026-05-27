@@ -62,6 +62,18 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
     }
   }
 
+  function acceptedKeywords(data) {
+    const counts = data.keywords.reduce((result, keyword) => {
+      const key = `${keyword.projectId}:${String(keyword.term || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN')}`
+      result.set(key, (result.get(key) || 0) + 1)
+      return result
+    }, new Map())
+    return data.keywords.filter((keyword) => {
+      const key = `${keyword.projectId}:${String(keyword.term || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN')}`
+      return counts.get(key) === 1
+    })
+  }
+
   const tools = [
     {
       name: 'seo_list_projects',
@@ -121,13 +133,14 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
 
   function callTool(name, args = {}) {
     const data = readDb()
+    const keywordsAvailableForArticles = acceptedKeywords(data)
     switch (name) {
       case 'seo_list_projects': {
         return textResult(
           data.projects
             .filter((project) => !project.deletedAt)
             .map((project) => {
-              const keywords = data.keywords.filter((keyword) => keyword.projectId === project.id)
+              const keywords = keywordsAvailableForArticles.filter((keyword) => keyword.projectId === project.id)
               return {
                 id: project.id,
                 name: project.name,
@@ -141,7 +154,7 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
       case 'seo_list_keywords': {
         const query = String(args.search || '').toLowerCase().trim()
         const limit = Math.min(Math.max(Number(args.limit) || 30, 1), 100)
-        const keywords = data.keywords
+        const keywords = keywordsAvailableForArticles
           .filter((keyword) => !args.projectId || keyword.projectId === args.projectId)
           .filter((keyword) => !query || `${keyword.term} ${keyword.articleTitle || ''}`.toLowerCase().includes(query))
           .filter((keyword) => !args.needsArticle || !keyword.articleContent)
@@ -150,13 +163,13 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
         return textResult(keywords)
       }
       case 'seo_get_keyword': {
-        const keyword = data.keywords.find((item) => item.id === args.keywordId)
-        if (!keyword) throw new Error('Keyword not found.')
+        const keyword = keywordsAvailableForArticles.find((item) => item.id === args.keywordId)
+        if (!keyword) throw new Error('Keyword not found or currently blocked because its term is duplicated.')
         return textResult(keywordOutput(data, keyword))
       }
       case 'seo_save_article_draft': {
-        const keyword = data.keywords.find((item) => item.id === args.keywordId)
-        if (!keyword) throw new Error('Keyword not found.')
+        const keyword = keywordsAvailableForArticles.find((item) => item.id === args.keywordId)
+        if (!keyword) throw new Error('Keyword not found or currently blocked because its term is duplicated.')
         if (!String(args.title || '').trim() || !String(args.content || '').trim()) {
           throw new Error('Title and content are required.')
         }
@@ -177,8 +190,8 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
         return textResult({ saved: true, keyword: keywordOutput(data, nextKeyword) })
       }
       case 'seo_update_article_status': {
-        const keyword = data.keywords.find((item) => item.id === args.keywordId)
-        if (!keyword) throw new Error('Keyword not found.')
+        const keyword = keywordsAvailableForArticles.find((item) => item.id === args.keywordId)
+        if (!keyword) throw new Error('Keyword not found or currently blocked because its term is duplicated.')
         const nextKeyword = {
           ...keyword,
           articleStatus: String(args.status),
