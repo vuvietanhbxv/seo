@@ -1792,7 +1792,6 @@ const normalizeData = (data: AppData): AppData => ({
 
 const appBaseUrl = import.meta.env.BASE_URL || '/'
 const appUrl = (path: string) => `${appBaseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
-const seedDataUrl = appUrl('seo-ops-seed.json')
 const apiDataUrl = appUrl('api/data')
 const googleOAuthMessageFromUrl = () => {
   const params = new URLSearchParams(window.location.search)
@@ -1805,10 +1804,12 @@ const readStoredData = () => {
   const raw = localStorage.getItem(storageKey)
   return raw ? normalizeData(JSON.parse(raw)) : initialData
 }
+const hasStoredData = () => Boolean(localStorage.getItem(storageKey))
 
 function useStoredData() {
   const [data, setData] = useState<AppData>(readStoredData)
   const [apiEnabled, setApiEnabled] = useState(false)
+  const [loadingRemoteData, setLoadingRemoteData] = useState(() => !hasStoredData())
 
   useEffect(() => {
     fetch(apiDataUrl)
@@ -1820,6 +1821,7 @@ function useStoredData() {
         setApiEnabled(true)
       })
       .catch(() => setApiEnabled(false))
+      .finally(() => setLoadingRemoteData(false))
   }, [])
 
   const syncRemoteData = useCallback((next: AppData) => {
@@ -1850,11 +1852,11 @@ function useStoredData() {
     updateData(normalizeData(next))
   }, [updateData])
 
-  return [data, updateData, reloadData, importData, apiEnabled] as const
+  return [data, updateData, reloadData, importData, apiEnabled, loadingRemoteData] as const
 }
 
 function App() {
-  const [data, setData, reloadData, importData, apiEnabled] = useStoredData()
+  const [data, setData, reloadData, importData, apiEnabled, loadingRemoteData] = useStoredData()
   const wordpressFormRef = useRef<HTMLFormElement | null>(null)
   const [view, setView] = useState<View>(getViewFromHash)
   const [activeProjectId, setActiveProjectId] = useState(data.projects[0]?.id ?? '')
@@ -1898,19 +1900,6 @@ function App() {
     const raw = localStorage.getItem(entityCredentialKey)
     return raw ? JSON.parse(raw) : { loginWithGoogle: false, loginAccount: '', loginPassword: '' }
   })
-
-  useEffect(() => {
-    if (localStorage.getItem(storageKey)) return
-    fetch(seedDataUrl)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((backup) => {
-        const seededData = backup?.data ?? backup
-        if (seededData?.projects && !localStorage.getItem(storageKey)) {
-          importData(seededData)
-        }
-      })
-      .catch(() => undefined)
-  }, [importData])
 
   useEffect(() => {
     if (!new URLSearchParams(window.location.search).has('google_oauth')) return
@@ -2254,11 +2243,10 @@ function App() {
 
   const login = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const latestData = reloadData()
     const form = new FormData(event.currentTarget)
     const email = String(form.get('email')).trim()
     const password = String(form.get('password')).trim()
-    const user = latestData.users.find((item) => item.email.toLowerCase() === email.toLowerCase() && String(item.password ?? '123456') === password && item.active)
+    const user = data.users.find((item) => item.email.toLowerCase() === email.toLowerCase() && String(item.password ?? '123456') === password && item.active)
     if (!user) {
       setLoginError('Email hoặc mật khẩu không đúng.')
       return
@@ -4250,6 +4238,7 @@ function App() {
   }
 
   if (!currentUser) {
+    if (loadingRemoteData) return <LoadingPage />
     return <LoginPage error={loginError} users={data.users} onRefresh={reloadData} onSubmit={login} />
   }
 
@@ -5284,6 +5273,27 @@ function viewTitle(view: View) {
     progress: 'Tiến độ',
     system: 'Hệ thống',
   }[view]
+}
+
+function LoadingPage() {
+  return (
+    <main className="login-page">
+      <section className="login-panel">
+        <div className="brand login-brand">
+          <span className="brand-mark">S</span>
+          <div>
+            <strong>SEO Ops</strong>
+            <span>Quản lý dự án SEO</span>
+          </div>
+        </div>
+        <div>
+          <p className="eyeline">Đang tải dữ liệu</p>
+          <h1>Kết nối dữ liệu hệ thống</h1>
+          <p className="login-hint">SEO Ops đang đọc database online trước khi mở trang đăng nhập.</p>
+        </div>
+      </section>
+    </main>
+  )
 }
 
 function LoginPage({
