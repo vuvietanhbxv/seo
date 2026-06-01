@@ -13,6 +13,7 @@ const publicDir = process.env.SEO_OPS_PUBLIC_DIR
 const configuredDbDir = process.env.SEO_OPS_DB_DIR ? path.resolve(process.env.SEO_OPS_DB_DIR) : ''
 const dbDir = configuredDbDir || path.join(rootDir, 'db')
 const dbPath = path.join(dbDir, 'seo-ops-data.json')
+const dbBackupDir = path.join(dbDir, 'backups')
 const googleOAuthPath = path.join(dbDir, 'seo-ops-google-oauth.json')
 const seedPath = path.join(publicDir, 'seo-ops-seed.json')
 const port = Number(process.env.PORT || process.env.SEO_OPS_PORT || 5173)
@@ -27,6 +28,7 @@ const googleRedirectUri = process.env.SEO_OPS_GOOGLE_REDIRECT_URI || ''
 const googleTokenSecret = process.env.SEO_OPS_GOOGLE_TOKEN_SECRET || ''
 const basePath = normalizeBasePath(process.env.SEO_OPS_BASE_PATH || '/')
 const productionMode = process.env.NODE_ENV === 'production'
+const maxDbBackups = Math.max(0, Number(process.env.SEO_OPS_DB_BACKUPS || 50))
 const googleScopes = [
   'https://www.googleapis.com/auth/webmasters.readonly',
   'https://www.googleapis.com/auth/analytics.readonly',
@@ -104,8 +106,57 @@ function readDb() {
   return JSON.parse(fs.readFileSync(dbPath, 'utf8'))
 }
 
+function dataCounts(data) {
+  if (!data || typeof data !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(data)
+      .filter(([, value]) => Array.isArray(value))
+      .map(([key, value]) => [key, value.length]),
+  )
+}
+
+function importantRecordCount(data) {
+  return Object.values(dataCounts(data)).reduce((total, count) => total + count, 0)
+}
+
+function isCleanDefaultData(data) {
+  if (!data || !Array.isArray(data.users)) return false
+  const counts = dataCounts(data)
+  const hasOnlyDefaultAdmin = data.users.length <= 1 && data.users.every((user) => user?.email === 'admin@seo-ops.local' || user?.id === 'u-admin')
+  return hasOnlyDefaultAdmin && Object.entries(counts).every(([key, count]) => key === 'users' || count === 0)
+}
+
+function assertSafeDbWrite(currentData, nextData) {
+  if (!currentData) return
+  if (importantRecordCount(currentData) > importantRecordCount(nextData) && isCleanDefaultData(nextData)) {
+    const error = new Error('Refused to overwrite existing SEO Ops data with clean default data.')
+    error.code = 'SEO_OPS_CLEAN_OVERWRITE'
+    throw error
+  }
+}
+
+function backupDb() {
+  if (!maxDbBackups || !fs.existsSync(dbPath)) return
+  fs.mkdirSync(dbBackupDir, { recursive: true })
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  fs.copyFileSync(dbPath, path.join(dbBackupDir, `seo-ops-data-${timestamp}.json`))
+  const backups = fs.readdirSync(dbBackupDir)
+    .filter((entry) => entry.startsWith('seo-ops-data-') && entry.endsWith('.json'))
+    .map((entry) => {
+      const fullPath = path.join(dbBackupDir, entry)
+      return { fullPath, mtimeMs: fs.statSync(fullPath).mtimeMs }
+    })
+    .sort((left, right) => right.mtimeMs - left.mtimeMs)
+  for (const backup of backups.slice(maxDbBackups)) {
+    fs.rmSync(backup.fullPath, { force: true })
+  }
+}
+
 function writeDb(data) {
   ensureDb()
+  const currentData = fs.existsSync(dbPath) ? JSON.parse(fs.readFileSync(dbPath, 'utf8')) : null
+  assertSafeDbWrite(currentData, data)
+  backupDb()
   const tempPath = `${dbPath}.tmp`
   fs.writeFileSync(tempPath, JSON.stringify(data, null, 2))
   fs.renameSync(tempPath, dbPath)
@@ -291,7 +342,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (scopedPathname === '/api/health') {
-      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured })
       return
     }
 
@@ -318,7 +369,15 @@ const server = http.createServer(async (req, res) => {
           sendJson(res, 400, { ok: false, message: 'Invalid SEO Ops data shape' })
           return
         }
-        writeDb(nextData)
+        try {
+          writeDb(nextData)
+        } catch (error) {
+          if (error?.code === 'SEO_OPS_CLEAN_OVERWRITE') {
+            sendJson(res, 409, { ok: false, message: error.message })
+            return
+          }
+          throw error
+        }
         sendJson(res, 200, { ok: true, savedAt: new Date().toISOString() })
         return
       }
