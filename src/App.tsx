@@ -1935,11 +1935,11 @@ function App() {
       }
     })
     .filter((item) => item.count > 0)
-  const activeProject = activeProjects.find((project) => project.id === activeProjectId) ?? activeProjects[0]
+  const selectedProject = activeProjects.find((project) => project.id === activeProjectId) ?? activeProjects[0]
   useEffect(() => {
-    if (!activeProject?.id || view !== 'projects') return
+    if (!selectedProject?.id || view !== 'projects') return
     let cancelled = false
-    fetch(`${appUrl('api/google/oauth/status')}?projectId=${encodeURIComponent(activeProject.id)}`)
+    fetch(`${appUrl('api/google/oauth/status')}?projectId=${encodeURIComponent(selectedProject.id)}`)
       .then(async (response) => {
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
@@ -1961,9 +1961,10 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, view])
+  }, [selectedProject?.id, view])
   const currentUser = data.users.find((user) => user.id === currentUserId && user.active)
   const isAdmin = currentUser?.role === 'Quản trị viên'
+  const currentUserIdValue = currentUser?.id ?? ''
   const canAccessPermission = (permission: string, action: PermissionAction = 'view') => {
     if (isAdmin || !permission) return true
     const userPermissions = normalizePermissions(currentUser?.permissions ?? [])
@@ -1971,11 +1972,48 @@ function App() {
       ? userPermissions.includes(permissionKey(permission, 'view')) || userPermissions.includes(permissionKey(permission, 'edit'))
       : userPermissions.includes(permissionKey(permission, 'edit'))
   }
-  const canView = (targetView: View) => canAccessPermission(permissionForView(targetView), 'view')
+  const hasProjectViewPermission = canAccessPermission(permissionForView('projects'), 'view')
+  const currentUserTaskIds = new Set(currentUserIdValue ? activeTasks.filter((task) => task.assigneeId === currentUserIdValue).map((task) => task.id) : [])
+  const assignedArticleKeywordIds = new Set(
+    currentUserIdValue
+      ? activeKeywords
+          .filter((keyword) =>
+            keyword.articleAssigneeId === currentUserIdValue ||
+            Boolean(keyword.articleTaskId && currentUserTaskIds.has(keyword.articleTaskId)),
+          )
+          .map((keyword) => keyword.id)
+      : [],
+  )
+  const visibleAssignedKeywordIds = new Set(assignedArticleKeywordIds)
+  const activeKeywordById = new Map(activeKeywords.map((keyword) => [keyword.id, keyword]))
+  assignedArticleKeywordIds.forEach((keywordId) => {
+    let parentId = activeKeywordById.get(keywordId)?.parentId
+    while (parentId) {
+      visibleAssignedKeywordIds.add(parentId)
+      parentId = activeKeywordById.get(parentId)?.parentId
+    }
+  })
+  const assignedProjectIds = new Set([
+    ...activeTasks.filter((task) => task.assigneeId === currentUserIdValue).map((task) => task.projectId),
+    ...activeKeywords.filter((keyword) => visibleAssignedKeywordIds.has(keyword.id)).map((keyword) => keyword.projectId),
+  ])
+  const canViewAssignedView = (targetView: View) => {
+    if (targetView === 'tasks') return currentUserTaskIds.size > 0
+    if (targetView === 'keywords' || targetView === 'articles') return assignedArticleKeywordIds.size > 0
+    return false
+  }
+  const canView = (targetView: View) => canAccessPermission(permissionForView(targetView), 'view') || canViewAssignedView(targetView)
   const canEdit = (targetView: View) => canAccessPermission(permissionForView(targetView), 'edit')
   const canEditProjects = canEdit('projects')
   const canEditTasks = canEdit('tasks')
-  const projectTasks = data.tasks.filter((task) => task.projectId === activeProject?.id && !duplicateKeywordTaskIds.has(task.id))
+  const visibleProjects = hasProjectViewPermission ? activeProjects : activeProjects.filter((project) => assignedProjectIds.has(project.id))
+  const activeProject = visibleProjects.find((project) => project.id === activeProjectId) ?? visibleProjects[0] ?? selectedProject
+  const canEditAssignedArticle = (keyword: Keyword) => assignedArticleKeywordIds.has(keyword.id)
+  const projectTasks = data.tasks.filter((task) =>
+    task.projectId === activeProject?.id &&
+    !duplicateKeywordTaskIds.has(task.id) &&
+    (hasProjectViewPermission || task.assigneeId === currentUserIdValue),
+  )
   const currentUserTasks = activeTasks.filter((task) => task.assigneeId === currentUser?.id)
   const pendingUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Chờ nhận')
   const activeUserTasks = currentUserTasks.filter((task) => ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task)))
@@ -1995,11 +2033,12 @@ function App() {
   const monthlySalaryRate = monthlyUserTasks.length ? (monthlyUserDone / monthlyUserTasks.length) * 100 : 0
   const monthlySalaryEstimate = ((currentUser?.salaryAmount ?? 0) * monthlySalaryRate) / 100
   const projectKeywords = data.keywords.filter((keyword) => keyword.projectId === activeProject?.id)
-  const acceptedProjectKeywords = projectKeywords.filter((keyword) => !duplicateKeywordIds.has(keyword.id))
-  const articleProjectKeywords = acceptedProjectKeywords.filter(keywordIsInArticles)
+  const visibleProjectKeywords = hasProjectViewPermission ? projectKeywords : projectKeywords.filter((keyword) => visibleAssignedKeywordIds.has(keyword.id))
+  const acceptedProjectKeywords = visibleProjectKeywords.filter((keyword) => !duplicateKeywordIds.has(keyword.id))
+  const articleProjectKeywords = acceptedProjectKeywords.filter((keyword) => keywordIsInArticles(keyword) && (hasProjectViewPermission || assignedArticleKeywordIds.has(keyword.id)))
   const articleProjectKeywordIds = new Set(articleProjectKeywords.map((keyword) => keyword.id))
   const selectedImportableArticleCount = acceptedProjectKeywords.filter((keyword) => selectedKeywordIds.has(keyword.id) && !keywordIsInArticles(keyword)).length
-  const duplicateProjectKeywordCount = projectKeywords.length - acceptedProjectKeywords.length
+  const duplicateProjectKeywordCount = visibleProjectKeywords.length - acceptedProjectKeywords.length
   const editingKeyword = editingKeywordId ? projectKeywords.find((keyword) => keyword.id === editingKeywordId) : undefined
   const projectTransactions = data.transactions.filter((item) => item.projectId === activeProject?.id)
   const projectEntities = (data.seoEntities ?? []).filter((entity) => entity.projectId === activeProject?.id)
@@ -2619,6 +2658,7 @@ function App() {
 
   const saveKeyword = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!canEditProjects) return
     if (!activeProject) return
     const form = new FormData(event.currentTarget)
     const keywordType = String(form.get('keywordType')) as KeywordType
@@ -2670,6 +2710,7 @@ function App() {
 
   const developKeyword = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!canEditProjects) return
     if (!keywordBuilder) return
 
     const nextType = childTypeOf(keywordBuilder)
@@ -2721,6 +2762,7 @@ function App() {
 
   const importQuickKeywords = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!canEditProjects) return
     if (!activeProject) return
 
     const lines = String(new FormData(event.currentTarget).get('quickKeywords') ?? '').split(/\r?\n/)
@@ -2848,6 +2890,7 @@ function App() {
   }
 
   const checkKeywordIndex = async (keywordId: string) => {
+    if (!canEditProjects) return
     const keyword = articleProjectKeywords.find((item) => item.id === keywordId)
     if (!keyword || checkingAllKeywords) return
     setCheckingKeywordIds((current) => new Set(current).add(keywordId))
@@ -2878,6 +2921,7 @@ function App() {
   }
 
   const checkAllKeywordIndexes = async () => {
+    if (!canEditProjects) return
     if (!activeProject || articleProjectKeywords.length === 0) return
     const settings = searchConsoleSettingsOf(activeProject)
     const updates = new Map<string, Partial<Keyword>>()
@@ -3021,6 +3065,7 @@ function App() {
   }
 
   const importKeywordsToArticles = (keywordIds: Iterable<string>) => {
+    if (!canEditProjects) return
     const requestedIds = new Set(keywordIds)
     const importableKeywords = acceptedProjectKeywords.filter((keyword) => requestedIds.has(keyword.id) && !keywordIsInArticles(keyword))
     if (importableKeywords.length === 0) {
@@ -3040,6 +3085,7 @@ function App() {
   const importSelectedKeywordsToArticles = () => importKeywordsToArticles(selectedKeywordIds)
 
   const deleteSelectedKeywords = () => {
+    if (!canEditProjects) return
     if (selectedKeywordIds.size === 0) return
     const idsToDelete = collectKeywordBranchIds(selectedKeywordIds)
     if (!window.confirm(`Bạn có chắc chắn muốn xóa ${idsToDelete.size} keyword đã chọn? Các keyword con cũng sẽ bị xóa.`)) {
@@ -3060,14 +3106,17 @@ function App() {
   }
 
   const updateKeywordArticle = (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleMetaDescription' | 'articleContent' | 'articleStatus' | 'articleUpdatedAt' | 'articleSource' | 'articleAssigneeId' | 'articleUrl'>>) => {
+    if (!canEditProjects && !assignedArticleKeywordIds.has(keywordId)) return
+    const allowedUpdates = { ...updates }
+    if (!canEditProjects && 'articleAssigneeId' in allowedUpdates) delete allowedUpdates.articleAssigneeId
     saveData({
       ...data,
       keywords: data.keywords.map((keyword) =>
         keyword.id === keywordId
           ? {
               ...keyword,
-              ...updates,
-              ...('articleUrl' in updates && updates.articleUrl !== keyword.articleUrl
+              ...allowedUpdates,
+              ...('articleUrl' in allowedUpdates && allowedUpdates.articleUrl !== keyword.articleUrl
                 ? { indexStatus: 'Chua check' as KeywordIndexStatus, indexCheckedAt: '' }
                 : {}),
             }
@@ -3077,6 +3126,7 @@ function App() {
   }
 
   const sendArticleTask = (keywordId: string) => {
+    if (!canEditProjects) return
     const keyword = data.keywords.find((item) => item.id === keywordId)
     if (!keyword || !activeProject) return
     if (!keyword.articleAssigneeId) {
@@ -3136,6 +3186,7 @@ function App() {
 
   const addTask = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!canEditTasks) return
     if (!activeProject) return
     const form = new FormData(event.currentTarget)
     const assignedAt = appNowIso()
@@ -3343,6 +3394,7 @@ function App() {
   const acceptTask = (taskId: string) => {
     const task = data.tasks.find((item) => item.id === taskId)
     if (!task) return
+    if (!canEditTasks && task.assigneeId !== currentUserIdValue) return
     const nextData = {
       ...data,
       tasks: data.tasks.map((item) =>
@@ -3361,6 +3413,7 @@ function App() {
   const rejectTask = (taskId: string) => {
     const task = data.tasks.find((item) => item.id === taskId)
     if (!task) return
+    if (!canEditTasks && task.assigneeId !== currentUserIdValue) return
     const reason = window.prompt('Nhập lý do từ chối task:')
     if (!reason) return
     const nextData = {
@@ -3379,6 +3432,7 @@ function App() {
   const submitTaskForReview = (taskId: string) => {
     const task = data.tasks.find((item) => item.id === taskId)
     if (!task) return
+    if (!canEditTasks && task.assigneeId !== currentUserIdValue) return
     const nextData = {
       ...data,
       tasks: data.tasks.map((item) =>
@@ -3393,6 +3447,7 @@ function App() {
   }
 
   const approveTask = (taskId: string) => {
+    if (!canEditTasks) return
     const task = data.tasks.find((item) => item.id === taskId)
     if (!task) return
     const nextData = {
@@ -3409,6 +3464,7 @@ function App() {
   }
 
   const requestTaskRevision = (taskId: string) => {
+    if (!canEditTasks) return
     const task = data.tasks.find((item) => item.id === taskId)
     if (!task) return
     const note = window.prompt('Nhập nội dung cần chỉnh sửa:')
@@ -3427,6 +3483,7 @@ function App() {
   }
 
   const reassignTask = (taskId: string, assigneeId: string) => {
+    if (!canEditTasks) return
     const task = data.tasks.find((item) => item.id === taskId)
     if (!task) return
     const updatedTask = { ...task, assigneeId, status: 'Chờ nhận' as TaskStatus }
@@ -3452,6 +3509,7 @@ function App() {
   }
 
   const updateTaskStatus = (taskId: string, status: TaskStatus) => {
+    if (!canEditTasks) return
     const task = data.tasks.find((item) => item.id === taskId)
     if (!task) return
     const nextData = {
@@ -4255,15 +4313,15 @@ function App() {
 
         <nav className="nav-list" aria-label="Điều hướng chính">
           <NavButton view="overview" current={view} label="Tổng quan" onClick={goTo} />
-          {canAccessPermission('Dự án', 'view') && (
+          {(hasProjectViewPermission || canViewAssignedView('keywords') || canViewAssignedView('articles') || canViewAssignedView('tasks')) && (
             <>
-              <NavButton view="projects" current={view} label="Dự án SEO" onClick={goTo} />
+              {canView('projects') && <NavButton view="projects" current={view} label="Dự án SEO" onClick={goTo} />}
               <div className="nav-children" aria-label="Module con của Dự án SEO">
-                <NavButton view="keywords" current={view} label="Quản lý Keyword" onClick={goTo} child />
-                <NavButton view="articles" current={view} label="Bài viết" onClick={goTo} child />
-                <NavButton view="entities" current={view} label="SEO Entity" onClick={goTo} child />
-                <NavButton view="backlinks" current={view} label="Backlink" onClick={goTo} child />
-                <NavButton view="tasks" current={view} label="Task công việc" onClick={goTo} child />
+                {canView('keywords') && <NavButton view="keywords" current={view} label="Quản lý Keyword" onClick={goTo} child />}
+                {canView('articles') && <NavButton view="articles" current={view} label="Bài viết" onClick={goTo} child />}
+                {canView('entities') && <NavButton view="entities" current={view} label="SEO Entity" onClick={goTo} child />}
+                {canView('backlinks') && <NavButton view="backlinks" current={view} label="Backlink" onClick={goTo} child />}
+                {canView('tasks') && <NavButton view="tasks" current={view} label="Task công việc" onClick={goTo} child />}
               </div>
             </>
           )}
@@ -4307,11 +4365,11 @@ function App() {
               onOpen={openNotification}
               onMarkAllRead={markAllNotificationsRead}
             />
-            {activeProjects.length > 0 && (
+            {visibleProjects.length > 0 && (
               <label className="project-switcher">
                 <span>Dự án đang xem</span>
                 <select value={activeProject?.id ?? ''} onChange={(event) => selectActiveProject(event.target.value)}>
-                  {activeProjects.map((project) => (
+                  {visibleProjects.map((project) => (
                     <option value={project.id} key={project.id}>
                       {project.name}
                     </option>
@@ -4816,6 +4874,7 @@ function App() {
                 onUpdateKeyword={updateKeywordArticle}
                 onSendTask={sendArticleTask}
                 canEdit={canEditProjects}
+                canEditKeyword={canEditAssignedArticle}
               />
             </Panel>
           </section>
@@ -4932,6 +4991,11 @@ function App() {
                 onApprove={approveTask}
                 onRevision={requestTaskRevision}
                 onReassign={reassignTask}
+                onAcceptTask={acceptTask}
+                onRejectTask={rejectTask}
+                onSubmitTask={submitTaskForReview}
+                currentUserId={currentUserIdValue}
+                allowAssigneeWorkflow={!canEditTasks}
                 compact
                 canEdit={canEditTasks}
               />
@@ -7316,17 +7380,21 @@ function ArticleTable({
   onUpdateKeyword,
   onSendTask,
   canEdit,
+  canEditKeyword,
 }: {
   keywords: Keyword[]
   users: User[]
   onUpdateKeyword: (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleMetaDescription' | 'articleContent' | 'articleStatus' | 'articleUpdatedAt' | 'articleSource' | 'articleAssigneeId' | 'articleUrl'>>) => void
   onSendTask: (keywordId: string) => void
   canEdit: boolean
+  canEditKeyword?: (keyword: Keyword) => boolean
 }) {
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
   const [pageSize, setPageSize] = useState(25)
   const [currentPage, setCurrentPage] = useState(1)
   const editingDraft = keywords.find((keyword) => keyword.id === editingDraftId)
+  const canEditArticle = (keyword: Keyword) => canEdit || Boolean(canEditKeyword?.(keyword))
+  const canEditDraft = editingDraft ? canEditArticle(editingDraft) : false
   const totalPages = Math.max(1, Math.ceil(keywords.length / pageSize))
   const page = Math.min(currentPage, totalPages)
   const paginatedKeywords = keywords.slice((page - 1) * pageSize, page * pageSize)
@@ -7371,7 +7439,9 @@ function ArticleTable({
           </tr>
         </thead>
         <tbody>
-          {paginatedKeywords.map((keyword) => (
+          {paginatedKeywords.map((keyword) => {
+            const canEditRow = canEditArticle(keyword)
+            return (
             <tr key={keyword.id}>
               <td>{keyword.term}</td>
               <td>
@@ -7379,7 +7449,7 @@ function ArticleTable({
                   value={keyword.articleTitle ?? ''}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleTitle: event.target.value })}
                   placeholder={`Tiêu đề bài viết # ${keyword.term}`}
-                  disabled={!canEdit}
+                  disabled={!canEditRow}
                 />
               </td>
               <td>
@@ -7389,7 +7459,7 @@ function ArticleTable({
                 <select
                   value={keyword.articleType ?? 'Informational Content'}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleType: event.target.value as ArticleType })}
-                  disabled={!canEdit}
+                  disabled={!canEditRow}
                 >
                   {articleTypes.map((type) => (
                     <option key={type}>{type}</option>
@@ -7419,7 +7489,7 @@ function ArticleTable({
                 <div className="article-draft-cell">
                   <span>{statusLabels[keyword.articleStatus ?? 'Chua viet']}</span>
                   <button className="secondary-button" type="button" onClick={() => setEditingDraftId(keyword.id)}>
-                    {keyword.articleContent ? 'Xem / sửa' : 'Soạn bài'}
+                    {keyword.articleContent ? (canEditRow ? 'Xem / sửa' : 'Xem') : canEditRow ? 'Soạn bài' : 'Xem'}
                   </button>
                 </div>
               </td>
@@ -7428,11 +7498,12 @@ function ArticleTable({
                   value={keyword.articleUrl ?? ''}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleUrl: event.target.value })}
                   placeholder="https://..."
-                  disabled={!canEdit}
+                  disabled={!canEditRow}
                 />
               </td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -7461,11 +7532,11 @@ function ArticleTable({
           <div className="article-draft-form">
             <label>
               <span>Tiêu đề</span>
-              <input value={editingDraft.articleTitle ?? ''} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleTitle: event.target.value })} disabled={!canEdit} />
+              <input value={editingDraft.articleTitle ?? ''} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleTitle: event.target.value })} disabled={!canEditDraft} />
             </label>
             <label>
               <span>Trạng thái</span>
-              <select value={editingDraft.articleStatus ?? 'Chua viet'} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleStatus: event.target.value as ArticleDraftStatus })} disabled={!canEdit}>
+              <select value={editingDraft.articleStatus ?? 'Chua viet'} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleStatus: event.target.value as ArticleDraftStatus })} disabled={!canEditDraft}>
                 {(Object.keys(statusLabels) as ArticleDraftStatus[]).map((status) => (
                   <option key={status} value={status}>{statusLabels[status]}</option>
                 ))}
@@ -7473,7 +7544,7 @@ function ArticleTable({
             </label>
             <label className="wide">
               <span>Meta description</span>
-              <textarea rows={2} value={editingDraft.articleMetaDescription ?? ''} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleMetaDescription: event.target.value })} disabled={!canEdit} />
+              <textarea rows={2} value={editingDraft.articleMetaDescription ?? ''} onChange={(event) => onUpdateKeyword(editingDraft.id, { articleMetaDescription: event.target.value })} disabled={!canEditDraft} />
             </label>
             <label className="wide">
               <span>Nội dung bài viết (Markdown / HTML)</span>
@@ -7482,7 +7553,7 @@ function ArticleTable({
                 rows={18}
                 value={editingDraft.articleContent ?? ''}
                 onChange={(event) => onUpdateKeyword(editingDraft.id, { articleContent: event.target.value, articleUpdatedAt: appNowIso(), articleSource: 'SEO Ops' })}
-                disabled={!canEdit}
+                disabled={!canEditDraft}
               />
             </label>
             <p className="article-draft-meta">Nguồn: {editingDraft.articleSource || 'Chưa có'} | Cập nhật: {formatDateTime(editingDraft.articleUpdatedAt ?? '')}</p>
@@ -7722,6 +7793,11 @@ function TaskTable({
   onApprove,
   onRevision,
   onReassign,
+  onAcceptTask,
+  onRejectTask,
+  onSubmitTask,
+  currentUserId,
+  allowAssigneeWorkflow,
   canEdit,
   compact,
 }: {
@@ -7732,6 +7808,11 @@ function TaskTable({
   onApprove: (taskId: string) => void
   onRevision: (taskId: string) => void
   onReassign: (taskId: string, assigneeId: string) => void
+  onAcceptTask?: (taskId: string) => void
+  onRejectTask?: (taskId: string) => void
+  onSubmitTask?: (taskId: string) => void
+  currentUserId?: string
+  allowAssigneeWorkflow?: boolean
   canEdit: boolean
   compact?: boolean
 }) {
@@ -7751,11 +7832,14 @@ function TaskTable({
             <th>Yêu cầu hoàn thành</th>
             <th>Lương task</th>
             <th>Trạng thái</th>
-            {canEdit && <th>Tác vụ</th>}
+            {(canEdit || allowAssigneeWorkflow) && <th>Tác vụ</th>}
           </tr>
         </thead>
         <tbody>
-          {tasks.map((task) => (
+          {tasks.map((task) => {
+            const canUseAssigneeWorkflow = Boolean(allowAssigneeWorkflow && currentUserId && task.assigneeId === currentUserId)
+            const canShowTaskActions = canEdit || canUseAssigneeWorkflow
+            return (
             <tr key={task.id}>
               <td>{task.title}</td>
               {!compact && <td>{projects.find((project) => project.id === task.projectId)?.name}</td>}
@@ -7789,20 +7873,40 @@ function TaskTable({
                 {task.rejectionReason && <small className="task-note">Từ chối: {task.rejectionReason}</small>}
                 {task.revisionNote && <small className="task-note revision">Cần sửa: {task.revisionNote}</small>}
               </td>
-              {canEdit && (
+              {canShowTaskActions && (
                 <td>
                   <div className="table-actions">
-                    <button className="secondary-button" type="button" onClick={() => onApprove(task.id)} disabled={taskStatusOf(task) !== 'Chờ duyệt'}>
-                      Xác nhận
-                    </button>
-                    <button className="danger-button" type="button" onClick={() => onRevision(task.id)} disabled={taskStatusOf(task) !== 'Chờ duyệt'}>
-                      Cần sửa
-                    </button>
+                    {canEdit && (
+                      <>
+                        <button className="secondary-button" type="button" onClick={() => onApprove(task.id)} disabled={taskStatusOf(task) !== 'Chờ duyệt'}>
+                          Xác nhận
+                        </button>
+                        <button className="danger-button" type="button" onClick={() => onRevision(task.id)} disabled={taskStatusOf(task) !== 'Chờ duyệt'}>
+                          Cần sửa
+                        </button>
+                      </>
+                    )}
+                    {canUseAssigneeWorkflow && taskStatusOf(task) === 'Chờ nhận' && (
+                      <>
+                        <button className="secondary-button" type="button" onClick={() => onAcceptTask?.(task.id)}>
+                          Nhận task
+                        </button>
+                        <button className="danger-button" type="button" onClick={() => onRejectTask?.(task.id)}>
+                          Từ chối
+                        </button>
+                      </>
+                    )}
+                    {canUseAssigneeWorkflow && ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task)) && (
+                      <button className="secondary-button" type="button" onClick={() => onSubmitTask?.(task.id)}>
+                        Gửi hoàn thành
+                      </button>
+                    )}
                   </div>
                 </td>
               )}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
