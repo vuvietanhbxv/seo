@@ -1100,6 +1100,7 @@ textarea:focus {
 .backlink-cost-form,
 .knowledge-form,
 .knowledge-filters,
+.knowledge-html-upload-form,
 .knowledge-file-form,
 .knowledge-mini-form {
   display: grid;
@@ -1139,6 +1140,11 @@ textarea:focus {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.knowledge-html-upload-form {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 0.9fr) minmax(170px, 0.8fr) minmax(170px, 0.8fr) minmax(190px, 1fr) auto;
+  align-items: end;
+}
+
 .knowledge-form textarea {
   min-height: 92px;
   resize: vertical;
@@ -1159,6 +1165,7 @@ textarea:focus {
 
 .knowledge-form-actions button[type='submit'],
 .knowledge-card-actions button:not(.secondary-button):not(.danger-button),
+.knowledge-html-upload-form button,
 .knowledge-file-form button,
 .knowledge-mini-form button {
   border: 0;
@@ -1168,6 +1175,10 @@ textarea:focus {
   background: var(--accent);
   color: #ffffff;
   font-weight: 800;
+}
+
+.knowledge-open-html-button {
+  width: fit-content;
 }
 
 .knowledge-detail {
@@ -1212,6 +1223,37 @@ textarea:focus {
   margin: 6px 0 3px;
   font-size: 17px;
   line-height: 1.35;
+}
+
+.knowledge-card.has-html-guide {
+  border-color: #99f6e4;
+  background: #f8fffd;
+}
+
+.knowledge-card.has-html-guide .knowledge-card-main {
+  cursor: pointer;
+}
+
+.knowledge-title-button,
+.knowledge-file-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 900;
+  text-align: left;
+  cursor: pointer;
+}
+
+.knowledge-title-button:hover,
+.knowledge-file-link:hover {
+  text-decoration: underline;
+}
+
+.knowledge-html-hint {
+  display: block;
+  color: var(--accent) !important;
 }
 
 .knowledge-card small,
@@ -2411,6 +2453,7 @@ tr:last-child td {
   .backlink-form,
   .backlink-plan-form,
   .backlink-cost-form,
+  .knowledge-html-upload-form,
   .entity-import-grid,
   .entity-import-form,
   .entity-task-form {
@@ -2457,6 +2500,7 @@ tr:last-child td {
   .backlink-form,
   .backlink-plan-form,
   .backlink-cost-form,
+  .knowledge-html-upload-form,
   .entity-import-grid,
   .entity-import-form,
   .entity-task-form,

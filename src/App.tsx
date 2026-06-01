@@ -631,6 +631,8 @@ const suggestedInternalTags = [
   'tracking',
   'backup',
 ]
+const htmlGuideFileType = 'Hướng dẫn HTML'
+const htmlGuideMaxBytes = 2 * 1024 * 1024
 const entityTypes: EntityType[] = ['Brand', 'Company', 'Local Business', 'Person', 'Product', 'Service', 'Website']
 const entityStatuses: EntityStatus[] = ['Đang dùng', 'Tạm dừng', 'Hoàn thành']
 const entityPlatformGroups: EntityPlatformGroup[] = ['Social', 'Profile', 'Directory', 'Web 2.0', 'Forum', 'Blog', 'Map', 'Review']
@@ -1492,6 +1494,48 @@ const keywordIsInArticles = (keyword: Keyword) =>
     keyword.articleContent?.trim() ||
     keyword.articleAssigneeId?.trim(),
   )
+const readHtmlFileAsDataUrl = async (file: File) => {
+  const text = await file.text()
+  const bytes = new TextEncoder().encode(text)
+  let binary = ''
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.slice(index, index + 0x8000))
+  }
+  return `data:text/html;charset=utf-8;base64,${window.btoa(binary)}`
+}
+const isHtmlFile = (file: File) =>
+  file.type === 'text/html' || /\.(html?|xhtml)$/i.test(file.name)
+const isHtmlGuideFile = (file: InternalNoteFile) =>
+  file.fileType === htmlGuideFileType && file.fileUrl.startsWith('data:text/html')
+const htmlGuideFileOf = (note: InternalNote, files: InternalNoteFile[]) =>
+  files.find((file) => file.noteId === note.id && isHtmlGuideFile(file))
+const openHtmlGuideFile = (file: InternalNoteFile) => {
+  if (!isHtmlGuideFile(file)) return
+  const popup = window.open('', '_blank')
+  if (!popup) {
+    window.alert('Trình duyệt đang chặn popup. Hãy cho phép popup để mở file HTML hướng dẫn.')
+    return
+  }
+  popup.opener = null
+  popup.document.open()
+  popup.document.write(`
+    <!doctype html>
+    <html lang="vi">
+      <head>
+        <meta charset="utf-8" />
+        <title>${file.fileName.replace(/[<>&"]/g, '')}</title>
+        <style>
+          html, body { margin: 0; min-height: 100%; }
+          iframe { border: 0; width: 100vw; height: 100vh; display: block; }
+        </style>
+      </head>
+      <body>
+        <iframe sandbox="allow-forms allow-popups allow-same-origin" src="${file.fileUrl.replace(/"/g, '&quot;')}"></iframe>
+      </body>
+    </html>
+  `)
+  popup.document.close()
+}
 const analyticsSettingsOf = (project?: Project): AnalyticsSettings => ({
   ...emptyAnalyticsSettings,
   ...(project?.analytics ?? {}),
@@ -4201,6 +4245,105 @@ function App() {
     event.currentTarget.reset()
   }
 
+  const uploadHtmlGuideNote = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isAdmin) return
+    const form = new FormData(event.currentTarget)
+    const pickedFile = form.get('htmlFile') as File | null
+    if (!pickedFile || pickedFile.size === 0) {
+      window.alert('Vui lòng chọn file HTML hướng dẫn.')
+      return
+    }
+    if (!isHtmlFile(pickedFile)) {
+      window.alert('Chỉ cho phép upload file .html/.htm để làm tài liệu hướng dẫn.')
+      return
+    }
+    if (pickedFile.size > htmlGuideMaxBytes) {
+      window.alert(`File HTML tối đa ${Math.round(htmlGuideMaxBytes / 1024 / 1024)}MB để tránh làm nặng database.`)
+      return
+    }
+
+    try {
+      const now = appNowIso()
+      const noteProjectId = String(form.get('projectId')) || activeProject?.id || ''
+      const project = data.projects.find((item) => item.id === noteProjectId)
+      const title = String(form.get('title')).trim() || pickedFile.name.replace(/\.[^.]+$/, '')
+      const tags = String(form.get('tags') || 'hướng-dẫn, html')
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+      const noteId = uid('in')
+      const note: InternalNote = {
+        id: noteId,
+        projectId: noteProjectId,
+        website: project?.website || '',
+        title,
+        noteType: 'Hướng dẫn thao tác',
+        category: 'Admin',
+        relatedUrl: '',
+        affectedArea: 'Tài liệu nội bộ',
+        problemDescription: `File HTML hướng dẫn: ${pickedFile.name}`,
+        content: `Tài liệu hướng dẫn HTML được upload bởi admin. Nhấp vào ghi chú hoặc file đính kèm để mở.`,
+        reason: String(form.get('reason')).trim(),
+        priority: 'Trung bình',
+        status: 'Đã duyệt',
+        visibility: 'Nội bộ',
+        requestedBy: '',
+        assignedTo: currentUser?.id ?? '',
+        createdBy: currentUser?.id ?? '',
+        approvedBy: currentUser?.id ?? '',
+        approvedAt: now,
+        completedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        tags,
+        extraNote: '',
+        version: 1,
+      }
+      const file: InternalNoteFile = {
+        id: uid('inf'),
+        noteId,
+        fileName: pickedFile.name,
+        fileUrl: await readHtmlFileAsDataUrl(pickedFile),
+        fileType: htmlGuideFileType,
+        fileSize: pickedFile.size,
+        uploadedBy: currentUser?.id ?? '',
+        createdAt: now,
+      }
+      const version: InternalNoteVersion = {
+        id: uid('inv'),
+        noteId,
+        versionNumber: 1,
+        title,
+        content: note.content,
+        changedBy: currentUser?.id ?? '',
+        changeNote: `Upload file HTML hướng dẫn: ${pickedFile.name}`,
+        createdAt: now,
+      }
+      const existingTagNames = new Set((data.internalNoteTags ?? []).map((tag) => tag.name.toLowerCase()))
+      const newTags: InternalNoteTag[] = tags
+        .filter((tag) => !existingTagNames.has(tag.toLowerCase()))
+        .map((tag) => ({
+          id: uid('tag'),
+          name: tag,
+          color: '#64748b',
+          createdAt: now,
+          updatedAt: now,
+        }))
+      saveData({
+        ...data,
+        internalNotes: [note, ...internalNotes],
+        internalNoteFiles: [file, ...internalNoteFiles],
+        internalNoteVersions: [version, ...internalNoteVersions].slice(0, 800),
+        internalNoteTags: [...newTags, ...(data.internalNoteTags ?? [])],
+      }, 'Upload nhanh hướng dẫn HTML', title)
+      setKnowledgeTab('guides')
+      event.currentTarget.reset()
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Không upload được file HTML hướng dẫn.')
+    }
+  }
+
   const archiveInternalNote = (noteId: string) => {
     const note = internalNotes.find((item) => item.id === noteId)
     if (!note) return
@@ -5024,6 +5167,7 @@ function App() {
             activeProjectId={activeProject?.id ?? ''}
             currentUser={currentUser}
             canEdit={canEdit('knowledge')}
+            canUploadHtmlGuide={isAdmin}
             onTab={setKnowledgeTab}
             onSearch={setKnowledgeSearch}
             onProjectFilter={setKnowledgeProjectFilter}
@@ -5039,6 +5183,7 @@ function App() {
             onRestore={restoreInternalNote}
             onPermanentDelete={permanentlyDeleteInternalNote}
             onApprove={approveInternalNote}
+            onUploadHtmlGuide={uploadHtmlGuideNote}
             onAddFile={addInternalNoteFile}
             onAddComment={addInternalNoteComment}
           />
@@ -5665,6 +5810,7 @@ function KnowledgeModule({
   activeProjectId,
   currentUser,
   canEdit,
+  canUploadHtmlGuide,
   onTab,
   onSearch,
   onProjectFilter,
@@ -5680,6 +5826,7 @@ function KnowledgeModule({
   onRestore,
   onPermanentDelete,
   onApprove,
+  onUploadHtmlGuide,
   onAddFile,
   onAddComment,
 }: {
@@ -5702,6 +5849,7 @@ function KnowledgeModule({
   activeProjectId: string
   currentUser?: User
   canEdit: boolean
+  canUploadHtmlGuide: boolean
   onTab: (tab: KnowledgeTab) => void
   onSearch: (value: string) => void
   onProjectFilter: (value: string) => void
@@ -5717,6 +5865,7 @@ function KnowledgeModule({
   onRestore: (noteId: string) => void
   onPermanentDelete: (noteId: string) => void
   onApprove: (noteId: string) => void
+  onUploadHtmlGuide: (event: FormEvent<HTMLFormElement>) => void
   onAddFile: (event: FormEvent<HTMLFormElement>) => void
   onAddComment: (event: FormEvent<HTMLFormElement>) => void
 }) {
@@ -5729,6 +5878,7 @@ function KnowledgeModule({
   const projectName = (id?: string) => projects.find((project) => project.id === id)?.name ?? 'Không gắn dự án'
   const defaultProjectId = editingNote?.projectId || activeProjectId || projects[0]?.id || ''
   const selectedNoteForDetail = editingNote ?? notes[0]
+  const selectedHtmlGuideFile = selectedNoteForDetail ? htmlGuideFileOf(selectedNoteForDetail, files) : undefined
 
   return (
     <section className="view-stack knowledge-module">
@@ -5784,6 +5934,24 @@ function KnowledgeModule({
           </select>
         </div>
       </Panel>
+
+      {canUploadHtmlGuide && tab !== 'files' && (
+        <Panel title="Upload nhanh hướng dẫn HTML" action="Chỉ admin">
+          <form className="knowledge-html-upload-form" onSubmit={onUploadHtmlGuide}>
+            <input name="title" placeholder="Tiêu đề ghi chú, bỏ trống sẽ dùng tên file" />
+            <select name="projectId" defaultValue={defaultProjectId}>
+              <option value="">Không gắn dự án</option>
+              {projects.map((project) => (
+                <option value={project.id} key={project.id}>{project.name}</option>
+              ))}
+            </select>
+            <input name="tags" placeholder="Tag: hướng-dẫn, sop, dev..." defaultValue="hướng-dẫn, html" />
+            <input name="reason" placeholder="Mục đích tài liệu" />
+            <input name="htmlFile" type="file" accept=".html,.htm,text/html" required />
+            <button type="submit">Upload HTML</button>
+          </form>
+        </Panel>
+      )}
 
       {tab !== 'files' && (
         <div className="wide-left dashboard-grid">
@@ -5862,6 +6030,11 @@ function KnowledgeModule({
                 <Detail label="Loại / trạng thái" value={`${selectedNoteForDetail.noteType} · ${selectedNoteForDetail.status}`} />
                 <Detail label="Người thực hiện" value={userName(selectedNoteForDetail.assignedTo)} />
                 <Detail label="Cập nhật" value={formatDateTime(selectedNoteForDetail.updatedAt)} />
+                {selectedHtmlGuideFile && (
+                  <button className="secondary-button knowledge-open-html-button" type="button" onClick={() => openHtmlGuideFile(selectedHtmlGuideFile)}>
+                    Mở file HTML hướng dẫn
+                  </button>
+                )}
                 <p>{selectedNoteForDetail.content}</p>
                 <div className="knowledge-tags">
                   {selectedNoteForDetail.tags.map((tag) => <span key={tag}>{tag}</span>)}
@@ -5947,17 +6120,36 @@ function KnowledgeNoteTable({
     <div className="knowledge-list">
       {notes.map((note) => {
         const noteFiles = files.filter((file) => file.noteId === note.id)
+        const htmlGuideFile = htmlGuideFileOf(note, noteFiles)
         const noteVersions = versions.filter((version) => version.noteId === note.id)
         const noteComments = comments.filter((comment) => comment.noteId === note.id)
         const isArchived = Boolean(note.deletedAt || note.archivedAt || note.status === 'Lưu trữ')
         return (
-          <article className="knowledge-card" key={note.id}>
+          <article
+            className={`knowledge-card${htmlGuideFile ? ' has-html-guide' : ''}`}
+            key={note.id}
+            onClick={(event) => {
+              const target = event.target instanceof HTMLElement ? event.target : null
+              if (htmlGuideFile && !target?.closest('button, a, input, select, textarea, summary, details, label')) {
+                openHtmlGuideFile(htmlGuideFile)
+              }
+            }}
+          >
             <div className="knowledge-card-main">
               <div className="knowledge-card-head">
                 <div>
                   <span className={`note-priority priority-${note.priority.toLowerCase().replaceAll(' ', '-')}`}>{note.priority}</span>
-                  <h3>{note.title}</h3>
+                  <h3>
+                    {htmlGuideFile ? (
+                      <button className="knowledge-title-button" type="button" onClick={() => openHtmlGuideFile(htmlGuideFile)}>
+                        {note.title}
+                      </button>
+                    ) : (
+                      note.title
+                    )}
+                  </h3>
                   <small>{projectName(note.projectId)} · {field(note.website)} · {field(note.relatedUrl)}</small>
+                  {htmlGuideFile && <small className="knowledge-html-hint">Nhấp tiêu đề để mở file HTML hướng dẫn</small>}
                 </div>
                 <span className="note-status">{note.status}</span>
               </div>
@@ -5983,7 +6175,7 @@ function KnowledgeNoteTable({
                   <div>
                     <strong>File đính kèm</strong>
                     {noteFiles.length === 0 ? <p>Chưa có file.</p> : noteFiles.map((file) => (
-                      <a href={file.fileUrl || undefined} target="_blank" rel="noreferrer" key={file.id}>{file.fileName}</a>
+                      <KnowledgeFileLink file={file} key={file.id} />
                     ))}
                     {canEdit && (
                       <form className="knowledge-mini-form" onSubmit={onAddFile}>
@@ -6042,6 +6234,17 @@ function KnowledgeNoteTable({
   )
 }
 
+function KnowledgeFileLink({ file }: { file: InternalNoteFile }) {
+  if (isHtmlGuideFile(file)) {
+    return (
+      <button className="knowledge-file-link" type="button" onClick={() => openHtmlGuideFile(file)}>
+        {file.fileName}
+      </button>
+    )
+  }
+  return file.fileUrl ? <a href={file.fileUrl} target="_blank" rel="noreferrer">{file.fileName}</a> : <span>{file.fileName}</span>
+}
+
 function KnowledgeFilesPanel({
   notes,
   files,
@@ -6096,7 +6299,7 @@ function KnowledgeFilesPanel({
               <tbody>
                 {files.map((file) => (
                   <tr key={file.id}>
-                    <td>{file.fileUrl ? <a href={file.fileUrl} target="_blank" rel="noreferrer">{file.fileName}</a> : file.fileName}</td>
+                    <td><KnowledgeFileLink file={file} /></td>
                     <td>{noteTitle(file.noteId)}</td>
                     <td>{file.fileType}</td>
                     <td>{userName(file.uploadedBy)}</td>
