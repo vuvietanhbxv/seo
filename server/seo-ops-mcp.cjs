@@ -70,7 +70,10 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
     }, new Map())
     return data.keywords.filter((keyword) => {
       const key = `${keyword.projectId}:${String(keyword.term || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN')}`
-      return counts.get(key) === 1
+      const articleKeyword =
+        keyword.articleImported === true ||
+        Boolean(keyword.articleTaskId || String(keyword.articleUrl || '').trim() || String(keyword.articleTitle || '').trim() || String(keyword.articleContent || '').trim() || String(keyword.articleAssigneeId || '').trim())
+      return counts.get(key) === 1 && articleKeyword
     })
   }
 
@@ -164,12 +167,12 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
       }
       case 'seo_get_keyword': {
         const keyword = keywordsAvailableForArticles.find((item) => item.id === args.keywordId)
-        if (!keyword) throw new Error('Keyword not found or currently blocked because its term is duplicated.')
+        if (!keyword) throw new Error('Keyword not found, duplicated, or not imported into the Articles module.')
         return textResult(keywordOutput(data, keyword))
       }
       case 'seo_save_article_draft': {
         const keyword = keywordsAvailableForArticles.find((item) => item.id === args.keywordId)
-        if (!keyword) throw new Error('Keyword not found or currently blocked because its term is duplicated.')
+        if (!keyword) throw new Error('Keyword not found, duplicated, or not imported into the Articles module.')
         if (!String(args.title || '').trim() || !String(args.content || '').trim()) {
           throw new Error('Title and content are required.')
         }
@@ -191,7 +194,7 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
       }
       case 'seo_update_article_status': {
         const keyword = keywordsAvailableForArticles.find((item) => item.id === args.keywordId)
-        if (!keyword) throw new Error('Keyword not found or currently blocked because its term is duplicated.')
+        if (!keyword) throw new Error('Keyword not found, duplicated, or not imported into the Articles module.')
         const nextKeyword = {
           ...keyword,
           articleStatus: String(args.status),

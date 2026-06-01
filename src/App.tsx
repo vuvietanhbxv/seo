@@ -12,6 +12,8 @@ type SearchIntent = 'Informational' | 'Commercial' | 'Transactional' | 'Navigati
 type KeywordType = 'A' | 'B' | 'C'
 type KeywordIndexStatus = 'Chua check' | 'Noindex' | 'Index'
 type SalaryType = 'Lương theo giờ' | 'Lương theo tháng' | 'Lương theo task'
+type TaskSalaryModule = 'Bài viết' | 'Backlink' | 'SEO Entity'
+type TaskSalarySettings = Record<TaskSalaryModule, number>
 type ExpenseScope = 'Chi chung dự án' | 'Chi riêng dự án'
 type AnalyticsGranularity = 'day' | 'week' | 'month' | 'year'
 type PermissionAction = 'view' | 'edit'
@@ -175,6 +177,7 @@ type Keyword = {
   articleAssigneeId?: string
   articleUrl?: string
   articleTaskId?: string
+  articleImported?: boolean
   indexStatus?: KeywordIndexStatus
   indexCheckedAt?: string
   indexCoverageState?: string
@@ -196,6 +199,10 @@ type Task = {
   rejectionReason?: string
   revisionNote?: string
   estimatedHours?: number
+  taskSalary?: number
+  salaryModule?: TaskSalaryModule
+  payrollSettlementId?: string
+  payrollSettledAt?: string
   status: TaskStatus
 }
 
@@ -209,6 +216,20 @@ type Transaction = {
   amount: number
   date: string
   settlementDate?: string
+  payrollSettlementId?: string
+}
+
+type PayrollSettlement = {
+  id: string
+  userId: string
+  salaryType: SalaryType
+  period: string
+  amount: number
+  taskIds: string[]
+  transactionId: string
+  settledAt: string
+  createdBy: string
+  note?: string
 }
 
 type SeoEntity = {
@@ -362,6 +383,7 @@ type SeoBacklinkPlan = {
   plannedQuantity: number
   plannedDate: string
   assigneeId: string
+  taskId?: string
   status: BacklinkPlanStatus
   note: string
 }
@@ -492,6 +514,7 @@ type AppData = {
   tasks: Task[]
   transactions: Transaction[]
   users: User[]
+  payrollSettlements?: PayrollSettlement[]
   seoEntities?: SeoEntity[]
   seoEntityPlatforms?: SeoEntityPlatform[]
   seoEntityLinks?: SeoEntityLink[]
@@ -501,6 +524,7 @@ type AppData = {
   seoBacklinks?: SeoBacklink[]
   seoBacklinkPlans?: SeoBacklinkPlan[]
   seoBacklinkCosts?: SeoBacklinkCost[]
+  taskSalarySettings?: TaskSalarySettings
   internalNotes?: InternalNote[]
   internalNoteTags?: InternalNoteTag[]
   internalNoteFiles?: InternalNoteFile[]
@@ -533,6 +557,12 @@ const articleTypes: ArticleType[] = [
   'Category Hub',
 ]
 const salaryTypes: SalaryType[] = ['Lương theo giờ', 'Lương theo tháng', 'Lương theo task']
+const taskSalaryModules: TaskSalaryModule[] = ['Bài viết', 'Backlink', 'SEO Entity']
+const defaultTaskSalarySettings: TaskSalarySettings = {
+  'Bài viết': 0,
+  Backlink: 0,
+  'SEO Entity': 0,
+}
 const editableTaskStatuses: TaskStatus[] = ['Chờ nhận', 'Đang làm', 'Cần chỉnh sửa', 'Chờ duyệt', 'Từ chối', 'Hoàn thành']
 const entityTabs: { id: EntityTab; label: string }[] = [
   { id: 'overview', label: 'Tổng quan Entity' },
@@ -672,6 +702,8 @@ const emptyGoogleOAuthStatus: GoogleOAuthStatus = {
 }
 
 const initialData: AppData = {
+  taskSalarySettings: defaultTaskSalarySettings,
+  payrollSettlements: [],
   users: [
     {
       id: 'u1',
@@ -1135,6 +1167,88 @@ const field = (value: string | number | undefined, fallback = 'Chưa cập nhậ
   value === undefined || value === '' || value === 0 ? fallback : String(value)
 const appNow = () => new Date()
 const appNowIso = () => appNow().toISOString()
+const appDateParts = (value: Date) =>
+  Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: appTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(value).map((part) => [part.type, part.value]),
+  ) as Record<string, string>
+const defaultTaskDeadlineInput = (assignedAt = appNow()) => {
+  const nextDay = new Date(assignedAt.getTime() + 24 * 60 * 60 * 1000)
+  const parts = appDateParts(nextDay)
+  return `${parts.year}-${parts.month}-${parts.day}T20:00`
+}
+const currentPayrollPeriod = () => {
+  const parts = appDateParts(appNow())
+  return `${parts.year}-${parts.month}`
+}
+const appDateInput = () => {
+  const parts = appDateParts(appNow())
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+const payrollPeriodOf = (value?: string) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.slice(0, 7)
+  const parts = appDateParts(date)
+  return `${parts.year}-${parts.month}`
+}
+const formatPayrollPeriod = (period: string) => {
+  if (!/^\d{4}-\d{2}$/.test(period)) return period || 'Chưa chọn kỳ'
+  const [year, month] = period.split('-')
+  return `${month}/${year}`
+}
+const taskDueDateFromDeadline = (deadlineAt: string) => deadlineAt.slice(0, 10)
+const taskSalarySettingsOf = (settings?: Partial<TaskSalarySettings>): TaskSalarySettings => ({
+  ...defaultTaskSalarySettings,
+  ...(settings ?? {}),
+})
+const validTaskSalaryModule = (value: unknown): value is TaskSalaryModule =>
+  typeof value === 'string' && taskSalaryModules.includes(value as TaskSalaryModule)
+const payableTasksForUser = (tasks: Task[], userId: string, period: string, salaryType: SalaryType) =>
+  tasks.filter((task) => {
+    if (task.assigneeId !== userId || taskStatusOf(task) !== 'Hoàn thành' || task.payrollSettlementId) return false
+    if (salaryType === 'Lương theo task') return payrollPeriodOf(task.approvedAt || task.completedAt || taskDeadline(task)) === period
+    return payrollPeriodOf(taskDeadline(task)) === period
+  })
+const payrollAmountForUser = (user: User, tasks: Task[], period: string) => {
+  const salaryType = user.salaryType ?? 'Lương theo tháng'
+  if (salaryType === 'Lương theo task') {
+    const payableTasks = payableTasksForUser(tasks, user.id, period, salaryType)
+    return {
+      amount: payableTasks.reduce((sum, task) => sum + (task.taskSalary ?? 0), 0),
+      taskIds: payableTasks.map((task) => task.id),
+      basis: `${payableTasks.length} task đã duyệt chưa chốt`,
+    }
+  }
+  if (salaryType === 'Lương theo giờ') {
+    const totalWorkedMs = (user.totalWorkedMs ?? 0) + (user.checkedInAt ? Math.max(0, appNow().getTime() - new Date(user.checkedInAt).getTime()) : 0)
+    const workedHours = totalWorkedMs / 3600000
+    return {
+      amount: workedHours * (user.salaryAmount ?? 0),
+      taskIds: [],
+      basis: `${workedHours.toFixed(2)} giờ`,
+    }
+  }
+  const monthlyTasks = tasks.filter((task) =>
+    task.assigneeId === user.id &&
+    !task.payrollSettlementId &&
+    payrollPeriodOf(taskDeadline(task)) === period,
+  )
+  const doneTasks = monthlyTasks.filter((task) => taskStatusOf(task) === 'Hoàn thành')
+  const rate = monthlyTasks.length ? doneTasks.length / monthlyTasks.length : 0
+  return {
+    amount: (user.salaryAmount ?? 0) * rate,
+    taskIds: monthlyTasks.map((task) => task.id),
+    basis: monthlyTasks.length ? `${doneTasks.length}/${monthlyTasks.length} task tháng ${formatPayrollPeriod(period)}` : `Không có task tháng ${formatPayrollPeriod(period)}`,
+  }
+}
 const formatDateOnly = (value?: string) => {
   if (!value) return 'Chưa cập nhật'
   const normalizedValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00+07:00` : value
@@ -1343,7 +1457,7 @@ const taskStatusOf = (task: Task): TaskStatus => (task.status === 'Cần làm' ?
 const taskDeadline = (task: Task) => task.deadlineAt || task.dueDate
 const formatWorkDuration = (startedAt?: string) => {
   if (!startedAt) return 'Chưa check-in'
-  const diffMs = Math.max(0, Date.now() - new Date(startedAt).getTime())
+  const diffMs = Math.max(0, appNow().getTime() - new Date(startedAt).getTime())
   const hours = Math.floor(diffMs / 3600000)
   const minutes = Math.floor((diffMs % 3600000) / 60000)
   return `${hours} giờ ${minutes} phút`
@@ -1369,6 +1483,15 @@ const duplicateKeywordIdsOf = (keywords: Keyword[]) => {
       .flatMap((group) => group.map((keyword) => keyword.id)),
   )
 }
+const keywordIsInArticles = (keyword: Keyword) =>
+  keyword.articleImported === true ||
+  Boolean(
+    keyword.articleTaskId ||
+    keyword.articleUrl?.trim() ||
+    keyword.articleTitle?.trim() ||
+    keyword.articleContent?.trim() ||
+    keyword.articleAssigneeId?.trim(),
+  )
 const analyticsSettingsOf = (project?: Project): AnalyticsSettings => ({
   ...emptyAnalyticsSettings,
   ...(project?.analytics ?? {}),
@@ -1564,6 +1687,7 @@ const normalizeData = (data: AppData): AppData => ({
     articleAssigneeId: keyword.articleAssigneeId ?? '',
     articleUrl: keyword.articleUrl ?? '',
     articleTaskId: keyword.articleTaskId ?? '',
+    articleImported: keyword.articleImported ?? false,
     indexStatus: keyword.indexStatus ?? 'Chua check',
     indexCheckedAt: keyword.indexCheckedAt ?? '',
     indexCoverageState: keyword.indexCoverageState ?? '',
@@ -1576,6 +1700,7 @@ const normalizeData = (data: AppData): AppData => ({
     scope: transaction.scope ?? (transaction.projectId ? 'Chi riêng dự án' : 'Chi chung dự án'),
     spenderId: transaction.spenderId ?? '',
     settlementDate: transaction.settlementDate ?? '',
+    payrollSettlementId: transaction.payrollSettlementId ?? '',
   })),
   tasks: data.tasks.map((task) => ({
     ...task,
@@ -1588,6 +1713,15 @@ const normalizeData = (data: AppData): AppData => ({
     rejectionReason: task.rejectionReason ?? '',
     revisionNote: task.revisionNote ?? '',
     estimatedHours: task.estimatedHours ?? 0,
+    taskSalary: Number(task.taskSalary) || 0,
+    salaryModule: validTaskSalaryModule(task.salaryModule) ? task.salaryModule : undefined,
+    payrollSettlementId: task.payrollSettlementId ?? '',
+    payrollSettledAt: task.payrollSettledAt ?? '',
+  })),
+  payrollSettlements: (data.payrollSettlements ?? []).map((settlement) => ({
+    ...settlement,
+    taskIds: settlement.taskIds ?? [],
+    note: settlement.note ?? '',
   })),
   seoEntities: data.seoEntities ?? [],
   seoEntityPlatforms: data.seoEntityPlatforms ?? [],
@@ -1620,8 +1754,9 @@ const normalizeData = (data: AppData): AppData => ({
     backlinkScore: backlink.backlinkScore ?? 0,
     lastCheckedAt: backlink.lastCheckedAt ?? '',
   })),
-  seoBacklinkPlans: data.seoBacklinkPlans ?? [],
+  seoBacklinkPlans: (data.seoBacklinkPlans ?? []).map((plan) => ({ ...plan, taskId: plan.taskId ?? '' })),
   seoBacklinkCosts: data.seoBacklinkCosts ?? [],
+  taskSalarySettings: taskSalarySettingsOf(data.taskSalarySettings),
   internalNotes: (data.internalNotes ?? []).map((note) => ({
     ...note,
     website: note.website ?? data.projects.find((project) => project.id === note.projectId)?.website ?? '',
@@ -1857,7 +1992,9 @@ function App() {
   const activeUserTasks = currentUserTasks.filter((task) => ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task)))
   const reviewUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Chờ duyệt')
   const approvedUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Hoàn thành')
-  const taskSalary = (currentUser?.salaryAmount ?? 0) * approvedUserTasks.length
+  const taskSalarySettings = taskSalarySettingsOf(data.taskSalarySettings)
+  const taskSalary = approvedUserTasks.filter((task) => !task.payrollSettlementId).reduce((sum, task) => sum + (task.taskSalary ?? 0), 0)
+  const payrollSettlements = data.payrollSettlements ?? []
   const monthlyProjectTasks = activeTasks.filter((task) => {
     if (!taskDeadline(task)) return false
     const deadline = new Date(taskDeadline(task))
@@ -1870,6 +2007,9 @@ function App() {
   const monthlySalaryEstimate = ((currentUser?.salaryAmount ?? 0) * monthlySalaryRate) / 100
   const projectKeywords = data.keywords.filter((keyword) => keyword.projectId === activeProject?.id)
   const acceptedProjectKeywords = projectKeywords.filter((keyword) => !duplicateKeywordIds.has(keyword.id))
+  const articleProjectKeywords = acceptedProjectKeywords.filter(keywordIsInArticles)
+  const articleProjectKeywordIds = new Set(articleProjectKeywords.map((keyword) => keyword.id))
+  const selectedImportableArticleCount = acceptedProjectKeywords.filter((keyword) => selectedKeywordIds.has(keyword.id) && !keywordIsInArticles(keyword)).length
   const duplicateProjectKeywordCount = projectKeywords.length - acceptedProjectKeywords.length
   const editingKeyword = editingKeywordId ? projectKeywords.find((keyword) => keyword.id === editingKeywordId) : undefined
   const projectTransactions = data.transactions.filter((item) => item.projectId === activeProject?.id)
@@ -2397,6 +2537,7 @@ function App() {
             articleAssigneeId: '',
             articleUrl: String(item.url),
             articleTaskId: '',
+            articleImported: true,
             indexStatus: 'Chua check',
             indexCheckedAt: '',
           }
@@ -2518,6 +2659,7 @@ function App() {
       articleAssigneeId: editingKeyword?.articleAssigneeId ?? '',
       articleUrl: editingKeyword?.articleUrl ?? '',
       articleTaskId: editingKeyword?.articleTaskId ?? '',
+      articleImported: editingKeyword?.articleImported ?? false,
       indexStatus: editingKeyword?.indexStatus ?? 'Chua check',
       indexCheckedAt: editingKeyword?.indexCheckedAt ?? '',
     }
@@ -2569,6 +2711,7 @@ function App() {
       articleAssigneeId: '',
       articleUrl: '',
       articleTaskId: '',
+      articleImported: false,
       indexStatus: 'Chua check',
       indexCheckedAt: '',
     }
@@ -2649,6 +2792,7 @@ function App() {
         articleAssigneeId: '',
         articleUrl: '',
         articleTaskId: '',
+        articleImported: false,
         indexStatus: 'Chua check',
         indexCheckedAt: '',
       }
@@ -2716,7 +2860,7 @@ function App() {
   }
 
   const checkKeywordIndex = async (keywordId: string) => {
-    const keyword = acceptedProjectKeywords.find((item) => item.id === keywordId)
+    const keyword = articleProjectKeywords.find((item) => item.id === keywordId)
     if (!keyword || checkingAllKeywords) return
     setCheckingKeywordIds((current) => new Set(current).add(keywordId))
     setSearchConsoleStatus(`Đang kiểm tra index: ${keyword.term}`)
@@ -2746,16 +2890,16 @@ function App() {
   }
 
   const checkAllKeywordIndexes = async () => {
-    if (!activeProject || acceptedProjectKeywords.length === 0) return
+    if (!activeProject || articleProjectKeywords.length === 0) return
     const settings = searchConsoleSettingsOf(activeProject)
     const updates = new Map<string, Partial<Keyword>>()
     let indexed = 0
     let noindex = 0
     let failed = 0
     setCheckingAllKeywords(true)
-    setSearchConsoleStatus(`Đang kiểm tra 0/${acceptedProjectKeywords.length} URL qua Google Search Console...`)
+    setSearchConsoleStatus(`Đang kiểm tra 0/${articleProjectKeywords.length} URL qua Google Search Console...`)
     try {
-      for (const [index, keyword] of acceptedProjectKeywords.entries()) {
+      for (const [index, keyword] of articleProjectKeywords.entries()) {
         try {
           const result = await inspectKeywordIndex(keyword, settings)
           updates.set(keyword.id, result)
@@ -2767,11 +2911,11 @@ function App() {
             setSearchConsoleStatus(error instanceof Error ? error.message : 'Không kiểm tra được Google Search Console.')
           }
         }
-        if (keyword.articleUrl?.trim() && index < acceptedProjectKeywords.length - 1) {
+        if (keyword.articleUrl?.trim() && index < articleProjectKeywords.length - 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 110))
         }
         if (failed === 0) {
-          setSearchConsoleStatus(`Đang kiểm tra ${index + 1}/${acceptedProjectKeywords.length} URL qua Google Search Console...`)
+          setSearchConsoleStatus(`Đang kiểm tra ${index + 1}/${articleProjectKeywords.length} URL qua Google Search Console...`)
         }
       }
 
@@ -2796,7 +2940,7 @@ function App() {
 
   const testSearchConsoleConnection = async () => {
     if (!activeProject) return
-    const keyword = acceptedProjectKeywords.find((item) => item.articleUrl?.trim())
+    const keyword = articleProjectKeywords.find((item) => item.articleUrl?.trim())
     if (!keyword) {
       setSearchConsoleStatus('Cần có ít nhất một keyword đã gắn URL bài viết để kiểm tra kết nối.')
       return
@@ -2888,6 +3032,25 @@ function App() {
     })
   }
 
+  const importKeywordsToArticles = (keywordIds: Iterable<string>) => {
+    const requestedIds = new Set(keywordIds)
+    const importableKeywords = acceptedProjectKeywords.filter((keyword) => requestedIds.has(keyword.id) && !keywordIsInArticles(keyword))
+    if (importableKeywords.length === 0) {
+      setQuickKeywordStatus('Chưa có keyword hợp lệ để đẩy sang module Bài viết.')
+      return
+    }
+    const importableIds = new Set(importableKeywords.map((keyword) => keyword.id))
+    saveData({
+      ...data,
+      keywords: data.keywords.map((item) => importableIds.has(item.id) ? { ...item, articleImported: true } : item),
+    }, 'Thêm keyword vào Bài viết', `${importableKeywords.length} keyword`)
+    setSelectedKeywordIds((current) => new Set([...current].filter((keywordId) => !importableIds.has(keywordId))))
+    setQuickKeywordStatus(`Đã đẩy ${importableKeywords.length} keyword sang module Bài viết.`)
+  }
+
+  const importKeywordToArticles = (keywordId: string) => importKeywordsToArticles([keywordId])
+  const importSelectedKeywordsToArticles = () => importKeywordsToArticles(selectedKeywordIds)
+
   const deleteSelectedKeywords = () => {
     if (selectedKeywordIds.size === 0) return
     const idsToDelete = collectKeywordBranchIds(selectedKeywordIds)
@@ -2936,17 +3099,38 @@ function App() {
     const title = `Viết bài: ${keyword.term}`
     const existingTask = keyword.articleTaskId ? data.tasks.find((task) => task.id === keyword.articleTaskId) : undefined
     const taskId = existingTask?.id ?? uid('t')
+    const assignedAt = appNowIso()
+    const deadlineAt = existingTask?.deadlineAt || defaultTaskDeadlineInput(new Date(assignedAt))
+    const articleTaskSalary = existingTask?.taskSalary ?? taskSalarySettings['Bài viết']
     const task: Task = existingTask
-      ? { ...existingTask, title, assigneeId: keyword.articleAssigneeId, projectId: keyword.projectId }
+      ? {
+          ...existingTask,
+          title,
+          assigneeId: keyword.articleAssigneeId,
+          projectId: keyword.projectId,
+          dueDate: taskDueDateFromDeadline(deadlineAt),
+          deadlineAt,
+          assignedAt,
+          acceptedAt: '',
+          completedAt: '',
+          approvedAt: '',
+          rejectionReason: '',
+          revisionNote: '',
+          taskSalary: articleTaskSalary,
+          salaryModule: 'Bài viết',
+          status: 'Chờ nhận',
+        }
       : {
           id: taskId,
           projectId: keyword.projectId,
           title,
           assigneeId: keyword.articleAssigneeId,
-          dueDate: '',
-          deadlineAt: '',
-          assignedAt: appNowIso(),
+          dueDate: taskDueDateFromDeadline(deadlineAt),
+          deadlineAt,
+          assignedAt,
           estimatedHours: 0,
+          taskSalary: articleTaskSalary,
+          salaryModule: 'Bài viết',
           status: 'Chờ nhận',
         }
 
@@ -2966,15 +3150,20 @@ function App() {
     event.preventDefault()
     if (!activeProject) return
     const form = new FormData(event.currentTarget)
+    const assignedAt = appNowIso()
+    const deadlineAt = String(form.get('deadlineAt')) || defaultTaskDeadlineInput(new Date(assignedAt))
+    const salaryModule = String(form.get('salaryModule'))
     const task: Task = {
       id: uid('t'),
       projectId: activeProject.id,
       title: String(form.get('title')).trim(),
       assigneeId: String(form.get('assigneeId')),
-      dueDate: String(form.get('deadlineAt')).slice(0, 10),
-      deadlineAt: String(form.get('deadlineAt')),
-      assignedAt: appNowIso(),
+      dueDate: taskDueDateFromDeadline(deadlineAt),
+      deadlineAt,
+      assignedAt,
       estimatedHours: Number(form.get('estimatedHours')) || 0,
+      taskSalary: Number(form.get('taskSalary')) || 0,
+      salaryModule: validTaskSalaryModule(salaryModule) ? salaryModule : undefined,
       status: 'Chờ nhận',
     }
     saveData(notifyTaskAssignee({ ...data, tasks: [task, ...data.tasks] }, task), 'Thêm task', task.title)
@@ -3049,6 +3238,78 @@ function App() {
     event.currentTarget.reset()
   }
 
+  const saveTaskSalarySettings = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const nextSettings = taskSalaryModules.reduce((settings, module) => ({
+      ...settings,
+      [module]: Number(form.get(`taskSalary-${module}`)) || 0,
+    }), {} as TaskSalarySettings)
+    saveData({
+      ...data,
+      taskSalarySettings: nextSettings,
+    }, 'Cập nhật lương theo task', 'Bài viết / Backlink / SEO Entity')
+  }
+
+  const settlePayroll = (userId: string, period: string) => {
+    const user = data.users.find((item) => item.id === userId)
+    if (!user) return
+    const existingSettlement = payrollSettlements.find((settlement) => settlement.userId === userId && settlement.period === period)
+    if (existingSettlement) {
+      window.alert(`Nhân sự "${user.name}" đã chốt lương kỳ ${formatPayrollPeriod(period)}.`)
+      return
+    }
+    const salaryType = user.salaryType ?? 'Lương theo tháng'
+    const preview = payrollAmountForUser(user, activeTasks, period)
+    const amount = Math.round(preview.amount)
+    if (amount <= 0) {
+      window.alert(`Không có lương cần chốt cho "${user.name}" trong kỳ ${formatPayrollPeriod(period)}.`)
+      return
+    }
+    if (!window.confirm(`Chốt lương ${formatPayrollPeriod(period)} cho ${user.name}: ${currency.format(amount)}? Khoản này sẽ tự động thêm vào Tài chính.`)) return
+    const settledAt = appNowIso()
+    const settlementId = uid('pay')
+    const transactionId = uid('m')
+    const settlement: PayrollSettlement = {
+      id: settlementId,
+      userId,
+      salaryType,
+      period,
+      amount,
+      taskIds: preview.taskIds,
+      transactionId,
+      settledAt,
+      createdBy: currentUser?.id ?? '',
+      note: preview.basis,
+    }
+    const transaction: Transaction = {
+      id: transactionId,
+      projectId: '',
+      type: 'Chi',
+      scope: 'Chi chung dự án',
+      spenderId: userId,
+      label: `Chốt lương ${user.name} - ${formatPayrollPeriod(period)}`,
+      amount,
+      date: appDateInput(),
+      settlementDate: settledAt,
+      payrollSettlementId: settlementId,
+    }
+    const taskIds = new Set(preview.taskIds)
+    const nextUsers = data.users.map((item) => {
+      if (item.id !== userId || salaryType !== 'Lương theo giờ') return item
+      return { ...item, checkedInAt: '', totalWorkedMs: 0 }
+    })
+    saveData({
+      ...data,
+      users: nextUsers,
+      tasks: data.tasks.map((task) =>
+        taskIds.has(task.id) ? { ...task, payrollSettlementId: settlementId, payrollSettledAt: settledAt } : task,
+      ),
+      transactions: [transaction, ...data.transactions],
+      payrollSettlements: [settlement, ...payrollSettlements],
+    }, 'Chốt lương nhân viên', `${user.name} - ${formatPayrollPeriod(period)}`)
+  }
+
   const editUser = (userId: string) => {
     setEditingUserId(userId)
   }
@@ -3080,7 +3341,7 @@ function App() {
 
   const checkOut = () => {
     if (!currentUser?.checkedInAt) return
-    const sessionMs = Math.max(0, Date.now() - new Date(currentUser.checkedInAt).getTime())
+    const sessionMs = Math.max(0, appNow().getTime() - new Date(currentUser.checkedInAt).getTime())
     saveData({
       ...data,
       users: data.users.map((user) =>
@@ -3445,6 +3706,7 @@ function App() {
     const form = new FormData(event.currentTarget)
     const assigneeId = String(form.get('assigneeId'))
     const deadlineAt = String(form.get('deadlineAt'))
+    const entityTaskSalary = taskSalarySettings['SEO Entity']
     const selectedLinks = activeEntityLinks.filter((link) => selectedEntityLinkIds.has(link.id))
     const newTasks: Task[] = []
     const updatedTasks = data.tasks.map((task) => {
@@ -3462,6 +3724,8 @@ function App() {
         approvedAt: '',
         rejectionReason: '',
         revisionNote: '',
+        taskSalary: task.taskSalary ?? entityTaskSalary,
+        salaryModule: 'SEO Entity' as TaskSalaryModule,
       }
     })
     const updatedLinks = (data.seoEntityLinks ?? []).map((link) => {
@@ -3479,6 +3743,8 @@ function App() {
           deadlineAt,
           assignedAt: appNowIso(),
           estimatedHours: 0,
+          taskSalary: entityTaskSalary,
+          salaryModule: 'SEO Entity',
           status: 'Chờ nhận',
         })
       }
@@ -3714,6 +3980,10 @@ function App() {
     event.preventDefault()
     if (!activeProject) return
     const form = new FormData(event.currentTarget)
+    const taskId = uid('t')
+    const assignedAt = appNowIso()
+    const plannedDate = String(form.get('plannedDate'))
+    const deadlineAt = plannedDate ? `${plannedDate}T20:00` : defaultTaskDeadlineInput(new Date(assignedAt))
     const plan: SeoBacklinkPlan = {
       id: uid('bp'),
       projectId: activeProject.id,
@@ -3722,12 +3992,30 @@ function App() {
       backlinkType: String(form.get('backlinkType')) as BacklinkType,
       plannedAnchor: String(form.get('plannedAnchor')).trim(),
       plannedQuantity: Number(form.get('plannedQuantity')) || 1,
-      plannedDate: String(form.get('plannedDate')),
+      plannedDate,
       assigneeId: String(form.get('assigneeId')),
+      taskId,
       status: 'Chưa làm',
       note: String(form.get('note')).trim(),
     }
-    saveData({ ...data, seoBacklinkPlans: [plan, ...(data.seoBacklinkPlans ?? [])] }, 'Thêm kế hoạch Backlink', plan.targetKeyword)
+    const task: Task = {
+      id: taskId,
+      projectId: activeProject.id,
+      title: `Đi backlink: ${plan.targetKeyword}`,
+      assigneeId: plan.assigneeId,
+      dueDate: taskDueDateFromDeadline(deadlineAt),
+      deadlineAt,
+      assignedAt,
+      estimatedHours: 0,
+      taskSalary: taskSalarySettings.Backlink,
+      salaryModule: 'Backlink',
+      status: 'Chờ nhận',
+    }
+    saveData(
+      notifyTaskAssignee({ ...data, seoBacklinkPlans: [plan, ...(data.seoBacklinkPlans ?? [])], tasks: [task, ...data.tasks] }, task, 'Task Backlink mới'),
+      'Thêm kế hoạch Backlink',
+      plan.targetKeyword,
+    )
     event.currentTarget.reset()
   }
 
@@ -4445,6 +4733,9 @@ function App() {
                   <button className="secondary-button" type="button" onClick={() => { setQuickKeywordOpen(true); setQuickKeywordStatus(''); setQuickKeywordIssues([]) }}>
                     Nhập nhanh keyword
                   </button>
+                  <button className="secondary-button" type="button" onClick={importSelectedKeywordsToArticles} disabled={selectedImportableArticleCount === 0}>
+                    Đẩy key đã chọn sang Bài viết
+                  </button>
                   <button className="keyword-index-bulk-button" type="button" onClick={checkAllKeywordIndexes} disabled={checkingAllKeywords}>
                     {checkingAllKeywords ? 'Đang check...' : 'Check index hàng loạt'}
                   </button>
@@ -4511,6 +4802,8 @@ function App() {
                 checkingKeywordIds={checkingKeywordIds}
                 checkingAllKeywords={checkingAllKeywords}
                 duplicateKeywordIds={duplicateKeywordIds}
+                articleKeywordIds={articleProjectKeywordIds}
+                onImportArticle={importKeywordToArticles}
                 onRevealDuplicate={revealDuplicateKeyword}
                 canEdit={canEditProjects}
               />
@@ -4521,15 +4814,15 @@ function App() {
         {view === 'articles' && canView(view) && (
           <section className="view-stack">
             <div className="metric-grid">
-              <Metric title="Keyword cần bài viết" value={acceptedProjectKeywords.length} note={duplicateProjectKeywordCount ? `${duplicateProjectKeywordCount} key trùng đang ẩn` : activeProject?.name ?? 'Chưa có dự án'} />
-              <Metric title="Đã gửi task" value={acceptedProjectKeywords.filter((keyword) => keyword.articleTaskId).length} note="Đã phân việc" />
-              <Metric title="Đã có link" value={acceptedProjectKeywords.filter((keyword) => keyword.articleUrl).length} note="Đã cập nhật URL bài viết" />
-              <Metric title="Chưa phân công" value={acceptedProjectKeywords.filter((keyword) => !keyword.articleAssigneeId).length} note="Cần chọn phụ trách" />
+              <Metric title="Keyword cần bài viết" value={articleProjectKeywords.length} note="Chỉ tính key đã đẩy thủ công" />
+              <Metric title="Đã gửi task" value={articleProjectKeywords.filter((keyword) => keyword.articleTaskId).length} note="Đã phân việc" />
+              <Metric title="Đã có link" value={articleProjectKeywords.filter((keyword) => keyword.articleUrl).length} note="Đã cập nhật URL bài viết" />
+              <Metric title="Chưa phân công" value={articleProjectKeywords.filter((keyword) => !keyword.articleAssigneeId).length} note="Cần chọn phụ trách" />
             </div>
-            <Panel title="Bài viết" action={`${acceptedProjectKeywords.length} keyword hợp lệ`}>
+            <Panel title="Bài viết" action={`${articleProjectKeywords.length} keyword đã nhập`}>
               <ArticleTable
                 key={`articles-${activeProject?.id ?? 'none'}`}
-                keywords={acceptedProjectKeywords}
+                keywords={articleProjectKeywords}
                 users={data.users}
                 onUpdateKeyword={updateKeywordArticle}
                 onSendTask={sendArticleTask}
@@ -4627,8 +4920,14 @@ function App() {
                       </option>
                     ))}
                   </select>
-                  <input name="deadlineAt" aria-label="Thời gian yêu cầu hoàn thành" type="datetime-local" required />
-                  <input name="estimatedHours" placeholder="Số giờ dự kiến" type="number" min="0" step="0.5" />
+                  <select name="salaryModule" aria-label="Nhóm lương task">
+                    <option value="">Công việc khác</option>
+                    {taskSalaryModules.map((module) => (
+                      <option value={module} key={module}>{module}</option>
+                    ))}
+                  </select>
+                  <input name="deadlineAt" aria-label="Thời gian yêu cầu hoàn thành" type="datetime-local" defaultValue={defaultTaskDeadlineInput()} required />
+                  <input name="taskSalary" placeholder="Lương task" type="number" min="0" step="1000" />
                   <button type="submit">Phân công việc</button>
                 </form>
               ) : (
@@ -4848,6 +5147,33 @@ function App() {
                 </div>
               </Panel>
             </div>
+            <Panel title="Tùy chỉnh lương theo task" action="Bài viết / Backlink / SEO Entity">
+              {canEdit('people') ? (
+                <form className="form-grid" onSubmit={saveTaskSalarySettings}>
+                  {taskSalaryModules.map((module) => (
+                    <input
+                      key={module}
+                      name={`taskSalary-${module}`}
+                      placeholder={`Lương ${module}`}
+                      type="number"
+                      min="0"
+                      step="1000"
+                      defaultValue={taskSalarySettings[module] || ''}
+                    />
+                  ))}
+                  <button type="submit">Lưu tùy chỉnh lương task</button>
+                </form>
+              ) : (
+                <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền chỉnh sửa lương task." />
+              )}
+            </Panel>
+            <PayrollSettlementPanel
+              users={data.users}
+              tasks={activeTasks}
+              settlements={payrollSettlements}
+              canEdit={canEdit('people')}
+              onSettle={settlePayroll}
+            />
             <Panel title="Danh sách nhân sự" action="Vai trò và quyền">
               <UserTable users={data.users} currentUserId={currentUser?.id ?? ''} onEdit={editUser} onDelete={deleteUser} canEdit={canEdit('people')} />
             </Panel>
@@ -4972,11 +5298,11 @@ function LoginPage({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const activeUsers = users.filter((user) => user.active)
-  const fillLogin = (email: string, password: string) => {
+  const fillLogin = (email: string) => {
     const emailInput = document.querySelector<HTMLInputElement>('input[name="email"]')
     const passwordInput = document.querySelector<HTMLInputElement>('input[name="password"]')
     if (emailInput) emailInput.value = email
-    if (passwordInput) passwordInput.value = password
+    if (passwordInput) passwordInput.value = ''
     passwordInput?.focus()
   }
 
@@ -5001,7 +5327,7 @@ function LoginPage({
           </label>
           <label>
             <span>Mật khẩu</span>
-            <input name="password" placeholder="123456" type="password" required />
+            <input name="password" placeholder="Nhập mật khẩu" type="password" required />
           </label>
           {error && <p className="form-error">{error}</p>}
           <button type="submit">Đăng nhập</button>
@@ -5014,13 +5340,13 @@ function LoginPage({
             </button>
           </div>
           {activeUsers.map((user) => (
-            <button type="button" key={user.id} onClick={() => fillLogin(user.email, String(user.password ?? '123456'))}>
+            <button type="button" key={user.id} onClick={() => fillLogin(user.email)}>
               <span>{user.name}</span>
-              <small>{user.email} · {user.role} · mật khẩu: {String(user.password ?? '123456')}</small>
+              <small>{user.email} · {user.role}</small>
             </button>
           ))}
         </div>
-        <p className="login-hint">Bấm vào một tài khoản để tự điền thông tin test. Dữ liệu nhân sự hiện tại không bị thay đổi.</p>
+        <p className="login-hint">Bấm vào một tài khoản để tự điền email, sau đó nhập mật khẩu của tài khoản đó.</p>
       </section>
     </main>
   )
@@ -5885,7 +6211,7 @@ function BacklinkModule({
               <select name="backlinkType" disabled={!canEdit}>{backlinkTypes.map((item) => <option key={item}>{item}</option>)}</select>
               <input name="plannedAnchor" placeholder="Anchor dự kiến" disabled={!canEdit} />
               <input name="plannedQuantity" placeholder="Số backlink dự kiến" type="number" min="1" defaultValue="1" disabled={!canEdit} />
-              <input name="plannedDate" type="date" aria-label="Ngày dự kiến" disabled={!canEdit} />
+              <input name="plannedDate" type="date" aria-label="Ngày dự kiến" defaultValue={defaultTaskDeadlineInput().slice(0, 10)} disabled={!canEdit} />
               <select name="assigneeId" disabled={!canEdit}>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
               <input name="note" placeholder="Ghi chú" disabled={!canEdit} />
               <button type="submit" disabled={!canEdit}>Thêm kế hoạch</button>
@@ -6428,7 +6754,7 @@ function EntityModule({
                     <option value={user.id} key={user.id}>{user.name}</option>
                   ))}
                 </select>
-                <input name="deadlineAt" type="datetime-local" aria-label="Hạn hoàn thành task Entity" disabled={!canEdit} required />
+                <input name="deadlineAt" type="datetime-local" aria-label="Hạn hoàn thành task Entity" defaultValue={defaultTaskDeadlineInput()} disabled={!canEdit} required />
                 <button type="submit" disabled={!canEdit || selectedLinkIds.size === 0}>Gửi task cho nhân viên</button>
               </form>
             )}
@@ -6654,8 +6980,8 @@ function EntityLinkTable({
 
 const keywordTooltips = {
   keyword: 'Từ khóa chính cần theo dõi và tối ưu.',
-  article: 'Link bài viết đã xuất bản hoặc đang được cập nhật từ module Bài viết.',
-  indexStatus: 'Kiểm tra nhanh trạng thái index của URL bài viết. Trạng thái đỏ là chưa check, xám là noindex, xanh là index.',
+  article: 'Keyword chỉ vào module Bài viết sau khi nhấn icon cạnh keyword hoặc chọn nhiều keyword rồi đẩy thủ công.',
+  indexStatus: 'Chỉ khả dụng khi keyword đã có trong module Bài viết. Trạng thái đỏ là chưa check, xám là noindex, xanh là index.',
   searchVolume: 'Lượng tìm kiếm trung bình mỗi tháng, thể hiện nhu cầu thị trường.',
   keywordDifficulty: 'Độ khó từ khóa từ 0-100. Dự án mới nên ưu tiên KD thấp.',
   searchIntent: 'Ý định tìm kiếm để quyết định định dạng nội dung phù hợp.',
@@ -6732,6 +7058,8 @@ function KeywordTable({
   checkingKeywordIds,
   checkingAllKeywords,
   duplicateKeywordIds,
+  articleKeywordIds,
+  onImportArticle,
   onRevealDuplicate,
   canEdit,
 }: {
@@ -6747,6 +7075,8 @@ function KeywordTable({
   checkingKeywordIds: Set<string>
   checkingAllKeywords: boolean
   duplicateKeywordIds: Set<string>
+  articleKeywordIds: Set<string>
+  onImportArticle: (keywordId: string) => void
   onRevealDuplicate: (keywordId: string) => void
   canEdit: boolean
 }) {
@@ -6848,6 +7178,8 @@ function KeywordTable({
         <tbody>
           {rows.map(({ keyword, level, hidden, hasChildren }) => {
             const isDuplicate = duplicateKeywordIds.has(keyword.id)
+            const isInArticles = articleKeywordIds.has(keyword.id)
+            const canImportArticle = !isInArticles
             return (
             <tr
               className={`${hidden ? 'keyword-row hidden' : `keyword-row level-${level}`} ${isDuplicate ? 'duplicate' : ''}`}
@@ -6881,6 +7213,18 @@ function KeywordTable({
                   </button>
                   <span className={`keyword-type-badge type-${keywordTypeOf(keyword)}`}>{keywordTypeOf(keyword)}</span>
                   <strong>{keyword.term}</strong>
+                  {canImportArticle && (
+                    <button
+                      className="keyword-article-import-button"
+                      onClick={() => onImportArticle(keyword.id)}
+                      type="button"
+                      disabled={!canEdit || isDuplicate}
+                      title={isDuplicate ? 'Xử lý keyword trùng trước khi đưa vào Bài viết.' : 'Thêm keyword này vào module Bài viết'}
+                      aria-label={`Thêm ${keyword.term} vào module Bài viết`}
+                    >
+                      ↗
+                    </button>
+                  )}
                   {isDuplicate && (
                     <button
                       className="keyword-duplicate-warning"
@@ -6899,17 +7243,31 @@ function KeywordTable({
                   )}
                 </div>
               </td>
-              <td>{isDuplicate ? <span className="keyword-duplicate-pending">Chờ xử lý trùng</span> : keyword.articleUrl ? <a href={keyword.articleUrl} target="_blank" rel="noreferrer">Mở bài viết</a> : 'Chưa cập nhật'}</td>
               <td>
-                <button
-                  className={`keyword-index-button status-${keyword.indexStatus === 'Index' ? 'indexed' : keyword.indexStatus === 'Noindex' ? 'noindex' : 'unchecked'}`}
-                  type="button"
-                  disabled={!canEdit || isDuplicate || checkingAllKeywords || checkingKeywordIds.has(keyword.id)}
-                  onClick={() => onCheckIndex(keyword.id)}
-                  title={keyword.indexCheckedAt ? `Kiểm tra lúc ${formatDateTime(keyword.indexCheckedAt)}` : 'Chưa kiểm tra'}
-                >
-                  {checkingKeywordIds.has(keyword.id) ? 'Đang check' : keyword.indexStatus === 'Index' ? 'Index' : keyword.indexStatus === 'Noindex' ? 'Noindex' : 'Check'}
-                </button>
+                {isDuplicate ? (
+                  <span className="keyword-duplicate-pending">Chờ xử lý trùng</span>
+                ) : !isInArticles ? (
+                  <span className="keyword-article-pending">Chưa nhập</span>
+                ) : keyword.articleUrl ? (
+                  <a href={keyword.articleUrl} target="_blank" rel="noreferrer">Mở bài viết</a>
+                ) : (
+                  <span className="keyword-article-ready">Đã nhập</span>
+                )}
+              </td>
+              <td>
+                {!isInArticles ? (
+                  <span className="keyword-index-unavailable">Chưa khả dụng</span>
+                ) : (
+                  <button
+                    className={`keyword-index-button status-${keyword.indexStatus === 'Index' ? 'indexed' : keyword.indexStatus === 'Noindex' ? 'noindex' : 'unchecked'}`}
+                    type="button"
+                    disabled={!canEdit || isDuplicate || checkingAllKeywords || checkingKeywordIds.has(keyword.id)}
+                    onClick={() => onCheckIndex(keyword.id)}
+                    title={keyword.indexCheckedAt ? `Kiểm tra lúc ${formatDateTime(keyword.indexCheckedAt)}` : 'Chưa kiểm tra'}
+                  >
+                    {checkingKeywordIds.has(keyword.id) ? 'Đang check' : keyword.indexStatus === 'Index' ? 'Index' : keyword.indexStatus === 'Noindex' ? 'Noindex' : 'Check'}
+                  </button>
+                )}
               </td>
               <td>{keyword.searchVolume.toLocaleString('vi-VN')}</td>
               <td>{keyword.keywordDifficulty}/100</td>
@@ -7249,7 +7607,7 @@ function EmployeeOverview({
   onSubmitTask: (taskId: string) => void
 }) {
   const salaryType = user.salaryType ?? 'Lương theo tháng'
-  const totalWorkedMs = (user.totalWorkedMs ?? 0) + (user.checkedInAt ? Math.max(0, Date.now() - new Date(user.checkedInAt).getTime()) : 0)
+  const totalWorkedMs = (user.totalWorkedMs ?? 0) + (user.checkedInAt ? Math.max(0, appNow().getTime() - new Date(user.checkedInAt).getTime()) : 0)
   const workedHours = totalWorkedMs / 3600000
   const hourlySalary = salaryType === 'Lương theo giờ' ? workedHours * (user.salaryAmount ?? 0) : 0
 
@@ -7285,7 +7643,7 @@ function EmployeeOverview({
         {salaryType === 'Lương theo task' && (
           <Panel title="Lương theo task" action="Tính theo task đã duyệt">
             <div className="employee-paybox">
-              <Detail label="Đơn giá task" value={currency.format(user.salaryAmount ?? 0)} />
+              <Detail label="Cách tính" value="Cộng lương riêng của từng task" />
               <Detail label="Task đã được admin xác nhận" value={`${approvedTasks.length} task`} />
               <Detail label="Lương tạm tính" value={currency.format(taskSalary)} />
               <Detail label="Task đang chờ duyệt" value={`${reviewTasks.length} task`} />
@@ -7381,6 +7739,7 @@ function TaskTable({
             <th>Nhân sự</th>
             <th>Thời gian giao</th>
             <th>Yêu cầu hoàn thành</th>
+            <th>Lương task</th>
             <th>Trạng thái</th>
             {canEdit && <th>Tác vụ</th>}
           </tr>
@@ -7407,6 +7766,10 @@ function TaskTable({
               </td>
               <td>{formatDateTime(task.assignedAt)}</td>
               <td>{formatDateTime(taskDeadline(task))}</td>
+              <td>
+                <strong>{currency.format(task.taskSalary ?? 0)}</strong>
+                {task.salaryModule && <small className="task-note task-module">{task.salaryModule}</small>}
+              </td>
               <td>
                 <select className="status-select" value={taskStatusOf(task)} onChange={(event) => onStatus(task.id, event.target.value as TaskStatus)} disabled={!canEdit}>
                   {editableTaskStatuses.map((status) => (
@@ -7495,6 +7858,83 @@ function TransactionTable({
         </tbody>
       </table>
     </div>
+  )
+}
+
+function PayrollSettlementPanel({
+  users,
+  tasks,
+  settlements,
+  canEdit,
+  onSettle,
+}: {
+  users: User[]
+  tasks: Task[]
+  settlements: PayrollSettlement[]
+  canEdit: boolean
+  onSettle: (userId: string, period: string) => void
+}) {
+  const [period, setPeriod] = useState(currentPayrollPeriod)
+  const rows = users.map((user) => {
+    const preview = payrollAmountForUser(user, tasks, period)
+    const amount = Math.round(preview.amount)
+    const settlement = settlements.find((item) => item.userId === user.id && item.period === period)
+    return { user, preview, amount, settlement }
+  })
+  const totalAmount = rows.reduce((sum, row) => sum + (row.settlement ? row.settlement.amount : row.amount), 0)
+
+  return (
+    <Panel title="Chốt lương nhân viên" action={`${formatPayrollPeriod(period)} - ${currency.format(totalAmount)}`}>
+      <div className="payroll-toolbar">
+        <label>
+          <span>Kỳ lương</span>
+          <input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} />
+        </label>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nhân sự</th>
+              <th>Loại lương</th>
+              <th>Cơ sở tính</th>
+              <th>Số tiền</th>
+              <th>Trạng thái</th>
+              {canEdit && <th>Thao tác</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ user, preview, amount, settlement }) => (
+              <tr key={user.id}>
+                <td>{user.name}</td>
+                <td>{user.salaryType ?? 'Lương theo tháng'}</td>
+                <td>{preview.basis}</td>
+                <td>{currency.format(settlement?.amount ?? amount)}</td>
+                <td>
+                  {settlement ? (
+                    <span className="pill income">Đã chốt {formatDateOnly(settlement.settledAt)}</span>
+                  ) : (
+                    <span className="pill">Chưa chốt</span>
+                  )}
+                </td>
+                {canEdit && (
+                  <td>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => onSettle(user.id, period)}
+                      disabled={Boolean(settlement) || amount <= 0}
+                    >
+                      Chốt lương
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   )
 }
 

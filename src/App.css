@@ -926,6 +926,24 @@ textarea:focus {
   color: var(--accent);
 }
 
+.payroll-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+.payroll-toolbar label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.payroll-toolbar input {
+  min-width: 180px;
+}
+
 .debt-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1675,6 +1693,10 @@ select:disabled {
   color: var(--warning);
 }
 
+.task-note.task-module {
+  color: var(--muted);
+}
+
 .table-wrap {
   width: 100%;
   overflow-x: auto;
@@ -1851,6 +1873,19 @@ table {
   font-weight: 800;
 }
 
+.keyword-article-pending,
+.keyword-index-unavailable {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.keyword-article-ready {
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .keyword-tree-cell {
   display: flex;
   align-items: center;
@@ -1865,7 +1900,8 @@ table {
 
 .tree-toggle,
 .develop-keyword-button,
-.keyword-edit-button {
+.keyword-edit-button,
+.keyword-article-import-button {
   width: 24px;
   height: 24px;
   border: 0;
@@ -1891,6 +1927,18 @@ table {
   margin-left: auto;
   background: #dcfce7;
   color: #166534;
+}
+
+.keyword-article-import-button {
+  border: 1px solid #bae6fd;
+  background: #e0f2fe;
+  color: #0369a1;
+  cursor: pointer;
+}
+
+.keyword-article-import-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .keyword-row-actions {
