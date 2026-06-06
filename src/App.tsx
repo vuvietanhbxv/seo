@@ -3552,6 +3552,28 @@ function App() {
   const importKeywordToArticles = (keywordId: string) => importKeywordsToArticles([keywordId])
   const importSelectedKeywordsToArticles = () => importKeywordsToArticles(selectedKeywordIds)
 
+  const deleteKeywordFromArticles = (keywordId: string) => {
+    if (!canEditProjects) return
+    const keyword = data.keywords.find((item) => item.id === keywordId)
+    if (!keyword || !keywordIsInArticles(keyword)) return
+    const idsToDelete = collectKeywordBranchIds(new Set([keywordId]))
+    const taskIdsToDelete = new Set(
+      data.keywords
+        .filter((item) => idsToDelete.has(item.id) && item.articleTaskId)
+        .map((item) => item.articleTaskId as string),
+    )
+    const branchMessage = idsToDelete.size > 1 ? ` và ${idsToDelete.size - 1} keyword con` : ''
+    if (!window.confirm(`Xóa vĩnh viễn keyword "${keyword.term}"${branchMessage} khỏi toàn hệ thống?\n\nKeyword sẽ biến mất khỏi cả Bài viết và Quản lý Keyword. Task bài viết liên kết cũng sẽ bị xóa.`)) {
+      return
+    }
+    saveData({
+      ...data,
+      keywords: data.keywords.filter((item) => !idsToDelete.has(item.id)),
+      tasks: data.tasks.filter((task) => !taskIdsToDelete.has(task.id)),
+    }, 'Xóa keyword từ Bài viết', `${keyword.term}${branchMessage}`)
+    setQuickKeywordStatus(`Đã xóa vĩnh viễn keyword "${keyword.term}"${branchMessage} khỏi toàn hệ thống.`)
+  }
+
   const deleteSelectedKeywords = () => {
     if (!canEditProjects) return
     if (selectedKeywordIds.size === 0) return
@@ -5717,6 +5739,7 @@ function App() {
                 users={data.users}
                 onUpdateKeyword={updateKeywordArticle}
                 onSendTask={sendArticleTask}
+                onDeleteKeyword={deleteKeywordFromArticles}
                 canEdit={canEditProjects}
                 canEditKeyword={canEditAssignedArticle}
               />
@@ -9473,6 +9496,7 @@ function ArticleTable({
   users,
   onUpdateKeyword,
   onSendTask,
+  onDeleteKeyword,
   canEdit,
   canEditKeyword,
 }: {
@@ -9480,6 +9504,7 @@ function ArticleTable({
   users: User[]
   onUpdateKeyword: (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleMetaDescription' | 'articleContent' | 'articleStatus' | 'articleUpdatedAt' | 'articleSource' | 'articleAssigneeId' | 'articleUrl'>>) => void
   onSendTask: (keywordId: string) => void
+  onDeleteKeyword: (keywordId: string) => void
   canEdit: boolean
   canEditKeyword?: (keyword: Keyword) => boolean
 }) {
@@ -9501,7 +9526,7 @@ function ArticleTable({
   }
 
   if (keywords.length === 0) {
-    return <EmptyState title="Chưa có keyword" text="Thêm keyword ở module Quản lý Keyword, danh sách bài viết sẽ tự động đồng bộ tại đây." />
+    return <EmptyState title="Chưa có keyword" text="Chọn keyword trong Quản lý Keyword và đẩy thủ công sang module Bài viết." />
   }
 
   return (
@@ -9530,6 +9555,7 @@ function ArticleTable({
             <th>Gửi task</th>
             <th>Bản nháp</th>
             <th>Link bài viết</th>
+            <th>Thao tác</th>
           </tr>
         </thead>
         <tbody>
@@ -9594,6 +9620,11 @@ function ArticleTable({
                   placeholder="https://..."
                   disabled={!canEditRow}
                 />
+              </td>
+              <td>
+                <button className="danger-button article-remove-button" type="button" onClick={() => onDeleteKeyword(keyword.id)} disabled={!canEdit}>
+                  Xóa keyword
+                </button>
               </td>
             </tr>
             )

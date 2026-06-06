@@ -2339,7 +2339,7 @@ table {
 }
 
 .article-table {
-  min-width: 1280px;
+  min-width: 1460px;
 }
 
 .article-table select,
@@ -2358,6 +2358,11 @@ table {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.article-remove-button {
+  min-width: 145px;
+  white-space: nowrap;
 }
 
 .article-draft-modal {
