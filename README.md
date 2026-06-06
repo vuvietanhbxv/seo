@@ -165,6 +165,120 @@ https://www.googleapis.com/auth/webmasters.readonly
 
 Khi dung Google OAuth, backend tu lay access token moi bang refresh token da ma hoa. Neu nguoi dung thu hoi quyen Google, ket noi lai trong giao dien du an. Google gioi han URL Inspection theo site; nut check hang loat gui lan luot de tranh tang tai dot bien.
 
+## Module Cong Cu - Soan Bai SEO
+
+Module `Cong cu -> Viet bai` goi Claude qua Gateway de viet bai HTML va goi Imagen de tao anh cho cac prompt nam sau moi Heading 2. Nguon tao anh co the chon `Google AI API / Imagen` hoac `Google Cloud Vertex AI`. Key API va Service Account JSON duoc luu trong storage backend, khong luu vao AppData/localStorage.
+
+Cong cu co 3 dang trinh bay:
+
+```text
+Trinh bay chuyen nghiep: Claude tu them prompt viet HTML + CSS dep, bo cuc chuan SEO, co icon minh hoa va mau sac truc quan.
+WordPress (HTML): Claude viet HTML fragment co CSS scope rieng, copy duoc vao block Custom HTML/bai viet WordPress.
+Raw - Van ban thuan: Claude tu them prompt viet HTML toi gian, gan nhu van ban thuan, khong CSS trang tri.
+```
+
+Bai viet tao xong co preview HTML ngay trong giao dien, dong thoi luu file `article.html` tren server.
+
+Vao giao dien:
+
+```text
+Cong cu -> Viet bai -> Cau hinh Viet bai
+```
+
+Nhap truc tiep cac thong tin:
+
+```text
+Claude Gateway base URL: https://1gw.gwai.cloud
+Claude auth header: x-api-key
+Claude API key: api-key-cua-ban
+Claude model: claude-3-5-sonnet
+Nguon tao anh: Google AI API / Imagen hoac Google Cloud Vertex AI
+Gemini API key: gemini-api-key-cua-ban
+Imagen image model: imagen-4.0-fast-generate-001
+Vertex AI Project ID: google-cloud-project-id
+Vertex AI Region: us-central1
+Vertex AI image model: imagen-4.0-fast-generate-001
+Vertex Service Account JSON: upload file credentials.json hoac dan noi dung JSON
+```
+
+Neu dung Vertex AI, can bat billing, enable Vertex AI API va tao service account co quyen goi Vertex AI trong Google Cloud. Nut `Kiem tra Vertex` chi kiem tra doc credentials va lay access token de tranh ton quota tao anh; khi tao bai that, server goi:
+
+```text
+POST https://REGION-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/REGION/publishers/google/models/MODEL_VERSION:predict
+```
+
+Payload tao anh:
+
+```json
+{
+  "instances": [
+    {
+      "prompt": "English image prompt"
+    }
+  ],
+  "parameters": {
+    "sampleCount": 1,
+    "aspectRatio": "16:9",
+    "enhancePrompt": false,
+    "outputOptions": {
+      "mimeType": "image/png"
+    }
+  }
+}
+```
+
+SEO Ops se luu cau hinh tai:
+
+```text
+SEO_OPS_DB_DIR/seo-ops-tool-config.json
+```
+
+File nay nam ngoai thu muc Git/application tren production neu `SEO_OPS_DB_DIR` da cau hinh dung, vi vay deploy code moi khong ghi de cau hinh tool.
+
+Neu muon cau hinh bang bien moi truong lam fallback, co the tao file `.env` local theo mau `.env.example` hoac dat tren Plesk trong `Custom environment variables`:
+
+```text
+CLAUDE_GATEWAY_BASE_URL=https://1gw.gwai.cloud
+CLAUDE_GATEWAY_AUTH_HEADER=x-api-key
+CLAUDE_API_KEY=api-key-cua-ban
+CLAUDE_MODEL=claude-3-5-sonnet
+GEMINI_API_KEY=gemini-api-key-cua-ban
+GEMINI_IMAGE_MODEL=imagen-4.0-fast-generate-001
+ARTICLE_IMAGE_PROVIDER=vertex-ai
+VERTEX_AI_PROJECT_ID=google-cloud-project-id
+VERTEX_AI_REGION=us-central1
+VERTEX_AI_IMAGE_MODEL=imagen-4.0-fast-generate-001
+VERTEX_AI_CREDENTIALS_PATH=/mnt/data_web/cuahangphaohoa.shop/seo-ops-storage/credentials.json
+```
+
+Mac dinh file HTML va anh duoc luu tai:
+
+```text
+SEO_OPS_DB_DIR/tools
+```
+
+Neu muon tach rieng, dat:
+
+```text
+SEO_OPS_TOOL_OUTPUT_DIR=/mnt/data_web/cuahangphaohoa.shop/seo-ops-storage/tools
+```
+
+File ket qua duoc phuc vu qua duong dan:
+
+```text
+/tool-output/<ma-lan-tao>/article.html
+```
+
+Thu muc output nen nam ngoai thu muc Git/application de deploy code moi khong xoa bai va anh da tao.
+
+File credentials Vertex AI upload tu UI duoc luu mac dinh tai:
+
+```text
+SEO_OPS_DB_DIR/seo-ops-vertex-credentials.json
+```
+
+File nay da duoc ignore trong Git va nen nam ngoai thu muc ung dung tren production.
+
 ## MCP cho Claude Code
 
 Backend co endpoint MCP de Claude doc keyword va luu ban nhap bai viet vao module `Bai viet`:

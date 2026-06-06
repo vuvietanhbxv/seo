@@ -39,6 +39,14 @@ const cleanSeed = {
   internalNoteFiles: [],
   internalNoteVersions: [],
   internalNoteComments: [],
+  socialChannels: [],
+  socialCampaigns: [],
+  socialPosts: [],
+  socialPostMedia: [],
+  socialPostApprovals: [],
+  socialPostComments: [],
+  socialPostMetrics: [],
+  socialContentTemplates: [],
 }
 
 const destinations = [

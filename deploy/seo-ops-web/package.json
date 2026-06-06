@@ -15,6 +15,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "google-auth-library": "^10.6.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "xlsx": "^0.18.5"

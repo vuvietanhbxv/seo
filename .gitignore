@@ -11,12 +11,21 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.local
+.env.*.local
 
 # Runtime data and generated deployment archives must never be committed.
 /db/seo-ops-data.json
 /db/seo-ops-google-oauth.json
+/db/seo-ops-tool-config.json
+/db/seo-ops-vertex-credentials.json
+/db/backups/
+/db/tools/
 /deploy/**/db/seo-ops-data.json
 /deploy/**/db/seo-ops-google-oauth.json
+/deploy/**/db/seo-ops-tool-config.json
+/deploy/**/db/seo-ops-vertex-credentials.json
 /deploy/*.zip
 
 # Editor directories and files

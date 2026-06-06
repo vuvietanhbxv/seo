@@ -3,7 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import * as XLSX from 'xlsx'
 import './App.css'
 
-type View = 'overview' | 'projects' | 'entities' | 'backlinks' | 'keywords' | 'articles' | 'tasks' | 'knowledge' | 'finance' | 'people' | 'progress' | 'system'
+type View = 'overview' | 'projects' | 'entities' | 'backlinks' | 'keywords' | 'articles' | 'tasks' | 'knowledge' | 'social' | 'tools' | 'tool-article-writer' | 'tool-article-settings' | 'finance' | 'people' | 'progress' | 'system'
 type ProjectStatus = 'Đang SEO' | 'Tạm dừng' | 'Hoàn thành'
 type TaskStatus = 'Cần làm' | 'Chờ nhận' | 'Đang làm' | 'Cần chỉnh sửa' | 'Chờ duyệt' | 'Từ chối' | 'Hoàn thành'
 type TransactionType = 'Thu' | 'Chi'
@@ -21,12 +21,34 @@ type FinanceFilter = 'all' | 'general' | 'project'
 type EntityTab = 'overview' | 'profile' | 'platforms' | 'links' | 'checklist' | 'schema' | 'check' | 'reports'
 type BacklinkTab = 'overview' | 'sources' | 'links' | 'plans' | 'anchors' | 'check' | 'costs' | 'reports'
 type KnowledgeTab = 'all' | 'web-log' | 'issues' | 'guides' | 'sops' | 'technical' | 'files' | 'archive'
+type SocialTab = 'overview' | 'channels' | 'campaigns' | 'posts' | 'calendar' | 'approvals' | 'media' | 'templates' | 'reports'
+type SocialPlatform = 'facebook' | 'instagram' | 'tiktok' | 'youtube' | 'zalo' | 'pinterest' | 'x' | 'linkedin' | 'threads' | 'shopee_feed' | 'other'
+type SocialChannelType = 'fanpage' | 'profile' | 'group' | 'channel' | 'oa' | 'board' | 'shop_feed' | 'other'
+type SocialChannelStatus = 'active' | 'paused' | 'login_error' | 'lost_permission' | 'archived'
+type SocialCampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'cancelled'
+type SocialPostType = 'text' | 'image' | 'video' | 'reel' | 'short' | 'story' | 'album' | 'livestream' | 'carousel' | 'other'
+type SocialContentStatus = 'draft' | 'writing' | 'ready_for_design' | 'waiting_approval' | 'revision_required' | 'approved' | 'archived'
+type SocialMediaStatus = 'missing' | 'designing' | 'uploaded' | 'revision_required' | 'approved' | 'used'
+type SocialPublishStatus = 'not_scheduled' | 'scheduled' | 'published' | 'failed' | 'cancelled' | 'overdue'
+type SocialPriority = 'low' | 'normal' | 'high' | 'urgent'
+type SocialApprovalStatus = 'pending' | 'approved' | 'rejected' | 'revision_required'
+type SocialTemplateType = 'caption' | 'hashtag' | 'cta' | 'script' | 'comment_reply'
 type EntityType = 'Brand' | 'Company' | 'Local Business' | 'Person' | 'Product' | 'Service' | 'Website'
 type EntityStatus = 'Đang dùng' | 'Tạm dừng' | 'Hoàn thành'
-type EntityPlatformGroup = 'Social' | 'Profile' | 'Directory' | 'Web 2.0' | 'Forum' | 'Blog' | 'Map' | 'Review'
+type EntityPlatformGroup =
+  | 'Profile Link'
+  | 'Web 2.0'
+  | 'Article Submission'
+  | 'Social Bookmark / Bookmark'
+  | 'Forum Post'
+  | 'URL Shortener'
+  | 'Business Listing'
+  | 'Comment'
+  | 'Image Submission'
+  | 'Other'
+  | 'Web 2.0 Article Submission'
+  | 'Web 2.0 Social Bookmark / Web 2.0 Bookmark'
 type EntityLinkType = 'Dofollow' | 'Nofollow' | 'Redirect' | 'Mention'
-type EntityDifficulty = 'Dễ' | 'Trung bình' | 'Khó'
-type EntityIndexability = 'Cao' | 'Trung bình' | 'Thấp'
 type EntityPlatformStatus = 'Dùng được' | 'Lỗi' | 'Khó đăng ký' | 'Không cho đặt link' | 'Ngừng dùng'
 type EntityDeploymentStatus = 'Chưa làm' | 'Đang làm' | 'Chờ xác minh' | 'Chờ duyệt' | 'Đã live' | 'Lỗi' | 'Không phù hợp'
 type EntityLiveStatus = 'Chưa check' | 'Live' | 'Redirect' | '404' | '403' | 'Mất link' | 'Không tìm thấy URL đích'
@@ -98,6 +120,105 @@ type GoogleOAuthStatus = {
   connected: boolean
   connectedAt: string
   scope: string
+}
+
+type ArticleToolImage = {
+  index?: number
+  prompt: string
+  filePath: string
+  fileUrl: string
+  relativePath: string
+  mimeType: string
+  imageProvider?: ArticleImageProvider
+}
+
+type ArticleToolImageError = {
+  index?: number
+  prompt: string
+  message: string
+  imageProvider?: ArticleImageProvider
+}
+
+type ArticleToolResult = {
+  runId: string
+  topic: string
+  presentationStyle: ArticlePresentationStyle
+  imageProvider?: ArticleImageProvider
+  html: string
+  previewHtml: string
+  htmlPath: string
+  htmlUrl: string
+  sourcePath: string
+  sourceUrl: string
+  outputDir: string
+  images: ArticleToolImage[]
+  imageErrors: ArticleToolImageError[]
+  generatedAt: string
+}
+
+type ArticleToolHistoryItem = {
+  runId: string
+  topic: string
+  presentationStyle: ArticlePresentationStyle
+  imageProvider?: ArticleImageProvider
+  htmlUrl: string
+  sourceUrl: string
+  outputDir: string
+  images: ArticleToolImage[]
+  imageErrors: ArticleToolImageError[]
+  generatedAt: string
+  updatedAt?: string
+}
+
+type ArticleStandaloneImageResult = {
+  runId: string
+  image: ArticleToolImage & {
+    generatedAt?: string
+  }
+}
+
+type ArticleToolLogDetail = {
+  provider: string
+  ok: boolean
+  message: string
+}
+
+type ArticleToolLog = {
+  id: string
+  at: string
+  action: string
+  status: 'success' | 'error' | 'info'
+  message: string
+  details: ArticleToolLogDetail[]
+}
+
+type ArticleImageProvider = 'google-ai' | 'vertex-ai'
+type ArticleToolTestProvider = 'claude' | 'gemini' | 'vertex'
+type ArticlePresentationStyle = 'professional' | 'raw' | 'wordpress'
+
+type ArticleToolConfigStatus = {
+  articleComposerConfigured: boolean
+  claudeConfigured: boolean
+  geminiConfigured: boolean
+  vertexConfigured: boolean
+  imageProvider: ArticleImageProvider
+  claudeGatewayBaseUrl: string
+  claudeGatewayAuthHeader: string
+  claudeModel: string
+  geminiImageModel: string
+  geminiApiBaseUrl: string
+  vertexProjectId: string
+  vertexRegion: string
+  vertexImageModel: string
+  outputDir: string
+  updatedAt: string
+  storedClaudeConfigured: boolean
+  storedGeminiConfigured: boolean
+  storedVertexCredentialsConfigured: boolean
+  envClaudeConfigured: boolean
+  envGeminiConfigured: boolean
+  envVertexCredentialsConfigured: boolean
+  logs: ArticleToolLog[]
 }
 
 type WordPressContentItem = {
@@ -257,19 +378,11 @@ type SeoEntityPlatform = {
   id: string
   name: string
   domain: string
-  registerUrl: string
-  loginUrl: string
   group: EntityPlatformGroup
-  allowWebsite: boolean
-  allowBio: boolean
-  allowLogo: boolean
-  allowCover: boolean
   defaultLinkType: EntityLinkType
-  difficulty: EntityDifficulty
-  indexability: EntityIndexability
-  qualityScore: number
+  domainAuthority: number
   status: EntityPlatformStatus
-  notes: string
+  guideUrl: string
 }
 
 type SeoEntityLink = {
@@ -403,8 +516,139 @@ type SeoBacklinkCost = {
   note: string
 }
 
+type SocialChannel = {
+  id: string
+  projectId: string
+  name: string
+  platform: SocialPlatform
+  channelType: SocialChannelType
+  publicUrl: string
+  ownerUserId: string
+  contentCategory: string
+  status: SocialChannelStatus
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
+type SocialCampaign = {
+  id: string
+  projectId: string
+  name: string
+  goal: string
+  description: string
+  platforms: SocialPlatform[]
+  startDate: string
+  endDate: string
+  budget: number
+  currency: string
+  plannedPosts: number
+  ownerUserId: string
+  status: SocialCampaignStatus
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
+type SocialPost = {
+  id: string
+  projectId: string
+  campaignId: string
+  channelId: string
+  title: string
+  platform: SocialPlatform
+  postType: SocialPostType
+  topic: string
+  caption: string
+  hashtags: string
+  cta: string
+  attachedLink: string
+  scheduledAt: string
+  publishedAt: string
+  publishedUrl: string
+  writerId: string
+  designerId: string
+  approverId: string
+  contentStatus: SocialContentStatus
+  mediaStatus: SocialMediaStatus
+  publishStatus: SocialPublishStatus
+  priority: SocialPriority
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
+type SocialPostMedia = {
+  id: string
+  postId: string
+  fileName: string
+  fileUrl: string
+  fileType: 'image' | 'video' | 'document' | 'design'
+  uploadedBy: string
+  status: SocialMediaStatus
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
+type SocialPostApproval = {
+  id: string
+  postId: string
+  approverId: string
+  status: SocialApprovalStatus
+  feedback: string
+  approvedAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+type SocialPostComment = {
+  id: string
+  postId: string
+  content: string
+  createdBy: string
+  createdAt: string
+}
+
+type SocialPostMetric = {
+  id: string
+  postId: string
+  impressions: number
+  reach: number
+  likes: number
+  comments: number
+  shares: number
+  saves: number
+  linkClicks: number
+  inboxCount: number
+  ordersCount: number
+  adSpend: number
+  revenue: number
+  metricDate: string
+  collectedBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+type SocialContentTemplate = {
+  id: string
+  projectId: string
+  name: string
+  templateType: SocialTemplateType
+  platform: SocialPlatform | ''
+  captionTemplate: string
+  hashtagTemplate: string
+  ctaTemplate: string
+  note: string
+  createdBy: string
+  status: 'active' | 'archived'
+  createdAt: string
+  updatedAt: string
+}
+
 type InternalNote = {
   id: string
+  guideCode: string
   projectId: string
   website: string
   title: string
@@ -530,6 +774,14 @@ type AppData = {
   internalNoteFiles?: InternalNoteFile[]
   internalNoteVersions?: InternalNoteVersion[]
   internalNoteComments?: InternalNoteComment[]
+  socialChannels?: SocialChannel[]
+  socialCampaigns?: SocialCampaign[]
+  socialPosts?: SocialPost[]
+  socialPostMedia?: SocialPostMedia[]
+  socialPostApprovals?: SocialPostApproval[]
+  socialPostComments?: SocialPostComment[]
+  socialPostMetrics?: SocialPostMetric[]
+  socialContentTemplates?: SocialContentTemplate[]
   analyticsReports?: AnalyticsPoint[]
   notifications?: NotificationItem[]
   activityLogs?: ActivityLog[]
@@ -541,6 +793,10 @@ const appVersion = '1.0.0'
 const appTimeZone = 'Asia/Bangkok'
 const appUtcOffsetLabel = 'UTC+7'
 const permissions = ['Dự án', 'Ghi chú', 'Tài chính', 'Nhân sự', 'Tiến độ', 'Hệ thống']
+const toolPermissionName = 'Công cụ'
+if (!permissions.includes(toolPermissionName)) permissions.push(toolPermissionName)
+const socialPermissionName = 'Social Planner'
+if (!permissions.includes(socialPermissionName)) permissions.push(socialPermissionName)
 const permissionActions: { value: PermissionAction; label: string }[] = [
   { value: 'view', label: 'Xem' },
   { value: 'edit', label: 'Chỉnh sửa' },
@@ -594,6 +850,27 @@ const knowledgeTabs: { id: KnowledgeTab; label: string }[] = [
   { id: 'files', label: 'File đính kèm' },
   { id: 'archive', label: 'Thùng rác / lưu trữ' },
 ]
+const socialTabs: { id: SocialTab; label: string }[] = [
+  { id: 'overview', label: 'Tổng quan' },
+  { id: 'channels', label: 'Kênh mạng xã hội' },
+  { id: 'campaigns', label: 'Chiến dịch Social' },
+  { id: 'posts', label: 'Kế hoạch & bài viết' },
+  { id: 'calendar', label: 'Lịch đăng bài' },
+  { id: 'approvals', label: 'Duyệt nội dung' },
+  { id: 'media', label: 'Kho media' },
+  { id: 'templates', label: 'Mẫu nội dung' },
+  { id: 'reports', label: 'Báo cáo Social' },
+]
+const socialPlatforms: SocialPlatform[] = ['facebook', 'instagram', 'tiktok', 'youtube', 'zalo', 'pinterest', 'x', 'linkedin', 'threads', 'shopee_feed', 'other']
+const socialChannelTypes: SocialChannelType[] = ['fanpage', 'profile', 'group', 'channel', 'oa', 'board', 'shop_feed', 'other']
+const socialChannelStatuses: SocialChannelStatus[] = ['active', 'paused', 'login_error', 'lost_permission', 'archived']
+const socialCampaignStatuses: SocialCampaignStatus[] = ['draft', 'active', 'paused', 'completed', 'cancelled']
+const socialPostTypes: SocialPostType[] = ['text', 'image', 'video', 'reel', 'short', 'story', 'album', 'livestream', 'carousel', 'other']
+const socialContentStatuses: SocialContentStatus[] = ['draft', 'writing', 'ready_for_design', 'waiting_approval', 'revision_required', 'approved', 'archived']
+const socialMediaStatuses: SocialMediaStatus[] = ['missing', 'designing', 'uploaded', 'revision_required', 'approved', 'used']
+const socialPublishStatuses: SocialPublishStatus[] = ['not_scheduled', 'scheduled', 'published', 'failed', 'cancelled', 'overdue']
+const socialPriorities: SocialPriority[] = ['low', 'normal', 'high', 'urgent']
+const socialTemplateTypes: SocialTemplateType[] = ['caption', 'hashtag', 'cta', 'script', 'comment_reply']
 const internalNoteTypes: InternalNoteType[] = [
   'Chỉnh sửa giao diện',
   'Chỉnh sửa nội dung',
@@ -635,10 +912,38 @@ const htmlGuideFileType = 'Hướng dẫn HTML'
 const htmlGuideMaxBytes = 2 * 1024 * 1024
 const entityTypes: EntityType[] = ['Brand', 'Company', 'Local Business', 'Person', 'Product', 'Service', 'Website']
 const entityStatuses: EntityStatus[] = ['Đang dùng', 'Tạm dừng', 'Hoàn thành']
-const entityPlatformGroups: EntityPlatformGroup[] = ['Social', 'Profile', 'Directory', 'Web 2.0', 'Forum', 'Blog', 'Map', 'Review']
+const entityPlatformGroups: EntityPlatformGroup[] = [
+  'Profile Link',
+  'Web 2.0',
+  'Article Submission',
+  'Social Bookmark / Bookmark',
+  'Forum Post',
+  'URL Shortener',
+  'Business Listing',
+  'Comment',
+  'Image Submission',
+  'Other',
+  'Web 2.0 Article Submission',
+  'Web 2.0 Social Bookmark / Web 2.0 Bookmark',
+]
+const entityPlatformGroupDescriptions: Record<EntityPlatformGroup, string> = {
+  'Profile Link': 'Tạo tài khoản trên diễn đàn hoặc website và đặt liên kết về website chính trong hồ sơ người dùng.',
+  'Web 2.0': 'Xây dựng blog hoặc website phụ trên nền tảng miễn phí như WordPress, Blogger hoặc Tumblr để trỏ link về website chính.',
+  'Article Submission': 'Đăng bài viết có chứa liên kết lên thư mục bài viết hoặc website cho phép đóng góp nội dung.',
+  'Social Bookmark / Bookmark': 'Lưu trữ và chia sẻ liên kết website trên mạng xã hội chuyên đánh dấu trang như Reddit, Pinterest hoặc Digg.',
+  'Forum Post': 'Đăng bài viết hoặc tạo chủ đề thảo luận trên diễn đàn có chứa liên kết.',
+  'URL Shortener': 'Sử dụng dịch vụ rút gọn liên kết như Bitly hoặc TinyURL để tạo liên kết chuyển hướng.',
+  'Business Listing': 'Đăng ký tên, địa chỉ, số điện thoại và website doanh nghiệp trên danh bạ địa phương hoặc bản đồ.',
+  Comment: 'Để lại bình luận trên blog hoặc diễn đàn và chèn liên kết ở tên người bình luận hoặc nội dung.',
+  'Image Submission': 'Đăng hình ảnh lên nền tảng chia sẻ ảnh như Flickr, Imgur hoặc Pinterest kèm liên kết trong mô tả.',
+  Other: 'Các hình thức liên kết hỗn hợp hoặc chưa thuộc nhóm cơ bản.',
+  'Web 2.0 Article Submission': 'Viết và đăng tải bài viết trực tiếp lên hệ thống blog Web 2.0.',
+  'Web 2.0 Social Bookmark / Web 2.0 Bookmark': 'Sử dụng nền tảng Web 2.0 để đánh dấu và chia sẻ trang.',
+}
+const entityPlatformGroupTooltipText = entityPlatformGroups
+  .map((group) => `${group}: ${entityPlatformGroupDescriptions[group]}`)
+  .join('\n\n')
 const entityLinkTypes: EntityLinkType[] = ['Dofollow', 'Nofollow', 'Redirect', 'Mention']
-const entityDifficulties: EntityDifficulty[] = ['Dễ', 'Trung bình', 'Khó']
-const entityIndexabilities: EntityIndexability[] = ['Cao', 'Trung bình', 'Thấp']
 const entityPlatformStatuses: EntityPlatformStatus[] = ['Dùng được', 'Lỗi', 'Khó đăng ký', 'Không cho đặt link', 'Ngừng dùng']
 const entityDeploymentStatuses: EntityDeploymentStatus[] = ['Chưa làm', 'Đang làm', 'Chờ xác minh', 'Chờ duyệt', 'Đã live', 'Lỗi', 'Không phù hợp']
 const entityLiveStatuses: EntityLiveStatus[] = ['Chưa check', 'Live', 'Redirect', '404', '403', 'Mất link', 'Không tìm thấy URL đích']
@@ -943,37 +1248,21 @@ const initialData: AppData = {
       id: 'ep-facebook',
       name: 'Facebook',
       domain: 'facebook.com',
-      registerUrl: 'https://www.facebook.com/pages/create',
-      loginUrl: 'https://www.facebook.com/login',
-      group: 'Social',
-      allowWebsite: true,
-      allowBio: true,
-      allowLogo: true,
-      allowCover: true,
+      group: 'Social Bookmark / Bookmark',
       defaultLinkType: 'Nofollow',
-      difficulty: 'Dễ',
-      indexability: 'Trung bình',
-      qualityScore: 85,
+      domainAuthority: 96,
       status: 'Dùng được',
-      notes: 'Ưu tiên đồng bộ logo, cover, NAP.',
+      guideUrl: '',
     },
     {
       id: 'ep-medium',
       name: 'Medium',
       domain: 'medium.com',
-      registerUrl: 'https://medium.com/m/signin',
-      loginUrl: 'https://medium.com/m/signin',
-      group: 'Blog',
-      allowWebsite: true,
-      allowBio: true,
-      allowLogo: true,
-      allowCover: false,
+      group: 'Web 2.0 Article Submission',
       defaultLinkType: 'Nofollow',
-      difficulty: 'Dễ',
-      indexability: 'Cao',
-      qualityScore: 78,
+      domainAuthority: 95,
       status: 'Dùng được',
-      notes: 'Phù hợp profile và bài giới thiệu thương hiệu.',
+      guideUrl: '',
     },
   ],
   seoEntityLinks: [
@@ -1063,6 +1352,7 @@ const initialData: AppData = {
   internalNotes: [
     {
       id: 'in-1',
+      guideCode: '',
       projectId: 'p1',
       website: 'angia-decor.vn',
       title: 'Sửa banner trang chủ An Gia Decor',
@@ -1090,6 +1380,7 @@ const initialData: AppData = {
     },
     {
       id: 'in-2',
+      guideCode: 'HD-00000IN2',
       projectId: 'p1',
       website: 'angia-decor.vn',
       title: 'Hướng dẫn thêm backlink vào dự án SEO',
@@ -1165,6 +1456,13 @@ const currency = new Intl.NumberFormat('vi-VN', {
 
 const pct = (value: number) => `${Math.round(value)}%`
 const uid = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+const internalGuideCodeFromId = (id: string) => {
+  const compactId = id.replace(/[^a-z0-9]/gi, '').toUpperCase()
+  return `HD-${compactId.slice(-8).padStart(8, '0')}`
+}
+const internalGuideCodeOf = (note: InternalNote) =>
+  note.guideCode || (note.noteType === 'Hướng dẫn thao tác' ? internalGuideCodeFromId(note.id) : '')
+const guideReferenceIsUrl = (value: string) => /^https?:\/\//i.test(value.trim())
 const field = (value: string | number | undefined, fallback = 'Chưa cập nhật') =>
   value === undefined || value === '' || value === 0 ? fallback : String(value)
 const appNow = () => new Date()
@@ -1337,9 +1635,24 @@ const readImportValue = (row: Record<string, unknown>, keys: string[]) => {
   const value = keys.map(normalizeImportHeader).map((key) => normalizedKeys[key]).find((item) => item !== undefined && item !== null && String(item).trim() !== '')
   return value === undefined || value === null ? '' : String(value).trim()
 }
-const parseBooleanImport = (value: string) => ['co', 'yes', 'true', '1', 'x', 'có'].includes(normalizeImportHeader(value))
 const pickEnum = <T extends string>(value: string, options: T[], fallback: T) =>
   options.find((option) => normalizeImportHeader(option) === normalizeImportHeader(value)) ?? fallback
+const legacyEntityPlatformGroups: Record<string, EntityPlatformGroup> = {
+  social: 'Social Bookmark / Bookmark',
+  profile: 'Profile Link',
+  directory: 'Business Listing',
+  forum: 'Forum Post',
+  blog: 'Article Submission',
+  map: 'Business Listing',
+  review: 'Business Listing',
+}
+const entityPlatformGroupOf = (value: unknown): EntityPlatformGroup => {
+  const normalizedValue = normalizeImportHeader(String(value ?? ''))
+  return entityPlatformGroups.find((group) => normalizeImportHeader(group) === normalizedValue)
+    ?? legacyEntityPlatformGroups[normalizedValue]
+    ?? 'Other'
+}
+const entityDomainAuthorityOf = (value: unknown) => Math.min(100, Math.max(0, Number(value) || 0))
 const parseCsvRows = (text: string) => {
   const delimiter = text.includes('\t') ? '\t' : ','
   const lines = text.split(/\r?\n/).filter((line) => line.trim())
@@ -1388,19 +1701,11 @@ const mapPlatformImportRow = (row: Record<string, unknown>): SeoEntityPlatform |
     id: uid('ep'),
     name,
     domain,
-    registerUrl: readImportValue(row, ['Link đăng ký', 'registerUrl', 'register']),
-    loginUrl: readImportValue(row, ['Link đăng nhập', 'loginUrl', 'login']),
-    group: pickEnum(readImportValue(row, ['Nhóm nền tảng', 'group', 'nhom']), entityPlatformGroups, 'Profile'),
-    allowWebsite: parseBooleanImport(readImportValue(row, ['Cho đặt website', 'allowWebsite', 'website'])),
-    allowBio: parseBooleanImport(readImportValue(row, ['Cho viết bio', 'allowBio', 'bio'])),
-    allowLogo: parseBooleanImport(readImportValue(row, ['Cho upload logo', 'allowLogo', 'logo'])),
-    allowCover: parseBooleanImport(readImportValue(row, ['Cho upload cover', 'allowCover', 'cover'])),
+    group: entityPlatformGroupOf(readImportValue(row, ['Nhóm', 'Nhóm nền tảng', 'group', 'nhom'])),
     defaultLinkType: pickEnum(readImportValue(row, ['Loại link mặc định', 'defaultLinkType', 'linkType']), entityLinkTypes, 'Nofollow'),
-    difficulty: pickEnum(readImportValue(row, ['Độ khó', 'difficulty']), entityDifficulties, 'Dễ'),
-    indexability: pickEnum(readImportValue(row, ['Khả năng index', 'indexability', 'index']), entityIndexabilities, 'Trung bình'),
-    qualityScore: Number(readImportValue(row, ['Điểm chất lượng', 'qualityScore', 'score'])) || 50,
+    domainAuthority: entityDomainAuthorityOf(readImportValue(row, ['Điểm DA', 'DA', 'Domain Authority', 'domainAuthority'])),
     status: pickEnum(readImportValue(row, ['Trạng thái', 'status']), entityPlatformStatuses, 'Dùng được'),
-    notes: readImportValue(row, ['Ghi chú', 'notes', 'note']),
+    guideUrl: readImportValue(row, ['Hướng dẫn', 'Link hướng dẫn', 'guideUrl', 'guide']),
   }
 }
 const calculateEntityScore = (
@@ -1415,9 +1720,9 @@ const calculateEntityScore = (
     const platform = platforms.find((item) => item.id === link.platformId)
     if (link.linkStatus === 'Live') score += 2
     if (link.indexStatus === 'Đã index') score += 3
-    if (link.deploymentStatus === 'Đã live' && platform?.group === 'Social') score += 5
-    if (link.deploymentStatus === 'Đã live' && ['Directory', 'Map', 'Review'].includes(platform?.group ?? '')) score += 4
-    if (link.deploymentStatus === 'Đã live' && ['Web 2.0', 'Blog'].includes(platform?.group ?? '')) score += 3
+    if (link.deploymentStatus === 'Đã live' && ['Social Bookmark / Bookmark', 'Web 2.0 Social Bookmark / Web 2.0 Bookmark'].includes(platform?.group ?? '')) score += 5
+    if (link.deploymentStatus === 'Đã live' && platform?.group === 'Business Listing') score += 4
+    if (link.deploymentStatus === 'Đã live' && ['Web 2.0', 'Web 2.0 Article Submission'].includes(platform?.group ?? '')) score += 3
     if (['404', '403', 'Mất link', 'Không tìm thấy URL đích'].includes(link.linkStatus)) score -= 3
     if (link.napStatus !== 'Chưa check' && link.napStatus !== 'Đúng') score -= 5
     if (!link.targetUrl) score -= 2
@@ -1683,7 +1988,7 @@ const normalizeAnalyticsRows = (payload: unknown, projectId: string, granularity
 }
 const getViewFromHash = (): View => {
   const view = window.location.hash.replace('#', '')
-  return ['overview', 'projects', 'entities', 'backlinks', 'keywords', 'articles', 'tasks', 'knowledge', 'finance', 'people', 'progress', 'system'].includes(view)
+  return ['overview', 'projects', 'entities', 'backlinks', 'keywords', 'articles', 'tasks', 'knowledge', 'social', 'tools', 'tool-article-writer', 'tool-article-settings', 'finance', 'people', 'progress', 'system'].includes(view)
     ? (view as View)
     : 'overview'
 }
@@ -1694,6 +1999,8 @@ const setHashView = (view: View) => {
 const permissionForView = (view: View) => {
   if (['projects', 'entities', 'backlinks', 'keywords', 'articles', 'tasks'].includes(view)) return 'Dự án'
   if (view === 'knowledge') return 'Ghi chú'
+  if (view === 'social') return socialPermissionName
+  if (view === 'tools' || view === 'tool-article-writer' || view === 'tool-article-settings') return toolPermissionName
   if (view === 'finance') return 'Tài chính'
   if (view === 'people') return 'Nhân sự'
   if (view === 'progress') return 'Tiến độ'
@@ -1768,7 +2075,22 @@ const normalizeData = (data: AppData): AppData => ({
     note: settlement.note ?? '',
   })),
   seoEntities: data.seoEntities ?? [],
-  seoEntityPlatforms: data.seoEntityPlatforms ?? [],
+  seoEntityPlatforms: (data.seoEntityPlatforms ?? []).map((platform) => {
+    const legacyPlatform = platform as SeoEntityPlatform & {
+      qualityScore?: number
+      notes?: string
+    }
+    return {
+      id: platform.id,
+      name: platform.name ?? '',
+      domain: platform.domain ?? '',
+      group: entityPlatformGroupOf(platform.group),
+      defaultLinkType: pickEnum(String(platform.defaultLinkType ?? ''), entityLinkTypes, 'Nofollow'),
+      domainAuthority: entityDomainAuthorityOf(platform.domainAuthority ?? legacyPlatform.qualityScore),
+      status: pickEnum(String(platform.status ?? ''), entityPlatformStatuses, 'Dùng được'),
+      guideUrl: platform.guideUrl ?? (legacyPlatform.notes?.startsWith('http') ? legacyPlatform.notes : ''),
+    }
+  }),
   seoEntityLinks: (data.seoEntityLinks ?? []).map((link) => ({
     ...link,
     loginWithGoogle: link.loginWithGoogle ?? false,
@@ -1803,6 +2125,7 @@ const normalizeData = (data: AppData): AppData => ({
   taskSalarySettings: taskSalarySettingsOf(data.taskSalarySettings),
   internalNotes: (data.internalNotes ?? []).map((note) => ({
     ...note,
+    guideCode: note.guideCode ?? (note.noteType === 'Hướng dẫn thao tác' ? internalGuideCodeFromId(note.id) : ''),
     website: note.website ?? data.projects.find((project) => project.id === note.projectId)?.website ?? '',
     category: note.category ?? '',
     relatedUrl: note.relatedUrl ?? '',
@@ -1829,6 +2152,22 @@ const normalizeData = (data: AppData): AppData => ({
   internalNoteFiles: data.internalNoteFiles ?? [],
   internalNoteVersions: data.internalNoteVersions ?? [],
   internalNoteComments: data.internalNoteComments ?? [],
+  socialChannels: data.socialChannels ?? [],
+  socialCampaigns: data.socialCampaigns ?? [],
+  socialPosts: (data.socialPosts ?? []).map((post) => ({
+    ...post,
+    publishStatus:
+      post.publishedAt || post.publishStatus === 'published'
+        ? 'published'
+        : post.scheduledAt && new Date(post.scheduledAt).getTime() < Date.now() && ['not_scheduled', 'scheduled'].includes(post.publishStatus)
+          ? 'overdue'
+          : post.publishStatus,
+  })),
+  socialPostMedia: data.socialPostMedia ?? [],
+  socialPostApprovals: data.socialPostApprovals ?? [],
+  socialPostComments: data.socialPostComments ?? [],
+  socialPostMetrics: data.socialPostMetrics ?? [],
+  socialContentTemplates: data.socialContentTemplates ?? [],
   analyticsReports: data.analyticsReports ?? [],
   notifications: data.notifications ?? [],
   activityLogs: data.activityLogs ?? [],
@@ -1925,14 +2264,32 @@ function App() {
   const [checkingKeywordIds, setCheckingKeywordIds] = useState<Set<string>>(() => new Set())
   const [checkingAllKeywords, setCheckingAllKeywords] = useState(false)
   const [wordpressStatus, setWordpressStatus] = useState('')
+  const [articleToolLoading, setArticleToolLoading] = useState(false)
+  const [articleToolStatus, setArticleToolStatus] = useState('')
+  const [articleToolResult, setArticleToolResult] = useState<ArticleToolResult | null>(null)
+  const [articleToolConfig, setArticleToolConfig] = useState<ArticleToolConfigStatus | null>(null)
+  const [articleToolConfigStatus, setArticleToolConfigStatus] = useState('')
+  const [articleToolConfigLoading, setArticleToolConfigLoading] = useState(false)
+  const [articleToolTestingProvider, setArticleToolTestingProvider] = useState<ArticleToolTestProvider | ''>('')
+  const [articleToolRegeneratingIndex, setArticleToolRegeneratingIndex] = useState<number | null>(null)
+  const [articleToolHistory, setArticleToolHistory] = useState<ArticleToolHistoryItem[]>([])
+  const [articleToolHistoryStatus, setArticleToolHistoryStatus] = useState('')
+  const [articleToolHistoryLoading, setArticleToolHistoryLoading] = useState(false)
+  const [articleToolEditorHtml, setArticleToolEditorHtml] = useState('')
+  const [articleToolSavingHtml, setArticleToolSavingHtml] = useState(false)
+  const [articleToolSingleImage, setArticleToolSingleImage] = useState<ArticleStandaloneImageResult | null>(null)
+  const [articleToolSingleImageStatus, setArticleToolSingleImageStatus] = useState('')
+  const [articleToolSingleImageLoading, setArticleToolSingleImageLoading] = useState(false)
   const [financeFilter, setFinanceFilter] = useState<FinanceFilter>('all')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [entityTab, setEntityTab] = useState<EntityTab>('overview')
   const [selectedEntityId, setSelectedEntityId] = useState('')
   const [entityImportStatus, setEntityImportStatus] = useState('')
+  const [editingEntityPlatformId, setEditingEntityPlatformId] = useState<string | null>(null)
   const [selectedEntityLinkIds, setSelectedEntityLinkIds] = useState<Set<string>>(() => new Set())
   const [backlinkTab, setBacklinkTab] = useState<BacklinkTab>('overview')
   const [knowledgeTab, setKnowledgeTab] = useState<KnowledgeTab>('all')
+  const [socialTab, setSocialTab] = useState<SocialTab>('overview')
   const [knowledgeSearch, setKnowledgeSearch] = useState('')
   const [knowledgeProjectFilter, setKnowledgeProjectFilter] = useState('all')
   const [knowledgeTypeFilter, setKnowledgeTypeFilter] = useState('all')
@@ -2050,6 +2407,41 @@ function App() {
   const canEdit = (targetView: View) => canAccessPermission(permissionForView(targetView), 'edit')
   const canEditProjects = canEdit('projects')
   const canEditTasks = canEdit('tasks')
+  const loadArticleToolConfig = useCallback(async () => {
+    setArticleToolConfigLoading(true)
+    try {
+      const response = await fetch(appUrl('api/tools/article-compose/config'))
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi cấu hình không hợp lệ.' }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setArticleToolConfig(payload.config)
+      setArticleToolConfigStatus('')
+    } catch (error) {
+      setArticleToolConfigStatus(`Không đọc được cấu hình Viết bài. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setArticleToolConfigLoading(false)
+    }
+  }, [])
+
+  const loadArticleToolHistory = useCallback(async () => {
+    setArticleToolHistoryLoading(true)
+    try {
+      const response = await fetch(appUrl('api/tools/article-compose/history'))
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi lịch sử không hợp lệ.' }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setArticleToolHistory(Array.isArray(payload.history) ? payload.history : [])
+      setArticleToolHistoryStatus('')
+    } catch (error) {
+      setArticleToolHistoryStatus(`Không đọc được lịch sử bài viết. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setArticleToolHistoryLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!['tool-article-writer', 'tool-article-settings'].includes(view) || !currentUserIdValue) return
+    void Promise.resolve().then(() => loadArticleToolConfig())
+    if (view === 'tool-article-writer') void Promise.resolve().then(() => loadArticleToolHistory())
+  }, [view, currentUserIdValue, loadArticleToolConfig, loadArticleToolHistory])
   const visibleProjects = hasProjectViewPermission ? activeProjects : activeProjects.filter((project) => assignedProjectIds.has(project.id))
   const activeProject = visibleProjects.find((project) => project.id === activeProjectId) ?? visibleProjects[0] ?? selectedProject
   const canEditAssignedArticle = (keyword: Keyword) => assignedArticleKeywordIds.has(keyword.id)
@@ -2088,6 +2480,7 @@ function App() {
   const projectEntities = (data.seoEntities ?? []).filter((entity) => entity.projectId === activeProject?.id)
   const activeEntity = selectedEntityId === 'new' ? undefined : projectEntities.find((entity) => entity.id === selectedEntityId) ?? projectEntities[0]
   const entityPlatforms = data.seoEntityPlatforms ?? []
+  const editingEntityPlatform = editingEntityPlatformId ? entityPlatforms.find((platform) => platform.id === editingEntityPlatformId) : undefined
   const projectEntityLinks = (data.seoEntityLinks ?? []).filter((link) => link.projectId === activeProject?.id)
   const activeEntityLinks = projectEntityLinks.filter((link) => link.entityId === activeEntity?.id)
   const activeEntityChecklist = (data.seoEntityChecklist ?? []).filter((item) => item.entityId === activeEntity?.id)
@@ -2137,6 +2530,7 @@ function App() {
     const query = knowledgeSearch.trim().toLowerCase()
     if (!query) return true
     const haystack = [
+      internalGuideCodeOf(note),
       note.title,
       note.website,
       note.relatedUrl,
@@ -2322,6 +2716,36 @@ function App() {
     if (!canView(nextView)) return
     setView(nextView)
     setHashView(nextView)
+  }
+
+  const openKnowledgeGuide = (reference: string) => {
+    const normalizedReference = reference.trim()
+    if (!normalizedReference) return
+    if (guideReferenceIsUrl(normalizedReference)) {
+      window.open(normalizedReference, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const guide = internalNotes.find((note) =>
+      [note.id, internalGuideCodeOf(note)].some((value) => value.toLowerCase() === normalizedReference.toLowerCase()),
+    )
+    if (!guide || guide.deletedAt || guide.archivedAt || guide.status === 'Lưu trữ') {
+      window.alert(`Không tìm thấy bài hướng dẫn nội bộ có mã "${normalizedReference}".`)
+      return
+    }
+    const htmlGuide = htmlGuideFileOf(guide, internalNoteFiles)
+    if (htmlGuide) {
+      openHtmlGuideFile(htmlGuide)
+      return
+    }
+    setKnowledgeTab('guides')
+    setKnowledgeSearch(internalGuideCodeOf(guide))
+    setKnowledgeProjectFilter('all')
+    setKnowledgeTypeFilter('all')
+    setKnowledgeStatusFilter('all')
+    setKnowledgePriorityFilter('all')
+    setKnowledgeTagFilter('all')
+    setEditingInternalNoteId(null)
+    goTo('knowledge')
   }
 
   const login = (event: FormEvent<HTMLFormElement>) => {
@@ -3638,25 +4062,28 @@ function App() {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const platform: SeoEntityPlatform = {
-      id: uid('ep'),
+      id: editingEntityPlatform?.id ?? uid('ep'),
       name: String(form.get('name')).trim(),
       domain: String(form.get('domain')).trim(),
-      registerUrl: String(form.get('registerUrl')).trim(),
-      loginUrl: String(form.get('loginUrl')).trim(),
       group: String(form.get('group')) as EntityPlatformGroup,
-      allowWebsite: form.get('allowWebsite') === 'on',
-      allowBio: form.get('allowBio') === 'on',
-      allowLogo: form.get('allowLogo') === 'on',
-      allowCover: form.get('allowCover') === 'on',
       defaultLinkType: String(form.get('defaultLinkType')) as EntityLinkType,
-      difficulty: String(form.get('difficulty')) as EntityDifficulty,
-      indexability: String(form.get('indexability')) as EntityIndexability,
-      qualityScore: Number(form.get('qualityScore')) || 0,
+      domainAuthority: entityDomainAuthorityOf(form.get('domainAuthority')),
       status: String(form.get('status')) as EntityPlatformStatus,
-      notes: String(form.get('notes')).trim(),
+      guideUrl: String(form.get('guideUrl')).trim(),
     }
-    saveData({ ...data, seoEntityPlatforms: [platform, ...(data.seoEntityPlatforms ?? [])] }, 'Thêm nền tảng Entity', platform.name)
+    saveData({
+      ...data,
+      seoEntityPlatforms: editingEntityPlatform
+        ? (data.seoEntityPlatforms ?? []).map((item) => (item.id === editingEntityPlatform.id ? platform : item))
+        : [platform, ...(data.seoEntityPlatforms ?? [])],
+    }, editingEntityPlatform ? 'Cập nhật nền tảng Entity' : 'Thêm nền tảng Entity', platform.name)
+    setEditingEntityPlatformId(null)
     event.currentTarget.reset()
+  }
+
+  const startEditEntityPlatform = (platformId: string) => {
+    setEditingEntityPlatformId(platformId)
+    window.requestAnimationFrame(() => document.querySelector('.entity-platform-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }
 
   const importEntityPlatforms = (rows: Record<string, unknown>[], sourceLabel: string) => {
@@ -4178,39 +4605,51 @@ function App() {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const now = appNowIso()
-    const noteProjectId = String(form.get('projectId')) || activeProject?.id || ''
+    const formValue = (name: string, fallback = '') => {
+      const value = form.get(name)
+      return value === null ? fallback : String(value).trim()
+    }
+    const noteProjectId = formValue('projectId', editingInternalNote?.projectId || activeProject?.id || '')
     const project = data.projects.find((item) => item.id === noteProjectId)
-    const tags = String(form.get('tags'))
+    const noteId = editingInternalNote?.id ?? uid('in')
+    const noteType = formValue(
+      'noteType',
+      editingInternalNote?.noteType ?? (knowledgeTab === 'guides' ? 'Hướng dẫn thao tác' : 'Chỉnh sửa giao diện'),
+    ) as InternalNoteType
+    const tags = formValue('tags', editingInternalNote?.tags.join(', ') ?? (noteType === 'Hướng dẫn thao tác' ? 'hướng-dẫn' : ''))
       .split(',')
       .map((tag) => tag.trim())
       .filter(Boolean)
     const nextNote: InternalNote = {
-      id: editingInternalNote?.id ?? uid('in'),
+      id: noteId,
+      guideCode: editingInternalNote?.guideCode ?? (noteType === 'Hướng dẫn thao tác' ? internalGuideCodeFromId(noteId) : ''),
       projectId: noteProjectId,
-      website: String(form.get('website')).trim() || project?.website || '',
-      title: String(form.get('title')).trim(),
-      noteType: String(form.get('noteType')) as InternalNoteType,
-      category: String(form.get('category')).trim(),
-      relatedUrl: String(form.get('relatedUrl')).trim(),
-      affectedArea: String(form.get('affectedArea')).trim(),
-      problemDescription: String(form.get('problemDescription')).trim(),
-      content: String(form.get('content')).trim(),
-      reason: String(form.get('reason')).trim(),
-      priority: String(form.get('priority')) as InternalNotePriority,
-      status: String(form.get('status')) as InternalNoteStatus,
-      visibility: String(form.get('visibility')) as InternalNoteVisibility,
-      requestedBy: String(form.get('requestedBy')),
-      assignedTo: String(form.get('assignedTo')),
+      website: formValue('website', editingInternalNote?.website ?? project?.website ?? '') || project?.website || '',
+      title: formValue('title', editingInternalNote?.title ?? ''),
+      noteType,
+      category: formValue('category', editingInternalNote?.category ?? (noteType === 'Hướng dẫn thao tác' ? 'Admin' : 'SEO')),
+      relatedUrl: formValue('relatedUrl', editingInternalNote?.relatedUrl ?? ''),
+      affectedArea: formValue('affectedArea', editingInternalNote?.affectedArea ?? ''),
+      problemDescription: formValue('problemDescription', editingInternalNote?.problemDescription ?? ''),
+      content: formValue('content', editingInternalNote?.content ?? ''),
+      reason: formValue('reason', editingInternalNote?.reason ?? ''),
+      priority: formValue('priority', editingInternalNote?.priority ?? 'Trung bình') as InternalNotePriority,
+      status: formValue('status', editingInternalNote?.status ?? 'Nháp') as InternalNoteStatus,
+      visibility: noteType === 'Hướng dẫn thao tác'
+        ? 'Nội bộ'
+        : formValue('visibility', editingInternalNote?.visibility ?? 'Nội bộ') as InternalNoteVisibility,
+      requestedBy: formValue('requestedBy', editingInternalNote?.requestedBy ?? ''),
+      assignedTo: formValue('assignedTo', editingInternalNote?.assignedTo ?? currentUser?.id ?? ''),
       createdBy: editingInternalNote?.createdBy ?? currentUser?.id ?? '',
       approvedBy: editingInternalNote?.approvedBy ?? '',
       approvedAt: editingInternalNote?.approvedAt ?? '',
-      completedAt: String(form.get('status')) === 'Hoàn thành' ? editingInternalNote?.completedAt || now : editingInternalNote?.completedAt ?? '',
+      completedAt: formValue('status', editingInternalNote?.status ?? 'Nháp') === 'Hoàn thành' ? editingInternalNote?.completedAt || now : editingInternalNote?.completedAt ?? '',
       createdAt: editingInternalNote?.createdAt ?? now,
       updatedAt: now,
       tags,
-      extraNote: String(form.get('extraNote')).trim(),
+      extraNote: formValue('extraNote', editingInternalNote?.extraNote ?? ''),
       version: editingInternalNote ? editingInternalNote.version + 1 : 1,
-      archivedAt: String(form.get('status')) === 'Lưu trữ' ? editingInternalNote?.archivedAt || now : '',
+      archivedAt: formValue('status', editingInternalNote?.status ?? 'Nháp') === 'Lưu trữ' ? editingInternalNote?.archivedAt || now : '',
       deletedAt: editingInternalNote?.deletedAt ?? '',
     }
     const version: InternalNoteVersion = {
@@ -4220,7 +4659,7 @@ function App() {
       title: nextNote.title,
       content: nextNote.content,
       changedBy: currentUser?.id ?? '',
-      changeNote: String(form.get('changeNote')).trim() || (editingInternalNote ? 'Cập nhật ghi chú' : 'Tạo ghi chú'),
+      changeNote: formValue('changeNote') || (editingInternalNote ? 'Cập nhật ghi chú' : 'Tạo ghi chú'),
       createdAt: now,
     }
     const existingTagNames = new Set((data.internalNoteTags ?? []).map((tag) => tag.name.toLowerCase()))
@@ -4275,6 +4714,7 @@ function App() {
       const noteId = uid('in')
       const note: InternalNote = {
         id: noteId,
+        guideCode: internalGuideCodeFromId(noteId),
         projectId: noteProjectId,
         website: project?.website || '',
         title,
@@ -4355,11 +4795,12 @@ function App() {
 
   const deleteInternalNote = (noteId: string) => {
     const note = internalNotes.find((item) => item.id === noteId)
-    if (!note) return
+    if (!note || !window.confirm(`Xóa ghi chú "${note.title}" và chuyển vào Thùng rác / lưu trữ?`)) return
     saveData({
       ...data,
       internalNotes: internalNotes.map((item) => (item.id === noteId ? { ...item, deletedAt: appNowIso(), updatedAt: appNowIso() } : item)),
     }, 'Xóa mềm ghi chú nội bộ', note.title)
+    setEditingInternalNoteId(null)
   }
 
   const restoreInternalNote = (noteId: string) => {
@@ -4438,6 +4879,256 @@ function App() {
     event.currentTarget.reset()
   }
 
+  const saveArticleToolConfig = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!canEdit('tool-article-writer')) {
+      setArticleToolConfigStatus('Tài khoản chưa có quyền lưu cấu hình Công cụ.')
+      return
+    }
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    setArticleToolConfigLoading(true)
+    setArticleToolConfigStatus('Đang lưu cấu hình Viết bài...')
+    try {
+      const vertexCredentialsFile = form.get('vertexCredentialsFile')
+      let vertexServiceAccountJson = String(form.get('vertexServiceAccountJson') || '').trim()
+      if (vertexCredentialsFile instanceof File && vertexCredentialsFile.size > 0) {
+        vertexServiceAccountJson = await vertexCredentialsFile.text()
+      }
+      const response = await fetch(appUrl('api/tools/article-compose/config'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageProvider: String(form.get('imageProvider') || 'google-ai').trim(),
+          claudeGatewayBaseUrl: String(form.get('claudeGatewayBaseUrl') || '').trim(),
+          claudeGatewayAuthHeader: String(form.get('claudeGatewayAuthHeader') || '').trim(),
+          claudeModel: String(form.get('claudeModel') || '').trim(),
+          claudeApiKey: String(form.get('claudeApiKey') || '').trim(),
+          geminiApiBaseUrl: String(form.get('geminiApiBaseUrl') || '').trim(),
+          geminiImageModel: String(form.get('geminiImageModel') || '').trim(),
+          geminiApiKey: String(form.get('geminiApiKey') || '').trim(),
+          vertexProjectId: String(form.get('vertexProjectId') || '').trim(),
+          vertexRegion: String(form.get('vertexRegion') || '').trim(),
+          vertexImageModel: String(form.get('vertexImageModel') || '').trim(),
+          vertexCredentialsPath: String(form.get('vertexCredentialsPath') || '').trim(),
+          vertexServiceAccountJson,
+          clearClaudeApiKey: form.get('clearClaudeApiKey') === 'on',
+          clearGeminiApiKey: form.get('clearGeminiApiKey') === 'on',
+          clearVertexCredentials: form.get('clearVertexCredentials') === 'on',
+        }),
+      })
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi cấu hình không hợp lệ.' }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setArticleToolConfig(payload.config)
+      setArticleToolConfigStatus('Đã lưu cấu hình Viết bài trên server.')
+      formElement.reset()
+    } catch (error) {
+      setArticleToolConfigStatus(`Không lưu được cấu hình. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setArticleToolConfigLoading(false)
+    }
+  }
+
+  const testArticleToolConnection = async (provider: ArticleToolTestProvider) => {
+    if (!canEdit('tool-article-writer')) {
+      setArticleToolConfigStatus('Tài khoản chưa có quyền kiểm tra kết nối Công cụ.')
+      return
+    }
+    const label = provider === 'claude' ? 'Claude' : provider === 'vertex' ? 'Vertex AI' : 'Imagen'
+    setArticleToolTestingProvider(provider)
+    setArticleToolConfigStatus(`Đang kiểm tra kết nối ${label}...`)
+    try {
+      const response = await fetch(`${appUrl('api/tools/article-compose/test')}?provider=${provider}`, { method: 'POST' })
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi kiểm tra không hợp lệ.' }))
+      if (payload.config) setArticleToolConfig(payload.config)
+      if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setArticleToolConfigStatus(payload.ok ? `Kiểm tra ${label} thành công.` : `Kiểm tra ${label} có lỗi, xem log bên dưới.`)
+    } catch (error) {
+      setArticleToolConfigStatus(`Không kiểm tra được ${label}. ${error instanceof Error ? error.message : ''}`.trim())
+      await loadArticleToolConfig()
+    } finally {
+      setArticleToolTestingProvider('')
+    }
+  }
+
+  const composeSeoArticle = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!canEdit('tool-article-writer')) {
+      setArticleToolStatus('Tài khoản chưa có quyền sử dụng công cụ Viết bài.')
+      return
+    }
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    const keyword = String(form.get('keyword') || '').trim()
+    if (!keyword) {
+      setArticleToolStatus('Vui lòng nhập từ khóa hoặc chủ đề cần soạn bài.')
+      return
+    }
+    const imageProviderOverride: ArticleImageProvider = form.get('useVertexImageProvider') === 'on' ? 'vertex-ai' : 'google-ai'
+    const imageProviderLabel = imageProviderOverride === 'vertex-ai' ? 'Vertex AI' : 'Imagen'
+    setArticleToolLoading(true)
+    setArticleToolStatus(`Đang gọi Claude để viết bài và ${imageProviderLabel} để tạo ảnh. Quá trình này có thể mất vài phút.`)
+    setArticleToolResult(null)
+    try {
+      const response = await fetch(appUrl('api/tools/article-compose'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword,
+          targetAudience: String(form.get('targetAudience') || '').trim(),
+          tone: String(form.get('tone') || '').trim(),
+          wordCount: Number(form.get('wordCount') || 1800),
+          presentationStyle: String(form.get('presentationStyle') || 'professional'),
+          imageProviderOverride,
+        }),
+      })
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi không hợp lệ.' }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setArticleToolResult(payload.result)
+      setArticleToolEditorHtml(payload.result.html || '')
+      setArticleToolStatus(`Đã tạo bài "${payload.result.topic}". File HTML và ảnh đã được lưu trên server.`)
+      await loadArticleToolHistory()
+      saveData(reloadData(), 'Viết bài SEO', payload.result.topic)
+      formElement.reset()
+    } catch (error) {
+      setArticleToolStatus(`Không tạo được bài viết. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setArticleToolLoading(false)
+    }
+  }
+
+  const regenerateArticleImage = async (error: ArticleToolImageError, imageProviderOverride?: ArticleImageProvider) => {
+    if (!canEdit('tool-article-writer')) {
+      setArticleToolStatus('Tài khoản chưa có quyền gen lại ảnh.')
+      return
+    }
+    if (!articleToolResult?.runId) {
+      setArticleToolStatus('Không tìm thấy mã bài viết để gen lại ảnh.')
+      return
+    }
+    const index = Number(error.index ?? 0)
+    setArticleToolRegeneratingIndex(index)
+    setArticleToolStatus(`Đang gen lại ảnh ${index + 1}${imageProviderOverride === 'vertex-ai' ? ' bằng Vertex AI' : ''}...`)
+    try {
+      const response = await fetch(appUrl('api/tools/article-compose/regenerate-image'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          runId: articleToolResult.runId,
+          index,
+          prompt: error.prompt,
+          imageProviderOverride: imageProviderOverride || articleToolResult.imageProvider || '',
+        }),
+      })
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi gen lại ảnh không hợp lệ.' }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      const regeneratedImage = payload.result.image as ArticleToolImage
+      setArticleToolResult((current) => {
+        if (!current) return current
+        return {
+          ...current,
+          html: payload.result.html,
+          previewHtml: payload.result.previewHtml,
+          htmlPath: payload.result.htmlPath,
+          htmlUrl: payload.result.htmlUrl,
+          sourcePath: payload.result.sourcePath,
+          sourceUrl: payload.result.sourceUrl,
+          images: [...current.images.filter((image) => Number(image.index ?? -1) !== index), regeneratedImage].sort((a, b) => Number(a.index ?? 0) - Number(b.index ?? 0)),
+          imageErrors: current.imageErrors.filter((item) => Number(item.index ?? -1) !== index),
+        }
+      })
+      setArticleToolEditorHtml(payload.result.html || '')
+      await loadArticleToolHistory()
+      if (payload.config) setArticleToolConfig(payload.config)
+      setArticleToolStatus(`Đã gen lại ảnh ${index + 1} và cập nhật file HTML.`)
+    } catch (err) {
+      setArticleToolStatus(`Không gen lại được ảnh ${index + 1}. ${err instanceof Error ? err.message : ''}`.trim())
+    } finally {
+      setArticleToolRegeneratingIndex(null)
+    }
+  }
+
+  const openArticleHistoryItem = async (runId: string, edit = false) => {
+    setArticleToolHistoryStatus(edit ? 'Đang mở bài để chỉnh sửa...' : 'Đang mở bài đã tạo...')
+    try {
+      const response = await fetch(`${appUrl('api/tools/article-compose/history-item')}?runId=${encodeURIComponent(runId)}`)
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi bài viết không hợp lệ.' }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setArticleToolResult(payload.result)
+      setArticleToolEditorHtml(payload.result.html || '')
+      if (Array.isArray(payload.history)) setArticleToolHistory(payload.history)
+      setArticleToolHistoryStatus(edit ? 'Đã mở bài. Bạn có thể chỉnh sửa HTML bên dưới preview.' : 'Đã mở lại bài đã tạo.')
+    } catch (error) {
+      setArticleToolHistoryStatus(`Không mở được bài viết. ${error instanceof Error ? error.message : ''}`.trim())
+    }
+  }
+
+  const saveArticleToolHtml = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!articleToolResult?.runId) {
+      setArticleToolHistoryStatus('Chưa chọn bài viết để lưu chỉnh sửa.')
+      return
+    }
+    setArticleToolSavingHtml(true)
+    setArticleToolHistoryStatus('Đang lưu chỉnh sửa HTML...')
+    try {
+      const response = await fetch(appUrl('api/tools/article-compose/history-item'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          runId: articleToolResult.runId,
+          topic: articleToolResult.topic,
+          html: articleToolEditorHtml,
+        }),
+      })
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi lưu HTML không hợp lệ.' }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setArticleToolResult(payload.result)
+      setArticleToolEditorHtml(payload.result.html || '')
+      if (Array.isArray(payload.history)) setArticleToolHistory(payload.history)
+      setArticleToolHistoryStatus('Đã lưu chỉnh sửa HTML và cập nhật file article.html.')
+    } catch (error) {
+      setArticleToolHistoryStatus(`Không lưu được chỉnh sửa HTML. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setArticleToolSavingHtml(false)
+    }
+  }
+
+  const generateStandaloneArticleImage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!canEdit('tool-article-writer')) {
+      setArticleToolSingleImageStatus('Tài khoản chưa có quyền tạo ảnh.')
+      return
+    }
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    const prompt = String(form.get('prompt') || '').trim()
+    if (!prompt) {
+      setArticleToolSingleImageStatus('Vui lòng nhập mô tả ảnh.')
+      return
+    }
+    const imageProviderOverride: ArticleImageProvider = form.get('useVertexImageProvider') === 'on' ? 'vertex-ai' : 'google-ai'
+    setArticleToolSingleImageLoading(true)
+    setArticleToolSingleImageStatus(`Đang tạo ảnh bằng ${imageProviderOverride === 'vertex-ai' ? 'Vertex AI' : 'Imagen'}...`)
+    try {
+      const response = await fetch(appUrl('api/tools/article-compose/generate-image'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, imageProviderOverride }),
+      })
+      const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi tạo ảnh không hợp lệ.' }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setArticleToolSingleImage(payload.result)
+      if (payload.config) setArticleToolConfig(payload.config)
+      setArticleToolSingleImageStatus('Đã tạo ảnh đơn theo mô tả.')
+      formElement.reset()
+    } catch (error) {
+      setArticleToolSingleImageStatus(`Không tạo được ảnh đơn. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setArticleToolSingleImageLoading(false)
+    }
+  }
+
   if (!currentUser) {
     if (loadingRemoteData) return <LoadingPage />
     return <LoginPage error={loginError} users={data.users} onRefresh={reloadData} onSubmit={login} />
@@ -4468,8 +5159,18 @@ function App() {
               </div>
             </>
           )}
+          {canAccessPermission(socialPermissionName, 'view') && <NavButton view="social" current={view} label="Social Planner" onClick={goTo} />}
           {canAccessPermission('Tài chính', 'view') && <NavButton view="finance" current={view} label="Tài chính" onClick={goTo} />}
           {canAccessPermission('Ghi chú', 'view') && <NavButton view="knowledge" current={view} label="Ghi chú & Tài liệu nội bộ" onClick={goTo} />}
+          {canAccessPermission(toolPermissionName, 'view') && (
+            <>
+              <NavButton view="tools" current={view} label="Công cụ" onClick={goTo} />
+              <div className="nav-children" aria-label="Module con của Công cụ">
+                <NavButton view="tool-article-writer" current={view} label="Viết bài" onClick={goTo} child />
+                <NavButton view="tool-article-settings" current={view} label="Cấu hình & Log" onClick={goTo} child />
+              </div>
+            </>
+          )}
           {canAccessPermission('Nhân sự', 'view') && <NavButton view="people" current={view} label="Nhân sự" onClick={goTo} />}
           {canAccessPermission('Tiến độ', 'view') && <NavButton view="progress" current={view} label="Tiến độ" onClick={goTo} />}
           {canAccessPermission('Hệ thống', 'view') && (
@@ -5041,6 +5742,7 @@ function App() {
             indexedLinks={indexedEntityLinks.length}
             napOkLinks={napOkLinks.length}
             importStatus={entityImportStatus}
+            editingPlatform={editingEntityPlatform}
             rememberedCredential={entityLinkCredential}
             selectedLinkIds={selectedEntityLinkIds}
             onTab={setEntityTab}
@@ -5049,6 +5751,8 @@ function App() {
             onSaveEntity={saveEntityProfile}
             onDeleteEntity={deleteEntityProfile}
             onAddPlatform={addEntityPlatform}
+            onEditPlatform={startEditEntityPlatform}
+            onCancelEditPlatform={() => setEditingEntityPlatformId(null)}
             onImportPlatformSheet={importEntityPlatformsFromSheet}
             onImportPlatformFile={importEntityPlatformsFromFile}
             onAddLink={addEntityLink}
@@ -5061,6 +5765,7 @@ function App() {
             onToggleChecklist={toggleEntityChecklist}
             onGenerateSchema={generateEntitySchema}
             onExportReport={exportEntityCsv}
+            onOpenGuide={openKnowledgeGuide}
           />
         )}
 
@@ -5186,6 +5891,66 @@ function App() {
             onUploadHtmlGuide={uploadHtmlGuideNote}
             onAddFile={addInternalNoteFile}
             onAddComment={addInternalNoteComment}
+          />
+        )}
+
+        {view === 'social' && canView(view) && (
+          <SocialPlannerModule
+            key={activeProject?.id ?? 'social-all'}
+            data={data}
+            activeProjectId={activeProject?.id ?? ''}
+            currentUser={currentUser}
+            tab={socialTab}
+            canEdit={canEdit('social')}
+            onTab={setSocialTab}
+            onSaveData={saveData}
+          />
+        )}
+
+        {view === 'tools' && canView(view) && (
+          <section className="view-stack">
+            <Panel title="Công cụ hỗ trợ" action="Module cha">
+              <EmptyState title="Chọn công cụ cần sử dụng" text="Mở module con Viết bài ở menu bên trái để cấu hình API, kiểm tra kết nối và tạo bài viết SEO." />
+            </Panel>
+          </section>
+        )}
+
+        {view === 'tool-article-writer' && canView(view) && (
+          <ToolsModule
+            canEdit={canEdit('tool-article-writer')}
+            loading={articleToolLoading}
+            status={articleToolStatus}
+            result={articleToolResult}
+            config={articleToolConfig}
+            regeneratingImageIndex={articleToolRegeneratingIndex}
+            history={articleToolHistory}
+            historyStatus={articleToolHistoryStatus}
+            historyLoading={articleToolHistoryLoading}
+            editorHtml={articleToolEditorHtml}
+            savingHtml={articleToolSavingHtml}
+            singleImage={articleToolSingleImage}
+            singleImageStatus={articleToolSingleImageStatus}
+            singleImageLoading={articleToolSingleImageLoading}
+            onCompose={composeSeoArticle}
+            onRegenerateImage={regenerateArticleImage}
+            onOpenHistoryItem={openArticleHistoryItem}
+            onSaveHtml={saveArticleToolHtml}
+            onEditorHtmlChange={setArticleToolEditorHtml}
+            onGenerateSingleImage={generateStandaloneArticleImage}
+            onReloadHistory={loadArticleToolHistory}
+          />
+        )}
+
+        {view === 'tool-article-settings' && canView(view) && (
+          <ToolArticleSettingsModule
+            canEdit={canEdit('tool-article-settings')}
+            config={articleToolConfig}
+            configStatus={articleToolConfigStatus}
+            configLoading={articleToolConfigLoading}
+            testingProvider={articleToolTestingProvider}
+            onSaveConfig={saveArticleToolConfig}
+            onReloadConfig={loadArticleToolConfig}
+            onTestConnection={testArticleToolConnection}
           />
         )}
 
@@ -5477,6 +6242,10 @@ function viewTitle(view: View) {
     articles: 'Bài viết',
     tasks: 'Task công việc',
     knowledge: 'Ghi chú & Tài liệu nội bộ',
+    social: 'Social Planner',
+    tools: 'Công cụ',
+    'tool-article-writer': 'Viết bài',
+    'tool-article-settings': 'Cấu hình & Log',
     finance: 'Tài chính',
     people: 'Nhân sự',
     progress: 'Tiến độ',
@@ -5664,6 +6433,10 @@ function MiniIcon({ name }: { name: string }) {
       {name === 'articles' && <path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z" />}
       {name === 'tasks' && <path d="M5 6h3v3H5V6Zm5 1h9v2h-9V7Zm-5 5h3v3H5v-3Zm5 1h9v2h-9v-2Zm-5 5h3v3H5v-3Zm5 1h9v2h-9v-2Z" />}
       {name === 'knowledge' && <path d="M5 4h11l3 3v13H5V4Zm10 1.8V8h2.2L15 5.8ZM8 9h8V7H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z" />}
+      {name === 'social' && <path d="M7 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm10-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20c.5-4.3 2.2-6.5 5-6.5s4.5 2.2 5 6.5H2Zm10.5 0c.4-3.5 1.9-5.3 4.5-5.3s4.1 1.8 4.5 5.3h-9Z" />}
+      {name === 'tools' && <path d="M9.2 4.2 11 6 7.8 9.2 6 7.4 9.2 4.2Zm4.5 1.1 5 5-8.9 8.9a3.5 3.5 0 0 1-4.9-4.9l8.8-9Zm1.2 3.4-8.6 8.6a1.5 1.5 0 1 0 2.1 2.1l8.6-8.6-2.1-2.1ZM16 15l2 2 2-2 1.4 1.4-2 2 2 2L20 21.8l-2-2-2 2-1.4-1.4 2-2-2-2L16 15Z" />}
+      {name === 'tool-article-writer' && <path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z" />}
+      {name === 'tool-article-settings' && <path d="M12 3a2 2 0 0 1 2 2v.3c.6.2 1.1.4 1.6.7l.2-.2a2 2 0 0 1 2.8 2.8l-.2.2c.3.5.5 1 .7 1.6h.3a2 2 0 1 1 0 4h-.3c-.2.6-.4 1.1-.7 1.6l.2.2a2 2 0 0 1-2.8 2.8l-.2-.2c-.5.3-1 .5-1.6.7v.3a2 2 0 1 1-4 0v-.3c-.6-.2-1.1-.4-1.6-.7l-.2.2a2 2 0 0 1-2.8-2.8l.2-.2c-.3-.5-.5-1-.7-1.6H5a2 2 0 1 1 0-4h.3c.2-.6.4-1.1.7-1.6l-.2-.2a2 2 0 0 1 2.8-2.8l.2.2c.5-.3 1-.5 1.6-.7V5a2 2 0 0 1 2-2Zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" />}
       {name === 'finance' && <path d="M5 19h14v-2H5v2Zm1-4h3V8H6v7Zm5 0h3V5h-3v10Zm5 0h3v-5h-3v5Z" />}
       {name === 'people' && <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8 1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5H3Zm10.5 0c.4-2 1.4-3.4 3.4-3.4 1.9 0 3.1 1.2 3.5 3.4h-6.9Z" />}
       {name === 'progress' && <path d="M5 12.5 9 16l10-10 1.5 1.5L9 19 3.5 14 5 12.5Z" />}
@@ -5790,6 +6563,627 @@ function AnalyticsTable({ points }: { points: AnalyticsPoint[] }) {
   )
 }
 
+function SocialPlannerModule({
+  data,
+  activeProjectId,
+  currentUser,
+  tab,
+  canEdit,
+  onTab,
+  onSaveData,
+}: {
+  data: AppData
+  activeProjectId: string
+  currentUser: User
+  tab: SocialTab
+  canEdit: boolean
+  onTab: (tab: SocialTab) => void
+  onSaveData: (nextData: AppData, action: string, target: string) => void
+}) {
+  const channels = data.socialChannels ?? []
+  const campaigns = data.socialCampaigns ?? []
+  const posts = data.socialPosts ?? []
+  const media = data.socialPostMedia ?? []
+  const approvals = data.socialPostApprovals ?? []
+  const comments = data.socialPostComments ?? []
+  const metrics = data.socialPostMetrics ?? []
+  const templates = data.socialContentTemplates ?? []
+  const [projectFilter, setProjectFilter] = useState(activeProjectId || 'all')
+  const [platformFilter, setPlatformFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [editingChannelId, setEditingChannelId] = useState('')
+  const [editingCampaignId, setEditingCampaignId] = useState('')
+  const [editingPostId, setEditingPostId] = useState('')
+  const [editingTemplateId, setEditingTemplateId] = useState('')
+  const [postSeedTemplateId, setPostSeedTemplateId] = useState('')
+  const [metricPostId, setMetricPostId] = useState('')
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const parts = appDateParts(appNow())
+    return `${parts.year}-${parts.month}`
+  })
+  const [calendarMode, setCalendarMode] = useState<'month' | 'list'>('month')
+  const editingChannel = channels.find((item) => item.id === editingChannelId)
+  const editingCampaign = campaigns.find((item) => item.id === editingCampaignId)
+  const editingPost = posts.find((item) => item.id === editingPostId)
+  const editingTemplate = templates.find((item) => item.id === editingTemplateId)
+  const seededTemplate = templates.find((item) => item.id === postSeedTemplateId)
+  const projectName = (id: string) => data.projects.find((item) => item.id === id)?.name ?? 'Chưa rõ dự án'
+  const userName = (id: string) => data.users.find((item) => item.id === id)?.name ?? 'Chưa gán'
+  const channelName = (id: string) => channels.find((item) => item.id === id)?.name ?? 'Chưa chọn kênh'
+  const campaignName = (id: string) => campaigns.find((item) => item.id === id)?.name ?? 'Không thuộc chiến dịch'
+  const formText = (form: FormData, name: string) => String(form.get(name) || '').trim()
+  const formNumber = (form: FormData, name: string) => Math.max(0, Number(form.get(name)) || 0)
+  const filteredPosts = posts.filter((post) => {
+    if (projectFilter !== 'all' && post.projectId !== projectFilter) return false
+    if (platformFilter !== 'all' && post.platform !== platformFilter) return false
+    if (statusFilter !== 'all' && post.contentStatus !== statusFilter && post.publishStatus !== statusFilter) return false
+    const query = search.trim().toLocaleLowerCase('vi-VN')
+    if (!query) return true
+    return [post.title, post.caption, post.hashtags, post.topic, channelName(post.channelId), campaignName(post.campaignId)]
+      .join(' ')
+      .toLocaleLowerCase('vi-VN')
+      .includes(query)
+  })
+  const filteredChannels = channels.filter((channel) =>
+    (projectFilter === 'all' || channel.projectId === projectFilter) &&
+    (platformFilter === 'all' || channel.platform === platformFilter) &&
+    (statusFilter === 'all' || channel.status === statusFilter),
+  )
+  const filteredCampaigns = campaigns.filter((campaign) =>
+    (projectFilter === 'all' || campaign.projectId === projectFilter) &&
+    (statusFilter === 'all' || campaign.status === statusFilter),
+  )
+  const waitingPosts = filteredPosts.filter((post) => post.contentStatus === 'waiting_approval')
+  const reportMetrics = metrics.filter((metric) => filteredPosts.some((post) => post.id === metric.postId))
+  const totals = reportMetrics.reduce(
+    (sum, item) => ({
+      impressions: sum.impressions + item.impressions,
+      reach: sum.reach + item.reach,
+      likes: sum.likes + item.likes,
+      comments: sum.comments + item.comments,
+      shares: sum.shares + item.shares,
+      linkClicks: sum.linkClicks + item.linkClicks,
+      revenue: sum.revenue + item.revenue,
+    }),
+    { impressions: 0, reach: 0, likes: 0, comments: 0, shares: 0, linkClicks: 0, revenue: 0 },
+  )
+  const now = appNow()
+  const today = appNowIso().slice(0, 10)
+  const weekEnd = new Date(now)
+  weekEnd.setDate(weekEnd.getDate() + 7)
+  const statusLabel: Record<string, string> = {
+    active: 'Đang hoạt động',
+    paused: 'Tạm dừng',
+    login_error: 'Lỗi đăng nhập',
+    lost_permission: 'Mất quyền',
+    archived: 'Lưu trữ',
+    draft: 'Nháp',
+    completed: 'Hoàn thành',
+    cancelled: 'Đã hủy',
+    writing: 'Đang viết',
+    ready_for_design: 'Chờ thiết kế',
+    waiting_approval: 'Chờ duyệt',
+    revision_required: 'Cần sửa',
+    approved: 'Đã duyệt',
+    missing: 'Thiếu media',
+    designing: 'Đang thiết kế',
+    uploaded: 'Đã tải lên',
+    used: 'Đã dùng',
+    not_scheduled: 'Chưa lên lịch',
+    scheduled: 'Đã lên lịch',
+    published: 'Đã đăng',
+    failed: 'Đăng lỗi',
+    overdue: 'Quá hạn',
+  }
+  const socialStatus = (value: string) => <span className={`social-status status-${value}`}>{statusLabel[value] ?? value}</span>
+  const saveChannel = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const nowIso = appNowIso()
+    const item: SocialChannel = {
+      id: editingChannel?.id ?? uid('social-channel'),
+      projectId: formText(form, 'projectId'),
+      name: formText(form, 'name'),
+      platform: formText(form, 'platform') as SocialPlatform,
+      channelType: formText(form, 'channelType') as SocialChannelType,
+      publicUrl: formText(form, 'publicUrl'),
+      ownerUserId: formText(form, 'ownerUserId'),
+      contentCategory: formText(form, 'contentCategory'),
+      status: formText(form, 'status') as SocialChannelStatus,
+      note: formText(form, 'note'),
+      createdAt: editingChannel?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    }
+    onSaveData({ ...data, socialChannels: editingChannel ? channels.map((row) => row.id === item.id ? item : row) : [item, ...channels] }, editingChannel ? 'Sửa kênh Social' : 'Thêm kênh Social', item.name)
+    setEditingChannelId('')
+    event.currentTarget.reset()
+  }
+  const saveCampaign = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const startDate = formText(form, 'startDate')
+    const endDate = formText(form, 'endDate')
+    if (startDate && endDate && startDate > endDate) return window.alert('Ngày kết thúc phải sau ngày bắt đầu.')
+    const nowIso = appNowIso()
+    const item: SocialCampaign = {
+      id: editingCampaign?.id ?? uid('social-campaign'),
+      projectId: formText(form, 'projectId'),
+      name: formText(form, 'name'),
+      goal: formText(form, 'goal'),
+      description: formText(form, 'description'),
+      platforms: String(form.get('platforms') || '').split(',').map((value) => value.trim()).filter((value): value is SocialPlatform => socialPlatforms.includes(value as SocialPlatform)),
+      startDate,
+      endDate,
+      budget: formNumber(form, 'budget'),
+      currency: formText(form, 'currency') || 'VND',
+      plannedPosts: formNumber(form, 'plannedPosts'),
+      ownerUserId: formText(form, 'ownerUserId'),
+      status: formText(form, 'status') as SocialCampaignStatus,
+      note: formText(form, 'note'),
+      createdAt: editingCampaign?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    }
+    onSaveData({ ...data, socialCampaigns: editingCampaign ? campaigns.map((row) => row.id === item.id ? item : row) : [item, ...campaigns] }, editingCampaign ? 'Sửa chiến dịch Social' : 'Thêm chiến dịch Social', item.name)
+    setEditingCampaignId('')
+    event.currentTarget.reset()
+  }
+  const savePost = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const nowIso = appNowIso()
+    const scheduledAt = formText(form, 'scheduledAt')
+    const item: SocialPost = {
+      id: editingPost?.id ?? uid('social-post'),
+      projectId: formText(form, 'projectId'),
+      campaignId: formText(form, 'campaignId'),
+      channelId: formText(form, 'channelId'),
+      title: formText(form, 'title'),
+      platform: formText(form, 'platform') as SocialPlatform,
+      postType: formText(form, 'postType') as SocialPostType,
+      topic: formText(form, 'topic'),
+      caption: formText(form, 'caption'),
+      hashtags: formText(form, 'hashtags'),
+      cta: formText(form, 'cta'),
+      attachedLink: formText(form, 'attachedLink'),
+      scheduledAt,
+      publishedAt: editingPost?.publishedAt ?? '',
+      publishedUrl: editingPost?.publishedUrl ?? '',
+      writerId: formText(form, 'writerId'),
+      designerId: formText(form, 'designerId'),
+      approverId: formText(form, 'approverId'),
+      contentStatus: formText(form, 'contentStatus') as SocialContentStatus,
+      mediaStatus: formText(form, 'mediaStatus') as SocialMediaStatus,
+      publishStatus: editingPost?.publishStatus === 'published' ? 'published' : scheduledAt ? 'scheduled' : 'not_scheduled',
+      priority: formText(form, 'priority') as SocialPriority,
+      note: formText(form, 'note'),
+      createdAt: editingPost?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    }
+    onSaveData({ ...data, socialPosts: editingPost ? posts.map((row) => row.id === item.id ? item : row) : [item, ...posts] }, editingPost ? 'Sửa bài Social' : 'Tạo bài Social', item.title)
+    setEditingPostId('')
+    setPostSeedTemplateId('')
+    event.currentTarget.reset()
+  }
+  const saveTemplate = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const nowIso = appNowIso()
+    const item: SocialContentTemplate = {
+      id: editingTemplate?.id ?? uid('social-template'),
+      projectId: formText(form, 'projectId'),
+      name: formText(form, 'name'),
+      templateType: formText(form, 'templateType') as SocialTemplateType,
+      platform: formText(form, 'platform') as SocialPlatform | '',
+      captionTemplate: formText(form, 'captionTemplate'),
+      hashtagTemplate: formText(form, 'hashtagTemplate'),
+      ctaTemplate: formText(form, 'ctaTemplate'),
+      note: formText(form, 'note'),
+      createdBy: editingTemplate?.createdBy ?? currentUser.id,
+      status: formText(form, 'status') as 'active' | 'archived',
+      createdAt: editingTemplate?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    }
+    onSaveData({ ...data, socialContentTemplates: editingTemplate ? templates.map((row) => row.id === item.id ? item : row) : [item, ...templates] }, editingTemplate ? 'Sửa mẫu Social' : 'Thêm mẫu Social', item.name)
+    setEditingTemplateId('')
+    event.currentTarget.reset()
+  }
+  const deleteRecord = (key: keyof AppData, id: string, label: string) => {
+    if (!window.confirm(`Xóa ${label}?`)) return
+    const records = (data[key] as { id: string }[] | undefined) ?? []
+    onSaveData({ ...data, [key]: records.filter((item) => item.id !== id) }, `Xóa ${label}`, id)
+  }
+  const updatePost = (postId: string, changes: Partial<SocialPost>, action: string) => {
+    const target = posts.find((post) => post.id === postId)
+    if (!target) return
+    const updated = { ...target, ...changes, updatedAt: appNowIso() }
+    onSaveData({ ...data, socialPosts: posts.map((post) => post.id === postId ? updated : post) }, action, target.title)
+  }
+  const submitApproval = (post: SocialPost) => {
+    if (!post.caption && !media.some((item) => item.postId === post.id)) return window.alert('Bài cần có caption hoặc media trước khi gửi duyệt.')
+    const nowIso = appNowIso()
+    const approval: SocialPostApproval = {
+      id: uid('social-approval'),
+      postId: post.id,
+      approverId: post.approverId,
+      status: 'pending',
+      feedback: '',
+      approvedAt: '',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }
+    onSaveData({
+      ...data,
+      socialPosts: posts.map((item) => item.id === post.id ? { ...item, contentStatus: 'waiting_approval', updatedAt: nowIso } : item),
+      socialPostApprovals: [approval, ...approvals],
+    }, 'Gửi duyệt bài Social', post.title)
+  }
+  const reviewPost = (post: SocialPost, approved: boolean) => {
+    const feedback = approved ? '' : window.prompt('Nhập nội dung cần chỉnh sửa:')?.trim()
+    if (!approved && !feedback) return
+    const nowIso = appNowIso()
+    const nextStatus: SocialApprovalStatus = approved ? 'approved' : 'revision_required'
+    const nextApproval: SocialPostApproval = {
+      id: uid('social-approval'),
+      postId: post.id,
+      approverId: currentUser.id,
+      status: nextStatus,
+      feedback: feedback ?? '',
+      approvedAt: approved ? nowIso : '',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }
+    onSaveData({
+      ...data,
+      socialPosts: posts.map((item) => item.id === post.id ? {
+        ...item,
+        approverId: currentUser.id,
+        contentStatus: approved ? 'approved' : 'revision_required',
+        publishStatus: approved && item.scheduledAt ? 'scheduled' : item.publishStatus,
+        updatedAt: nowIso,
+      } : item),
+      socialPostApprovals: [nextApproval, ...approvals],
+    }, approved ? 'Duyệt bài Social' : 'Yêu cầu sửa bài Social', post.title)
+  }
+  const markPublished = (post: SocialPost) => {
+    const url = window.prompt('Nhập URL bài đã đăng:', post.publishedUrl)?.trim()
+    if (url === undefined) return
+    updatePost(post.id, { publishedUrl: url, publishedAt: appNowIso(), publishStatus: 'published' }, 'Đánh dấu bài Social đã đăng')
+  }
+  const clonePost = (post: SocialPost) => {
+    const clone: SocialPost = {
+      ...post,
+      id: uid('social-post'),
+      title: `${post.title} (bản sao)`,
+      contentStatus: 'draft',
+      publishStatus: 'not_scheduled',
+      publishedAt: '',
+      publishedUrl: '',
+      scheduledAt: '',
+      createdAt: appNowIso(),
+      updatedAt: appNowIso(),
+    }
+    onSaveData({ ...data, socialPosts: [clone, ...posts] }, 'Clone bài Social', post.title)
+  }
+  const saveMedia = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    const file = form.get('file') as File | null
+    let fileUrl = formText(form, 'fileUrl')
+    let fileName = formText(form, 'fileName')
+    if (file?.size) {
+      fileUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result || ''))
+        reader.onerror = () => reject(new Error('Không đọc được file media.'))
+        reader.readAsDataURL(file)
+      })
+      fileName = file.name
+    }
+    if (!fileUrl) return window.alert('Vui lòng chọn file hoặc nhập URL media.')
+    const nowIso = appNowIso()
+    const item: SocialPostMedia = {
+      id: uid('social-media'),
+      postId: formText(form, 'postId'),
+      fileName: fileName || 'Media Social',
+      fileUrl,
+      fileType: formText(form, 'fileType') as SocialPostMedia['fileType'],
+      uploadedBy: currentUser.id,
+      status: formText(form, 'status') as SocialMediaStatus,
+      note: formText(form, 'note'),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }
+    const nextPosts = posts.map((post) => post.id === item.postId ? { ...post, mediaStatus: item.status === 'approved' ? 'approved' as const : 'uploaded' as const, updatedAt: nowIso } : post)
+    onSaveData({ ...data, socialPostMedia: [item, ...media], socialPosts: nextPosts }, 'Thêm media Social', item.fileName)
+    formElement.reset()
+  }
+  const saveComment = (event: FormEvent<HTMLFormElement>, postId: string) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const content = formText(form, 'content')
+    if (!content) return
+    const comment: SocialPostComment = { id: uid('social-comment'), postId, content, createdBy: currentUser.id, createdAt: appNowIso() }
+    onSaveData({ ...data, socialPostComments: [comment, ...comments] }, 'Bình luận bài Social', posts.find((post) => post.id === postId)?.title ?? postId)
+    event.currentTarget.reset()
+  }
+  const saveMetric = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const postId = formText(form, 'postId')
+    const nowIso = appNowIso()
+    const existing = metrics.find((item) => item.postId === postId)
+    const item: SocialPostMetric = {
+      id: existing?.id ?? uid('social-metric'),
+      postId,
+      impressions: formNumber(form, 'impressions'),
+      reach: formNumber(form, 'reach'),
+      likes: formNumber(form, 'likes'),
+      comments: formNumber(form, 'comments'),
+      shares: formNumber(form, 'shares'),
+      saves: formNumber(form, 'saves'),
+      linkClicks: formNumber(form, 'linkClicks'),
+      inboxCount: formNumber(form, 'inboxCount'),
+      ordersCount: formNumber(form, 'ordersCount'),
+      adSpend: formNumber(form, 'adSpend'),
+      revenue: formNumber(form, 'revenue'),
+      metricDate: formText(form, 'metricDate') || today,
+      collectedBy: currentUser.id,
+      createdAt: existing?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    }
+    onSaveData({ ...data, socialPostMetrics: existing ? metrics.map((row) => row.id === item.id ? item : row) : [item, ...metrics] }, 'Cập nhật metrics Social', posts.find((post) => post.id === postId)?.title ?? postId)
+    setMetricPostId('')
+    event.currentTarget.reset()
+  }
+  const exportSocialCsv = (publishedOnly = false) => {
+    const exportPosts = filteredPosts.filter((post) => !publishedOnly || post.publishStatus === 'published')
+    const rows = [
+      ['Dự án', 'Chiến dịch', 'Nền tảng', 'Kênh', 'Tiêu đề', 'Caption', 'Hashtag', 'Link đính kèm', 'Lịch đăng', 'Trạng thái nội dung', 'Trạng thái đăng', 'URL đã đăng', 'Người viết', 'Reach', 'Impressions', 'Likes', 'Comments', 'Shares', 'Clicks', 'Doanh thu'],
+      ...exportPosts.map((post) => {
+        const metric = metrics.find((item) => item.postId === post.id)
+        return [projectName(post.projectId), campaignName(post.campaignId), post.platform, channelName(post.channelId), post.title, post.caption, post.hashtags, post.attachedLink, post.scheduledAt, statusLabel[post.contentStatus], statusLabel[post.publishStatus], post.publishedUrl, userName(post.writerId), metric?.reach ?? 0, metric?.impressions ?? 0, metric?.likes ?? 0, metric?.comments ?? 0, metric?.shares ?? 0, metric?.linkClicks ?? 0, metric?.revenue ?? 0]
+      }),
+    ]
+    const blob = new Blob([`\ufeff${rows.map((row) => row.map((cell) => escapeCsv(cell)).join(',')).join('\n')}`], { type: 'text/csv;charset=utf-8' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = publishedOnly ? 'social-posts-published.csv' : 'social-calendar.csv'
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+  const metricForPost = metrics.find((item) => item.postId === metricPostId)
+  const localDateKey = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const localMonthKey = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  const monthStart = new Date(`${calendarMonth}-01T00:00:00`)
+  const calendarDays = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(monthStart)
+    date.setDate(index - monthStart.getDay() + 1)
+    return date
+  })
+  const moveMonth = (delta: number) => {
+    const date = new Date(`${calendarMonth}-01T00:00:00`)
+    date.setMonth(date.getMonth() + delta)
+    setCalendarMonth(localMonthKey(date))
+  }
+
+  return (
+    <section className="view-stack social-planner">
+      <div className="entity-toolbar">
+        <div className="entity-tabs social-tabs" role="tablist" aria-label="Social Planner">
+          {socialTabs.map((item) => <button className={tab === item.id ? 'active' : ''} key={item.id} type="button" onClick={() => onTab(item.id)}>{item.label}</button>)}
+        </div>
+        <span className="social-permission-note">{canEdit ? 'Có quyền chỉnh sửa' : 'Chỉ xem'}</span>
+      </div>
+
+      <Panel title="Tìm kiếm & bộ lọc" action={`${filteredPosts.length} bài phù hợp`}>
+        <div className="social-filter-grid">
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm tiêu đề, caption, hashtag..." />
+          <select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+            <option value="all">Tất cả dự án</option>
+            {data.projects.filter((project) => !project.deletedAt).map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}
+          </select>
+          <select value={platformFilter} onChange={(event) => setPlatformFilter(event.target.value)}>
+            <option value="all">Tất cả nền tảng</option>
+            {socialPlatforms.map((platform) => <option value={platform} key={platform}>{platform}</option>)}
+          </select>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">Tất cả trạng thái</option>
+            {[...socialContentStatuses, ...socialPublishStatuses, ...socialChannelStatuses, ...socialCampaignStatuses].filter((value, index, values) => values.indexOf(value) === index).map((status) => <option value={status} key={status}>{statusLabel[status] ?? status}</option>)}
+          </select>
+        </div>
+      </Panel>
+
+      {tab === 'overview' && (
+        <>
+          <div className="metric-grid">
+            <Metric title="Kênh đang quản lý" value={filteredChannels.filter((item) => item.status === 'active').length} note={`${filteredChannels.length} kênh phù hợp`} />
+            <Metric title="Bài hôm nay" value={filteredPosts.filter((post) => post.scheduledAt.slice(0, 10) === today).length} note="Cần theo dõi lịch đăng" />
+            <Metric title="Bài 7 ngày tới" value={filteredPosts.filter((post) => post.scheduledAt && new Date(post.scheduledAt) >= now && new Date(post.scheduledAt) <= weekEnd).length} note="Theo bộ lọc hiện tại" />
+            <Metric title="Chờ duyệt" value={waitingPosts.length} note="Leader/Admin cần xử lý" />
+            <Metric title="Cần sửa" value={filteredPosts.filter((post) => post.contentStatus === 'revision_required').length} note="Đang chờ cập nhật" />
+            <Metric title="Đã đăng" value={filteredPosts.filter((post) => post.publishStatus === 'published').length} note="Đã có trạng thái published" />
+            <Metric title="Lỗi / quá hạn" value={filteredPosts.filter((post) => ['failed', 'overdue'].includes(post.publishStatus)).length} note="Cần xử lý sớm" />
+            <Metric title="Chiến dịch đang chạy" value={filteredCampaigns.filter((item) => item.status === 'active').length} note={`${filteredCampaigns.length} chiến dịch`} />
+          </div>
+          <Panel title="Bài cần xử lý gần nhất" action="Ưu tiên chờ duyệt, cần sửa, quá hạn">
+            <SocialPostTable posts={filteredPosts.filter((post) => ['waiting_approval', 'revision_required'].includes(post.contentStatus) || ['failed', 'overdue'].includes(post.publishStatus)).slice(0, 12)} channels={channels} campaigns={campaigns} users={data.users} canEdit={canEdit} statusLabel={statusLabel} onEdit={(id) => { setEditingPostId(id); onTab('posts') }} onClone={clonePost} onSubmit={submitApproval} onApprove={(post) => reviewPost(post, true)} onRevision={(post) => reviewPost(post, false)} onPublished={markPublished} onFailed={(post) => updatePost(post.id, { publishStatus: 'failed' }, 'Đánh dấu bài Social lỗi')} onMetric={(id) => { setMetricPostId(id); onTab('reports') }} onDelete={(id) => deleteRecord('socialPosts', id, 'bài Social')} />
+          </Panel>
+        </>
+      )}
+
+      {tab === 'channels' && (
+        <>
+          {canEdit && <Panel title={editingChannel ? 'Sửa kênh mạng xã hội' : 'Thêm kênh mạng xã hội'} action={editingChannel ? editingChannel.name : 'Gắn theo dự án'}>
+            <form className="social-form-grid" key={editingChannel?.id ?? 'new-channel'} onSubmit={saveChannel}>
+              <select name="projectId" defaultValue={editingChannel?.projectId ?? activeProjectId} required>{data.projects.filter((project) => !project.deletedAt).map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select>
+              <input name="name" defaultValue={editingChannel?.name} placeholder="Tên kênh" required />
+              <select name="platform" defaultValue={editingChannel?.platform ?? 'facebook'}>{socialPlatforms.map((value) => <option value={value} key={value}>{value}</option>)}</select>
+              <select name="channelType" defaultValue={editingChannel?.channelType ?? 'fanpage'}>{socialChannelTypes.map((value) => <option value={value} key={value}>{value}</option>)}</select>
+              <input name="publicUrl" defaultValue={editingChannel?.publicUrl} placeholder="URL public" type="url" />
+              <select name="ownerUserId" defaultValue={editingChannel?.ownerUserId}><option value="">Chưa gán người phụ trách</option>{data.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+              <input name="contentCategory" defaultValue={editingChannel?.contentCategory} placeholder="Chủ đề nội dung" />
+              <select name="status" defaultValue={editingChannel?.status ?? 'active'}>{socialChannelStatuses.map((value) => <option value={value} key={value}>{statusLabel[value]}</option>)}</select>
+              <textarea name="note" defaultValue={editingChannel?.note} placeholder="Ghi chú" />
+              <div className="social-form-actions"><button type="submit">{editingChannel ? 'Lưu thay đổi' : 'Thêm kênh'}</button>{editingChannel && <button className="secondary-button" type="button" onClick={() => setEditingChannelId('')}>Hủy sửa</button>}</div>
+            </form>
+          </Panel>}
+          <Panel title="Danh sách kênh" action={`${filteredChannels.length} kênh`}>
+            <div className="social-card-list">{filteredChannels.map((channel) => <article className="social-card" key={channel.id}><div><strong>{channel.name}</strong><span>{platformLabel(channel.platform)} · {channel.channelType} · {projectName(channel.projectId)}</span><small>{userName(channel.ownerUserId)} · {channel.contentCategory || 'Chưa có chủ đề'}</small></div><div className="social-card-actions">{socialStatus(channel.status)}{channel.publicUrl && <a href={channel.publicUrl} target="_blank" rel="noreferrer">Mở kênh</a>}{canEdit && <><button type="button" onClick={() => setEditingChannelId(channel.id)}>Sửa</button><button className="danger-button" type="button" onClick={() => deleteRecord('socialChannels', channel.id, 'kênh Social')}>Xóa</button></>}</div></article>)}</div>
+            {filteredChannels.length === 0 && <EmptyState title="Chưa có kênh phù hợp" text="Thêm fanpage, profile, group hoặc channel để lập lịch bài viết." />}
+          </Panel>
+        </>
+      )}
+
+      {tab === 'campaigns' && (
+        <>
+          {canEdit && <Panel title={editingCampaign ? 'Sửa chiến dịch Social' : 'Tạo chiến dịch Social'} action="Quản lý kế hoạch theo mục tiêu">
+            <form className="social-form-grid" key={editingCampaign?.id ?? 'new-campaign'} onSubmit={saveCampaign}>
+              <select name="projectId" defaultValue={editingCampaign?.projectId ?? activeProjectId} required>{data.projects.filter((project) => !project.deletedAt).map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select>
+              <input name="name" defaultValue={editingCampaign?.name} placeholder="Tên chiến dịch" required />
+              <input name="goal" defaultValue={editingCampaign?.goal} placeholder="Mục tiêu: nhận diện, traffic, bán hàng..." />
+              <input name="platforms" defaultValue={editingCampaign?.platforms.join(', ')} placeholder="Nền tảng, cách nhau bằng dấu phẩy" />
+              <input name="startDate" defaultValue={editingCampaign?.startDate} type="date" />
+              <input name="endDate" defaultValue={editingCampaign?.endDate} type="date" />
+              <input name="budget" defaultValue={editingCampaign?.budget} type="number" min="0" placeholder="Ngân sách" />
+              <input name="currency" defaultValue={editingCampaign?.currency ?? 'VND'} placeholder="Đơn vị tiền" />
+              <input name="plannedPosts" defaultValue={editingCampaign?.plannedPosts} type="number" min="0" placeholder="Số bài dự kiến" />
+              <select name="ownerUserId" defaultValue={editingCampaign?.ownerUserId}><option value="">Chưa gán người phụ trách</option>{data.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+              <select name="status" defaultValue={editingCampaign?.status ?? 'draft'}>{socialCampaignStatuses.map((value) => <option value={value} key={value}>{statusLabel[value]}</option>)}</select>
+              <textarea name="description" defaultValue={editingCampaign?.description} placeholder="Mô tả chiến dịch" />
+              <textarea name="note" defaultValue={editingCampaign?.note} placeholder="Ghi chú nội bộ" />
+              <div className="social-form-actions"><button type="submit">{editingCampaign ? 'Lưu thay đổi' : 'Tạo chiến dịch'}</button>{editingCampaign && <button className="secondary-button" type="button" onClick={() => setEditingCampaignId('')}>Hủy sửa</button>}</div>
+            </form>
+          </Panel>}
+          <Panel title="Danh sách chiến dịch" action={`${filteredCampaigns.length} chiến dịch`}>
+            <div className="table-wrap"><table><thead><tr><th>Chiến dịch</th><th>Dự án</th><th>Thời gian</th><th>Bài dự kiến / đã tạo</th><th>Phụ trách</th><th>Trạng thái</th><th></th></tr></thead><tbody>{filteredCampaigns.map((campaign) => <tr key={campaign.id}><td><strong>{campaign.name}</strong><small>{campaign.goal || 'Chưa đặt mục tiêu'}</small></td><td>{projectName(campaign.projectId)}</td><td>{campaign.startDate || '-'} → {campaign.endDate || '-'}</td><td>{campaign.plannedPosts} / {posts.filter((post) => post.campaignId === campaign.id).length}</td><td>{userName(campaign.ownerUserId)}</td><td>{socialStatus(campaign.status)}</td><td>{canEdit && <div className="table-actions"><button type="button" onClick={() => setEditingCampaignId(campaign.id)}>Sửa</button><button className="danger-button" type="button" onClick={() => deleteRecord('socialCampaigns', campaign.id, 'chiến dịch Social')}>Xóa</button></div>}</td></tr>)}</tbody></table></div>
+          </Panel>
+        </>
+      )}
+
+      {tab === 'posts' && (
+        <>
+          {canEdit && <Panel title={editingPost ? 'Sửa bài viết Social' : 'Tạo bài viết Social'} action={seededTemplate ? `Đang áp dụng mẫu: ${seededTemplate.name}` : 'Kế hoạch nội dung'}>
+            <form className="social-form-grid social-post-form" key={`${editingPost?.id ?? 'new-post'}-${seededTemplate?.id ?? ''}`} onSubmit={savePost}>
+              <select name="projectId" defaultValue={editingPost?.projectId ?? seededTemplate?.projectId ?? activeProjectId} required>{data.projects.filter((project) => !project.deletedAt).map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select>
+              <select name="campaignId" defaultValue={editingPost?.campaignId}><option value="">Không thuộc chiến dịch</option>{campaigns.map((campaign) => <option value={campaign.id} key={campaign.id}>{campaign.name}</option>)}</select>
+              <select name="platform" defaultValue={editingPost?.platform ?? seededTemplate?.platform ?? 'facebook'}>{socialPlatforms.map((value) => <option value={value} key={value}>{value}</option>)}</select>
+              <select name="channelId" defaultValue={editingPost?.channelId}><option value="">Chưa chọn kênh</option>{channels.map((channel) => <option value={channel.id} key={channel.id}>{channel.name} · {channel.platform}</option>)}</select>
+              <input name="title" defaultValue={editingPost?.title} placeholder="Tiêu đề nội bộ" required />
+              <select name="postType" defaultValue={editingPost?.postType ?? 'image'}>{socialPostTypes.map((value) => <option value={value} key={value}>{value}</option>)}</select>
+              <input name="topic" defaultValue={editingPost?.topic} placeholder="Chủ đề bài viết" />
+              <input name="scheduledAt" defaultValue={editingPost?.scheduledAt} type="datetime-local" />
+              <textarea className="social-caption-input" name="caption" defaultValue={editingPost?.caption ?? seededTemplate?.captionTemplate} placeholder="Caption bài viết" />
+              <textarea name="hashtags" defaultValue={editingPost?.hashtags ?? seededTemplate?.hashtagTemplate} placeholder="#hashtag" />
+              <input name="cta" defaultValue={editingPost?.cta ?? seededTemplate?.ctaTemplate} placeholder="CTA" />
+              <input name="attachedLink" defaultValue={editingPost?.attachedLink} placeholder="Link đính kèm" type="url" />
+              <select name="writerId" defaultValue={editingPost?.writerId ?? currentUser.id}><option value="">Chưa gán người viết</option>{data.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+              <select name="designerId" defaultValue={editingPost?.designerId}><option value="">Chưa gán thiết kế</option>{data.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+              <select name="approverId" defaultValue={editingPost?.approverId}><option value="">Chưa gán người duyệt</option>{data.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+              <select name="contentStatus" defaultValue={editingPost?.contentStatus ?? 'draft'}>{socialContentStatuses.map((value) => <option value={value} key={value}>{statusLabel[value]}</option>)}</select>
+              <select name="mediaStatus" defaultValue={editingPost?.mediaStatus ?? 'missing'}>{socialMediaStatuses.map((value) => <option value={value} key={value}>{statusLabel[value]}</option>)}</select>
+              <select name="priority" defaultValue={editingPost?.priority ?? 'normal'}>{socialPriorities.map((value) => <option value={value} key={value}>{value}</option>)}</select>
+              <textarea name="note" defaultValue={editingPost?.note} placeholder="Ghi chú nội bộ" />
+              <div className="social-form-actions"><button type="submit">{editingPost ? 'Lưu thay đổi' : 'Tạo bài viết'}</button>{(editingPost || seededTemplate) && <button className="secondary-button" type="button" onClick={() => { setEditingPostId(''); setPostSeedTemplateId('') }}>Hủy</button>}</div>
+            </form>
+          </Panel>}
+          <Panel title="Bài viết Social" action={`${filteredPosts.length} bài`}>
+            <SocialPostTable posts={filteredPosts} channels={channels} campaigns={campaigns} users={data.users} canEdit={canEdit} statusLabel={statusLabel} onEdit={setEditingPostId} onClone={clonePost} onSubmit={submitApproval} onApprove={(post) => reviewPost(post, true)} onRevision={(post) => reviewPost(post, false)} onPublished={markPublished} onFailed={(post) => updatePost(post.id, { publishStatus: 'failed' }, 'Đánh dấu bài Social lỗi')} onMetric={(id) => { setMetricPostId(id); onTab('reports') }} onDelete={(id) => deleteRecord('socialPosts', id, 'bài Social')} />
+          </Panel>
+        </>
+      )}
+
+      {tab === 'calendar' && (
+        <Panel title="Lịch đăng bài" action={`${filteredPosts.filter((post) => post.scheduledAt).length} bài có lịch`}>
+          <div className="social-calendar-toolbar"><div><button type="button" onClick={() => moveMonth(-1)}>‹</button><strong>{calendarMonth}</strong><button type="button" onClick={() => moveMonth(1)}>›</button></div><div><button className={calendarMode === 'month' ? 'active' : ''} type="button" onClick={() => setCalendarMode('month')}>Tháng</button><button className={calendarMode === 'list' ? 'active' : ''} type="button" onClick={() => setCalendarMode('list')}>Danh sách</button></div></div>
+          {calendarMode === 'month' ? <div className="social-calendar-grid">{['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map((day) => <strong className="social-calendar-weekday" key={day}>{day}</strong>)}{calendarDays.map((date) => { const key = localDateKey(date); const dayPosts = filteredPosts.filter((post) => post.scheduledAt.slice(0, 10) === key); return <article className={localMonthKey(date) === calendarMonth ? 'social-calendar-day' : 'social-calendar-day muted'} key={key}><span>{date.getDate()}</span>{dayPosts.slice(0, 4).map((post) => <button className={`calendar-post status-${post.publishStatus}`} type="button" key={post.id} onClick={() => { setEditingPostId(post.id); onTab('posts') }}><b>{post.scheduledAt.slice(11, 16)}</b>{post.title}</button>)}{dayPosts.length > 4 && <small>+{dayPosts.length - 4} bài</small>}</article> })}</div> : <SocialPostTable posts={filteredPosts.filter((post) => post.scheduledAt).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))} channels={channels} campaigns={campaigns} users={data.users} canEdit={canEdit} statusLabel={statusLabel} onEdit={(id) => { setEditingPostId(id); onTab('posts') }} onClone={clonePost} onSubmit={submitApproval} onApprove={(post) => reviewPost(post, true)} onRevision={(post) => reviewPost(post, false)} onPublished={markPublished} onFailed={(post) => updatePost(post.id, { publishStatus: 'failed' }, 'Đánh dấu bài Social lỗi')} onMetric={(id) => { setMetricPostId(id); onTab('reports') }} onDelete={(id) => deleteRecord('socialPosts', id, 'bài Social')} />}
+        </Panel>
+      )}
+
+      {tab === 'approvals' && <Panel title="Duyệt nội dung" action={`${waitingPosts.length} bài chờ duyệt`}>
+        <div className="social-approval-list">{waitingPosts.map((post) => <article className="social-approval-card" key={post.id}><header><div><strong>{post.title}</strong><span>{post.platform} · {channelName(post.channelId)} · {formatDateTime(post.scheduledAt)}</span></div>{socialStatus(post.contentStatus)}</header><p>{post.caption || 'Bài chưa có caption.'}</p><small>{post.hashtags} {post.cta}</small>{media.filter((item) => item.postId === post.id).length > 0 && <div className="social-media-preview">{media.filter((item) => item.postId === post.id).map((item) => item.fileType === 'image' ? <img src={item.fileUrl} alt={item.fileName} key={item.id} /> : <a href={item.fileUrl} target="_blank" rel="noreferrer" key={item.id}>{item.fileName}</a>)}</div>}<div className="social-approval-actions">{canEdit && <><button type="button" onClick={() => reviewPost(post, true)}>Duyệt bài</button><button className="secondary-button" type="button" onClick={() => reviewPost(post, false)}>Yêu cầu sửa</button></>}</div><form className="social-comment-form" onSubmit={(event) => saveComment(event, post.id)}><input name="content" placeholder="Bình luận nội bộ..." required /><button type="submit">Gửi</button></form><div className="social-comment-list">{comments.filter((item) => item.postId === post.id).map((item) => <p key={item.id}><strong>{userName(item.createdBy)}</strong> {item.content}<small>{formatDateTime(item.createdAt)}</small></p>)}</div></article>)}</div>
+        {waitingPosts.length === 0 && <EmptyState title="Không có bài chờ duyệt" text="Bài được gửi duyệt sẽ xuất hiện tại đây." />}
+      </Panel>}
+
+      {tab === 'media' && (
+        <>
+          {canEdit && <Panel title="Thêm media" action="Upload nhanh hoặc dùng URL">
+            <form className="social-form-grid" onSubmit={saveMedia}><select name="postId" required><option value="">Chọn bài viết</option>{posts.map((post) => <option value={post.id} key={post.id}>{post.title}</option>)}</select><input name="fileName" placeholder="Tên media" /><input name="fileUrl" type="url" placeholder="URL file ngoài" /><input name="file" type="file" accept="image/*,video/*,.pdf,.doc,.docx" /><select name="fileType" defaultValue="image"><option value="image">Ảnh</option><option value="video">Video</option><option value="document">Tài liệu</option><option value="design">File thiết kế</option></select><select name="status" defaultValue="uploaded">{socialMediaStatuses.filter((value) => value !== 'missing').map((value) => <option value={value} key={value}>{statusLabel[value]}</option>)}</select><input name="note" placeholder="Ghi chú media" /><button type="submit">Thêm media</button></form>
+          </Panel>}
+          <Panel title="Kho media" action={`${media.length} file`}>
+            <div className="social-media-grid">{media.filter((item) => filteredPosts.some((post) => post.id === item.postId)).map((item) => <article className="social-media-card" key={item.id}>{item.fileType === 'image' ? <img src={item.fileUrl} alt={item.fileName} /> : <div className="social-file-placeholder">{item.fileType}</div>}<strong>{item.fileName}</strong><span>{posts.find((post) => post.id === item.postId)?.title}</span><small>{userName(item.uploadedBy)} · {statusLabel[item.status]}</small><div><a href={item.fileUrl} target="_blank" rel="noreferrer">Mở file</a>{canEdit && <button className="danger-button" type="button" onClick={() => deleteRecord('socialPostMedia', item.id, 'media Social')}>Xóa</button>}</div></article>)}</div>
+          </Panel>
+        </>
+      )}
+
+      {tab === 'templates' && (
+        <>
+          {canEdit && <Panel title={editingTemplate ? 'Sửa mẫu nội dung' : 'Tạo mẫu nội dung'} action="Caption, hashtag, CTA, kịch bản">
+            <form className="social-form-grid" key={editingTemplate?.id ?? 'new-template'} onSubmit={saveTemplate}><select name="projectId" defaultValue={editingTemplate?.projectId ?? activeProjectId}><option value="">Dùng chung toàn hệ thống</option>{data.projects.filter((project) => !project.deletedAt).map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><input name="name" defaultValue={editingTemplate?.name} placeholder="Tên mẫu" required /><select name="templateType" defaultValue={editingTemplate?.templateType ?? 'caption'}>{socialTemplateTypes.map((value) => <option value={value} key={value}>{value}</option>)}</select><select name="platform" defaultValue={editingTemplate?.platform}><option value="">Mọi nền tảng</option>{socialPlatforms.map((value) => <option value={value} key={value}>{value}</option>)}</select><textarea className="social-caption-input" name="captionTemplate" defaultValue={editingTemplate?.captionTemplate} placeholder="Caption mẫu / kịch bản" /><textarea name="hashtagTemplate" defaultValue={editingTemplate?.hashtagTemplate} placeholder="Hashtag mẫu" /><input name="ctaTemplate" defaultValue={editingTemplate?.ctaTemplate} placeholder="CTA mẫu" /><select name="status" defaultValue={editingTemplate?.status ?? 'active'}><option value="active">Đang dùng</option><option value="archived">Lưu trữ</option></select><textarea name="note" defaultValue={editingTemplate?.note} placeholder="Ghi chú" /><div className="social-form-actions"><button type="submit">{editingTemplate ? 'Lưu thay đổi' : 'Tạo mẫu'}</button>{editingTemplate && <button className="secondary-button" type="button" onClick={() => setEditingTemplateId('')}>Hủy sửa</button>}</div></form>
+          </Panel>}
+          <Panel title="Mẫu nội dung" action={`${templates.length} mẫu`}><div className="social-card-list">{templates.map((item) => <article className="social-card" key={item.id}><div><strong>{item.name}</strong><span>{item.templateType} · {item.platform || 'Mọi nền tảng'} · {item.projectId ? projectName(item.projectId) : 'Dùng chung'}</span><small>{item.captionTemplate.slice(0, 160) || item.hashtagTemplate || item.ctaTemplate}</small></div><div className="social-card-actions"><button type="button" onClick={() => { setPostSeedTemplateId(item.id); setEditingPostId(''); onTab('posts') }}>Tạo bài từ mẫu</button>{canEdit && <><button type="button" onClick={() => setEditingTemplateId(item.id)}>Sửa</button><button className="danger-button" type="button" onClick={() => deleteRecord('socialContentTemplates', item.id, 'mẫu Social')}>Xóa</button></>}</div></article>)}</div></Panel>
+        </>
+      )}
+
+      {tab === 'reports' && (
+        <>
+          <div className="metric-grid"><Metric title="Tổng bài" value={filteredPosts.length} note={`${filteredPosts.filter((post) => post.publishStatus === 'published').length} đã đăng`} /><Metric title="Reach" value={totals.reach.toLocaleString('vi-VN')} note={`${totals.impressions.toLocaleString('vi-VN')} impressions`} /><Metric title="Tương tác" value={(totals.likes + totals.comments + totals.shares).toLocaleString('vi-VN')} note={`${totals.linkClicks.toLocaleString('vi-VN')} click`} /><Metric title="Doanh thu ghi nhận" value={currency.format(totals.revenue)} note="Nhập thủ công qua metrics" /></div>
+          {canEdit && <Panel title="Nhập chỉ số bài viết" action={metricPostId ? posts.find((post) => post.id === metricPostId)?.title : 'Chọn bài đã đăng'}>
+            <form className="social-metric-form" key={metricPostId} onSubmit={saveMetric}><select name="postId" value={metricPostId} onChange={(event) => setMetricPostId(event.target.value)} required><option value="">Chọn bài viết</option>{posts.filter((post) => post.publishStatus === 'published').map((post) => <option value={post.id} key={post.id}>{post.title}</option>)}</select>{['impressions', 'reach', 'likes', 'comments', 'shares', 'saves', 'linkClicks', 'inboxCount', 'ordersCount', 'adSpend', 'revenue'].map((field) => <input name={field} defaultValue={metricForPost?.[field as keyof SocialPostMetric] as number | undefined} type="number" min="0" placeholder={field} key={`${metricPostId}-${field}`} />)}<input name="metricDate" defaultValue={metricForPost?.metricDate ?? today} type="date" /><button type="submit" disabled={!metricPostId}>Lưu metrics</button></form>
+          </Panel>}
+          <Panel title="Báo cáo & xuất dữ liệu" action="Theo bộ lọc hiện tại"><div className="report-actions"><button type="button" onClick={() => exportSocialCsv(false)}>Xuất lịch đăng CSV</button><button type="button" onClick={() => exportSocialCsv(true)}>Xuất bài đã đăng CSV</button></div><div className="table-wrap"><table><thead><tr><th>Bài viết</th><th>Nền tảng</th><th>Trạng thái</th><th>Reach</th><th>Impressions</th><th>Tương tác</th><th>Clicks</th><th>Doanh thu</th></tr></thead><tbody>{filteredPosts.map((post) => { const item = metrics.find((metric) => metric.postId === post.id); return <tr key={post.id}><td><strong>{post.title}</strong><small>{channelName(post.channelId)}</small></td><td>{post.platform}</td><td>{socialStatus(post.publishStatus)}</td><td>{item?.reach.toLocaleString('vi-VN') ?? 0}</td><td>{item?.impressions.toLocaleString('vi-VN') ?? 0}</td><td>{((item?.likes ?? 0) + (item?.comments ?? 0) + (item?.shares ?? 0)).toLocaleString('vi-VN')}</td><td>{item?.linkClicks.toLocaleString('vi-VN') ?? 0}</td><td>{currency.format(item?.revenue ?? 0)}</td></tr> })}</tbody></table></div></Panel>
+        </>
+      )}
+    </section>
+  )
+}
+
+function SocialPostTable({
+  posts,
+  channels,
+  campaigns,
+  users,
+  canEdit,
+  statusLabel,
+  onEdit,
+  onClone,
+  onSubmit,
+  onApprove,
+  onRevision,
+  onPublished,
+  onFailed,
+  onMetric,
+  onDelete,
+}: {
+  posts: SocialPost[]
+  channels: SocialChannel[]
+  campaigns: SocialCampaign[]
+  users: User[]
+  canEdit: boolean
+  statusLabel: Record<string, string>
+  onEdit: (id: string) => void
+  onClone: (post: SocialPost) => void
+  onSubmit: (post: SocialPost) => void
+  onApprove: (post: SocialPost) => void
+  onRevision: (post: SocialPost) => void
+  onPublished: (post: SocialPost) => void
+  onFailed: (post: SocialPost) => void
+  onMetric: (id: string) => void
+  onDelete: (id: string) => void
+}) {
+  const nameOf = (items: { id: string; name: string }[], id: string, fallback: string) => items.find((item) => item.id === id)?.name ?? fallback
+  return posts.length === 0 ? <EmptyState title="Chưa có bài viết phù hợp" text="Tạo bài hoặc thay đổi bộ lọc để xem kế hoạch Social." /> : (
+    <div className="table-wrap"><table className="social-post-table"><thead><tr><th>Bài viết</th><th>Nền tảng / kênh</th><th>Chiến dịch</th><th>Lịch đăng</th><th>Nội dung</th><th>Đăng bài</th><th>Người viết</th><th>Thao tác</th></tr></thead><tbody>{posts.map((post) => <tr key={post.id}><td><strong>{post.title}</strong><small>{post.postType} · {post.priority}</small></td><td>{platformLabel(post.platform)}<small>{nameOf(channels, post.channelId, 'Chưa chọn kênh')}</small></td><td>{nameOf(campaigns, post.campaignId, 'Không có')}</td><td>{post.scheduledAt ? formatDateTime(post.scheduledAt) : 'Chưa lên lịch'}</td><td><span className={`social-status status-${post.contentStatus}`}>{statusLabel[post.contentStatus]}</span><small>{statusLabel[post.mediaStatus]}</small></td><td><span className={`social-status status-${post.publishStatus}`}>{statusLabel[post.publishStatus]}</span>{post.publishedUrl && <a href={post.publishedUrl} target="_blank" rel="noreferrer">Mở bài</a>}</td><td>{nameOf(users, post.writerId, 'Chưa gán')}</td><td><div className="social-row-actions">{canEdit && <><button type="button" onClick={() => onEdit(post.id)}>Sửa</button><button type="button" onClick={() => onClone(post)}>Clone</button>{post.contentStatus !== 'waiting_approval' && post.contentStatus !== 'approved' && <button type="button" onClick={() => onSubmit(post)}>Gửi duyệt</button>}{post.contentStatus === 'waiting_approval' && <><button type="button" onClick={() => onApprove(post)}>Duyệt</button><button type="button" onClick={() => onRevision(post)}>Yêu cầu sửa</button></>}{post.publishStatus !== 'published' && <><button type="button" onClick={() => onPublished(post)}>Đã đăng</button><button type="button" onClick={() => onFailed(post)}>Đăng lỗi</button></>}<button type="button" onClick={() => onMetric(post.id)}>Metrics</button><button className="danger-button" type="button" onClick={() => onDelete(post.id)}>Xóa</button></>}</div></td></tr>)}</tbody></table></div>
+  )
+}
+
+function platformLabel(platform: SocialPlatform) {
+  return platform === 'shopee_feed' ? 'Shopee Feed' : platform.charAt(0).toUpperCase() + platform.slice(1)
+}
+
 function KnowledgeModule({
   notes,
   allNotes,
@@ -5879,6 +7273,7 @@ function KnowledgeModule({
   const defaultProjectId = editingNote?.projectId || activeProjectId || projects[0]?.id || ''
   const selectedNoteForDetail = editingNote ?? notes[0]
   const selectedHtmlGuideFile = selectedNoteForDetail ? htmlGuideFileOf(selectedNoteForDetail, files) : undefined
+  const compactGuideForm = tab === 'guides' || editingNote?.noteType === 'Hướng dẫn thao tác'
 
   return (
     <section className="view-stack knowledge-module">
@@ -5957,7 +7352,7 @@ function KnowledgeModule({
         <div className="wide-left dashboard-grid">
           <Panel title={editingNote ? 'Sửa ghi chú' : 'Tạo ghi chú mới'} action={canEdit ? 'Knowledge Base' : 'Chỉ xem'}>
             {canEdit ? (
-              <form className="knowledge-form" onSubmit={onSave} key={editingNote?.id ?? 'new-note'}>
+              <form className={`knowledge-form${compactGuideForm ? ' knowledge-guide-form' : ''}`} onSubmit={onSave} key={editingNote?.id ?? `new-note-${tab}`}>
                 <input name="title" placeholder="Tiêu đề ghi chú *" defaultValue={editingNote?.title ?? ''} required />
                 <select name="projectId" defaultValue={defaultProjectId}>
                   <option value="">Không gắn dự án</option>
@@ -5965,53 +7360,79 @@ function KnowledgeModule({
                     <option value={project.id} key={project.id}>{project.name}</option>
                   ))}
                 </select>
-                <input name="website" placeholder="Website / landing page" defaultValue={editingNote?.website ?? ''} />
-                <select name="noteType" defaultValue={editingNote?.noteType ?? 'Chỉnh sửa giao diện'}>
-                  {internalNoteTypes.map((type) => (
-                    <option value={type} key={type}>{type}</option>
-                  ))}
-                </select>
-                <select name="category" defaultValue={editingNote?.category ?? 'SEO'}>
-                  {internalNoteCategories.map((category) => (
-                    <option value={category} key={category}>{category}</option>
-                  ))}
-                </select>
-                <input name="affectedArea" placeholder="Khu vực ảnh hưởng: homepage, checkout, admin..." defaultValue={editingNote?.affectedArea ?? ''} />
-                <input name="relatedUrl" placeholder="URL liên quan: /san-pham/poster-arsenal" defaultValue={editingNote?.relatedUrl ?? ''} />
-                <select name="assignedTo" defaultValue={editingNote?.assignedTo ?? currentUser?.id ?? ''}>
-                  <option value="">Người thực hiện</option>
-                  {users.map((user) => (
-                    <option value={user.id} key={user.id}>{user.name}</option>
-                  ))}
-                </select>
-                <select name="requestedBy" defaultValue={editingNote?.requestedBy ?? ''}>
-                  <option value="">Người yêu cầu</option>
-                  {users.map((user) => (
-                    <option value={user.id} key={user.id}>{user.name}</option>
-                  ))}
-                </select>
-                <select name="status" defaultValue={editingNote?.status ?? 'Nháp'}>
-                  {internalNoteStatuses.map((status) => (
-                    <option value={status} key={status}>{status}</option>
-                  ))}
-                </select>
-                <select name="priority" defaultValue={editingNote?.priority ?? 'Trung bình'}>
-                  {internalNotePriorities.map((priority) => (
-                    <option value={priority} key={priority}>{priority}</option>
-                  ))}
-                </select>
-                <select name="visibility" defaultValue={editingNote?.visibility ?? 'Nội bộ'}>
-                  {internalNoteVisibilityOptions.map((visibility) => (
-                    <option value={visibility} key={visibility}>{visibility}</option>
-                  ))}
-                </select>
-                <input name="tags" placeholder="Tag, cách nhau bằng dấu phẩy: SEO, UI, schema..." defaultValue={editingNote?.tags.join(', ') ?? ''} />
-                <textarea name="problemDescription" placeholder="Mô tả vấn đề / trước khi sửa đang bị gì" defaultValue={editingNote?.problemDescription ?? ''} />
-                <textarea name="content" placeholder="Nội dung đã chỉnh sửa hoặc các bước hướng dẫn *" defaultValue={editingNote?.content ?? ''} required />
-                <textarea name="reason" placeholder="Lý do chỉnh sửa / mục đích tài liệu" defaultValue={editingNote?.reason ?? ''} />
-                <textarea name="extraNote" placeholder="Ghi chú thêm, checklist, lỗi thường gặp, cách xử lý..." defaultValue={editingNote?.extraNote ?? ''} />
-                <input name="changeNote" placeholder="Ghi chú phiên bản: bổ sung bước check index..." />
+                {compactGuideForm ? (
+                  <>
+                    <input name="noteType" type="hidden" value="Hướng dẫn thao tác" />
+                    <input name="visibility" type="hidden" value="Nội bộ" />
+                    <input name="status" type="hidden" value={editingNote?.status ?? 'Nháp'} />
+                    <input name="priority" type="hidden" value={editingNote?.priority ?? 'Trung bình'} />
+                    <input name="tags" type="hidden" value={editingNote?.tags.join(', ') || 'hướng-dẫn'} />
+                    <div className="knowledge-guide-code">
+                      <div>
+                        <span>Mã bài hướng dẫn</span>
+                        <strong>{editingNote ? internalGuideCodeOf(editingNote) : 'Tự sinh sau khi tạo'}</strong>
+                        <small>Dán mã này vào mục Hướng dẫn của Nền tảng Entity để mở nhanh tài liệu.</small>
+                      </div>
+                      {editingNote && (
+                        <button className="secondary-button" type="button" onClick={() => void navigator.clipboard?.writeText(internalGuideCodeOf(editingNote))}>
+                          Copy mã ID
+                        </button>
+                      )}
+                    </div>
+                    <textarea className="knowledge-guide-content" name="content" placeholder="Nội dung hoặc các bước hướng dẫn *" defaultValue={editingNote?.content ?? ''} required />
+                  </>
+                ) : (
+                  <>
+                    <input name="website" placeholder="Website / landing page" defaultValue={editingNote?.website ?? ''} />
+                    <select name="noteType" defaultValue={editingNote?.noteType ?? 'Chỉnh sửa giao diện'}>
+                      {internalNoteTypes.map((type) => (
+                        <option value={type} key={type}>{type}</option>
+                      ))}
+                    </select>
+                    <select name="category" defaultValue={editingNote?.category ?? 'SEO'}>
+                      {internalNoteCategories.map((category) => (
+                        <option value={category} key={category}>{category}</option>
+                      ))}
+                    </select>
+                    <input name="affectedArea" placeholder="Khu vực ảnh hưởng: homepage, checkout, admin..." defaultValue={editingNote?.affectedArea ?? ''} />
+                    <input name="relatedUrl" placeholder="URL liên quan: /san-pham/poster-arsenal" defaultValue={editingNote?.relatedUrl ?? ''} />
+                    <select name="assignedTo" defaultValue={editingNote?.assignedTo ?? currentUser?.id ?? ''}>
+                      <option value="">Người thực hiện</option>
+                      {users.map((user) => (
+                        <option value={user.id} key={user.id}>{user.name}</option>
+                      ))}
+                    </select>
+                    <select name="requestedBy" defaultValue={editingNote?.requestedBy ?? ''}>
+                      <option value="">Người yêu cầu</option>
+                      {users.map((user) => (
+                        <option value={user.id} key={user.id}>{user.name}</option>
+                      ))}
+                    </select>
+                    <select name="status" defaultValue={editingNote?.status ?? 'Nháp'}>
+                      {internalNoteStatuses.map((status) => (
+                        <option value={status} key={status}>{status}</option>
+                      ))}
+                    </select>
+                    <select name="priority" defaultValue={editingNote?.priority ?? 'Trung bình'}>
+                      {internalNotePriorities.map((priority) => (
+                        <option value={priority} key={priority}>{priority}</option>
+                      ))}
+                    </select>
+                    <select name="visibility" defaultValue={editingNote?.visibility ?? 'Nội bộ'}>
+                      {internalNoteVisibilityOptions.map((visibility) => (
+                        <option value={visibility} key={visibility}>{visibility}</option>
+                      ))}
+                    </select>
+                    <input name="tags" placeholder="Tag, cách nhau bằng dấu phẩy: SEO, UI, schema..." defaultValue={editingNote?.tags.join(', ') ?? ''} />
+                    <textarea name="problemDescription" placeholder="Mô tả vấn đề / trước khi sửa đang bị gì" defaultValue={editingNote?.problemDescription ?? ''} />
+                    <textarea name="content" placeholder="Nội dung đã chỉnh sửa hoặc các bước hướng dẫn *" defaultValue={editingNote?.content ?? ''} required />
+                    <textarea name="reason" placeholder="Lý do chỉnh sửa / mục đích tài liệu" defaultValue={editingNote?.reason ?? ''} />
+                    <textarea name="extraNote" placeholder="Ghi chú thêm, checklist, lỗi thường gặp, cách xử lý..." defaultValue={editingNote?.extraNote ?? ''} />
+                    <input name="changeNote" placeholder="Ghi chú phiên bản: bổ sung bước check index..." />
+                  </>
+                )}
                 <div className="knowledge-form-actions">
+                  {editingNote && <button className="danger-button" type="button" onClick={() => onDelete(editingNote.id)}>Xóa ghi chú</button>}
                   {editingNote && <button className="secondary-button" type="button" onClick={onCancelEdit}>Hủy sửa</button>}
                   <button type="submit">{editingNote ? 'Lưu phiên bản mới' : 'Tạo ghi chú'}</button>
                 </div>
@@ -6030,6 +7451,14 @@ function KnowledgeModule({
                 <Detail label="Loại / trạng thái" value={`${selectedNoteForDetail.noteType} · ${selectedNoteForDetail.status}`} />
                 <Detail label="Người thực hiện" value={userName(selectedNoteForDetail.assignedTo)} />
                 <Detail label="Cập nhật" value={formatDateTime(selectedNoteForDetail.updatedAt)} />
+                {internalGuideCodeOf(selectedNoteForDetail) && (
+                  <div className="knowledge-detail-guide-code">
+                    <Detail label="Mã bài hướng dẫn" value={internalGuideCodeOf(selectedNoteForDetail)} />
+                    <button className="secondary-button" type="button" onClick={() => void navigator.clipboard?.writeText(internalGuideCodeOf(selectedNoteForDetail))}>
+                      Copy mã ID
+                    </button>
+                  </div>
+                )}
                 {selectedHtmlGuideFile && (
                   <button className="secondary-button knowledge-open-html-button" type="button" onClick={() => openHtmlGuideFile(selectedHtmlGuideFile)}>
                     Mở file HTML hướng dẫn
@@ -6149,12 +7578,18 @@ function KnowledgeNoteTable({
                     )}
                   </h3>
                   <small>{projectName(note.projectId)} · {field(note.website)} · {field(note.relatedUrl)}</small>
+                  {internalGuideCodeOf(note) && <small className="knowledge-guide-id">Mã hướng dẫn: {internalGuideCodeOf(note)}</small>}
                   {htmlGuideFile && <small className="knowledge-html-hint">Nhấp tiêu đề để mở file HTML hướng dẫn</small>}
                 </div>
                 <span className="note-status">{note.status}</span>
               </div>
               <p>{note.problemDescription || note.content}</p>
               <div className="knowledge-meta">
+                {internalGuideCodeOf(note) && (
+                  <button className="knowledge-copy-code" type="button" onClick={() => void navigator.clipboard?.writeText(internalGuideCodeOf(note))}>
+                    Copy {internalGuideCodeOf(note)}
+                  </button>
+                )}
                 <span>{note.noteType}</span>
                 <span>{note.affectedArea || 'Chưa ghi khu vực'}</span>
                 <span>Thực hiện: {userName(note.assignedTo)}</span>
@@ -6312,6 +7747,390 @@ function KnowledgeFilesPanel({
         )}
       </Panel>
     </div>
+  )
+}
+
+function ToolsModule({
+  canEdit,
+  loading,
+  status,
+  result,
+  config,
+  regeneratingImageIndex,
+  history,
+  historyStatus,
+  historyLoading,
+  editorHtml,
+  savingHtml,
+  singleImage,
+  singleImageStatus,
+  singleImageLoading,
+  onCompose,
+  onRegenerateImage,
+  onOpenHistoryItem,
+  onSaveHtml,
+  onEditorHtmlChange,
+  onGenerateSingleImage,
+  onReloadHistory,
+}: {
+  canEdit: boolean
+  loading: boolean
+  status: string
+  result: ArticleToolResult | null
+  config: ArticleToolConfigStatus | null
+  regeneratingImageIndex: number | null
+  history: ArticleToolHistoryItem[]
+  historyStatus: string
+  historyLoading: boolean
+  editorHtml: string
+  savingHtml: boolean
+  singleImage: ArticleStandaloneImageResult | null
+  singleImageStatus: string
+  singleImageLoading: boolean
+  onCompose: (event: FormEvent<HTMLFormElement>) => void
+  onRegenerateImage: (error: ArticleToolImageError, imageProviderOverride?: ArticleImageProvider) => void
+  onOpenHistoryItem: (runId: string, edit?: boolean) => void
+  onSaveHtml: (event: FormEvent<HTMLFormElement>) => void
+  onEditorHtmlChange: (value: string) => void
+  onGenerateSingleImage: (event: FormEvent<HTMLFormElement>) => void
+  onReloadHistory: () => void
+}) {
+  const imageProviderLabel = config?.imageProvider === 'vertex-ai' ? 'Vertex AI' : 'Imagen'
+  const presentationLabel = (style: ArticlePresentationStyle) => {
+    if (style === 'wordpress') return 'WordPress (HTML)'
+    if (style === 'raw') return 'Raw - Văn bản thuần'
+    return 'Trình bày chuyên nghiệp'
+  }
+  return (
+    <section className="view-stack tools-module">
+      <div className="metric-grid">
+        <Metric title="Module con" value="Viết bài" note="Tự động hóa quy trình tạo bài SEO" />
+        <Metric title="AI nội dung" value="Claude" note={config?.claudeConfigured ? 'Đã cấu hình' : 'Chưa có key'} />
+        <Metric title="AI hình ảnh" value={imageProviderLabel} note={config?.imageProvider === 'vertex-ai' ? (config?.vertexConfigured ? 'Đã cấu hình' : 'Thiếu Vertex') : (config?.geminiConfigured ? 'Đã cấu hình' : 'Chưa có key')} />
+        <Metric title="Output" value="HTML" note="Có preview và lưu file .html kèm ảnh" />
+      </div>
+
+      <Panel title="Tạo bài viết SEO" action={canEdit ? `Claude Gateway + ${imageProviderLabel}` : 'Chỉ xem'}>
+        <form className="tool-compose-form" onSubmit={onCompose}>
+          <label>
+            <span>Từ khóa / chủ đề</span>
+            <textarea name="keyword" placeholder="Ví dụ: poster bóng đá Arsenal" required disabled={!canEdit || loading} />
+          </label>
+          <label>
+            <span>Dạng trình bày</span>
+            <select name="presentationStyle" defaultValue="professional" disabled={!canEdit || loading}>
+              <option value="professional">Trình bày chuyên nghiệp</option>
+              <option value="wordpress">WordPress (HTML)</option>
+              <option value="raw">Raw - Văn bản thuần</option>
+            </select>
+          </label>
+          <label>
+            <span>Đối tượng đọc</span>
+            <input name="targetAudience" placeholder="Ví dụ: khách hàng đang tìm sản phẩm, nhân viên SEO, chủ shop..." disabled={!canEdit || loading} />
+          </label>
+          <label>
+            <span>Giọng văn</span>
+            <input name="tone" placeholder="Chuyên nghiệp, dễ đọc, thuyết phục" disabled={!canEdit || loading} />
+          </label>
+          <label>
+            <span>Độ dài mục tiêu</span>
+            <select name="wordCount" defaultValue="1800" disabled={!canEdit || loading}>
+              <option value="1200">Khoảng 1.200 từ</option>
+              <option value="1800">Khoảng 1.800 từ</option>
+              <option value="2500">Khoảng 2.500 từ</option>
+              <option value="3500">Khoảng 3.500 từ</option>
+            </select>
+          </label>
+          <label className="tool-inline-check">
+            <input name="useVertexImageProvider" type="checkbox" defaultChecked={config?.imageProvider === 'vertex-ai'} disabled={!canEdit || loading || !config?.vertexConfigured} />
+            <span>Tạo ảnh bằng Vertex AI</span>
+          </label>
+          <button type="submit" disabled={!canEdit || loading}>
+            {loading ? 'Đang viết bài...' : 'Tạo bài viết SEO'}
+          </button>
+        </form>
+        {status && <p className="tool-status">{status}</p>}
+        {!canEdit && (
+          <EmptyState title="Chưa có quyền chạy công cụ" text="Admin cần cấp quyền Chỉnh sửa cho module Công cụ nếu muốn tài khoản này gọi API tạo bài." />
+        )}
+      </Panel>
+
+      {result && (
+        <Panel title="Preview bài viết HTML" action={presentationLabel(result.presentationStyle)}>
+          <div className="tool-result-grid">
+            <div className="tool-result-actions">
+              <a className="secondary-button" href={result.htmlUrl} target="_blank" rel="noreferrer">
+                Mở file HTML
+              </a>
+              <a className="secondary-button" href={result.sourceUrl} target="_blank" rel="noreferrer">
+                Xem source
+              </a>
+              <button className="secondary-button" type="button" onClick={() => void navigator.clipboard?.writeText(result.html)}>
+                Copy HTML
+              </button>
+              <span>{result.images.length} ảnh đã tạo</span>
+              {result.imageErrors.length > 0 && <span>{result.imageErrors.length} ảnh lỗi</span>}
+            </div>
+            <iframe className="tool-html-preview" title="Preview bài viết HTML" srcDoc={result.previewHtml} />
+            <details className="tool-source-details">
+              <summary>Xem mã HTML</summary>
+              <textarea className="tool-source-preview" value={result.html} readOnly />
+            </details>
+            <div className="tool-image-list">
+              {result.images.map((image, index) => (
+                <a href={image.fileUrl} target="_blank" rel="noreferrer" key={`${image.fileUrl}-${index}`}>
+                  <span>Ảnh {index + 1}</span>
+                  <small>{image.relativePath}</small>
+                </a>
+              ))}
+              {result.imageErrors.map((error, index) => (
+                <article className="tool-image-error" key={`${error.prompt}-${index}`}>
+                  <strong>Ảnh lỗi {Number(error.index ?? index) + 1}</strong>
+                  <small>{error.message}</small>
+                  <div className="tool-image-error-actions">
+                    <button type="button" className="secondary-button" onClick={() => onRegenerateImage(error)} disabled={!canEdit || loading || regeneratingImageIndex === Number(error.index ?? index)}>
+                      {regeneratingImageIndex === Number(error.index ?? index) ? 'Đang gen...' : 'Gen lại ảnh'}
+                    </button>
+                    {config?.vertexConfigured && (
+                      <button type="button" className="secondary-button" onClick={() => onRegenerateImage(error, 'vertex-ai')} disabled={!canEdit || loading || regeneratingImageIndex === Number(error.index ?? index)}>
+                        Gen bằng Vertex AI
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </Panel>
+      )}
+
+      {result && (
+        <Panel title="Chỉnh sửa / bổ sung HTML" action={result.runId}>
+          <form className="tool-edit-form" onSubmit={onSaveHtml}>
+            <textarea value={editorHtml} onChange={(event) => onEditorHtmlChange(event.currentTarget.value)} />
+            <div className="tool-result-actions">
+              <button type="submit" disabled={!canEdit || savingHtml}>{savingHtml ? 'Đang lưu...' : 'Lưu chỉnh sửa HTML'}</button>
+              <button className="secondary-button" type="button" onClick={() => void navigator.clipboard?.writeText(editorHtml)}>Copy HTML đã sửa</button>
+            </div>
+          </form>
+        </Panel>
+      )}
+
+      <Panel title="Lịch sử bài đã tạo" action={historyLoading ? 'Đang tải' : `${history.length} bài`}>
+        <div className="tool-result-actions">
+          <button className="secondary-button" type="button" onClick={onReloadHistory} disabled={historyLoading}>Tải lại lịch sử</button>
+        </div>
+        {historyStatus && <p className="tool-status">{historyStatus}</p>}
+        {history.length === 0 ? (
+          <EmptyState title="Chưa có lịch sử" text="Các bài tạo mới sẽ được lưu vào đây để mở lại, chỉnh sửa bổ sung và copy HTML." />
+        ) : (
+          <div className="tool-history-list">
+            {history.map((item) => (
+              <article className="tool-history-card" key={item.runId}>
+                <div>
+                  <strong>{item.topic || item.runId}</strong>
+                  <small>{presentationLabel(item.presentationStyle)} · {formatDateTime(item.updatedAt || item.generatedAt)}</small>
+                  <small>{item.images?.length || 0} ảnh · {item.imageErrors?.length || 0} ảnh lỗi</small>
+                </div>
+                <div className="tool-result-actions">
+                  <button className="secondary-button" type="button" onClick={() => onOpenHistoryItem(item.runId)}>Mở lại</button>
+                  <button className="secondary-button" type="button" onClick={() => onOpenHistoryItem(item.runId, true)}>Chỉnh sửa</button>
+                  <a className="secondary-button" href={item.htmlUrl} target="_blank" rel="noreferrer">HTML</a>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      <Panel title="Tạo ảnh đơn theo mô tả" action={config?.vertexConfigured ? 'Imagen hoặc Vertex AI' : 'Imagen'}>
+        <form className="tool-compose-form" onSubmit={onGenerateSingleImage}>
+          <label>
+            <span>Mô tả ảnh</span>
+            <textarea name="prompt" placeholder="Mô tả ảnh bằng tiếng Anh để AI tạo ảnh tốt hơn" required disabled={!canEdit || singleImageLoading} />
+          </label>
+          <label className="tool-inline-check">
+            <input name="useVertexImageProvider" type="checkbox" defaultChecked={config?.imageProvider === 'vertex-ai'} disabled={!canEdit || singleImageLoading || !config?.vertexConfigured} />
+            <span>Tạo ảnh bằng Vertex AI</span>
+          </label>
+          <button type="submit" disabled={!canEdit || singleImageLoading}>{singleImageLoading ? 'Đang tạo ảnh...' : 'Tạo ảnh đơn'}</button>
+        </form>
+        {singleImageStatus && <p className="tool-status">{singleImageStatus}</p>}
+        {singleImage && (
+          <div className="tool-single-image-result">
+            <a href={singleImage.image.fileUrl} target="_blank" rel="noreferrer">
+              <img src={singleImage.image.fileUrl} alt="Ảnh AI đã tạo" />
+            </a>
+            <div className="tool-result-actions">
+              <a className="secondary-button" href={singleImage.image.fileUrl} target="_blank" rel="noreferrer">Mở ảnh</a>
+              <button className="secondary-button" type="button" onClick={() => void navigator.clipboard?.writeText(singleImage.image.fileUrl)}>Copy URL ảnh</button>
+            </div>
+          </div>
+        )}
+      </Panel>
+    </section>
+  )
+}
+
+function ToolArticleSettingsModule({
+  canEdit,
+  config,
+  configStatus,
+  configLoading,
+  testingProvider,
+  onSaveConfig,
+  onReloadConfig,
+  onTestConnection,
+}: {
+  canEdit: boolean
+  config: ArticleToolConfigStatus | null
+  configStatus: string
+  configLoading: boolean
+  testingProvider: ArticleToolTestProvider | ''
+  onSaveConfig: (event: FormEvent<HTMLFormElement>) => void
+  onReloadConfig: () => void
+  onTestConnection: (provider: ArticleToolTestProvider) => void
+}) {
+  const logs = config?.logs ?? []
+  const imageProviderLabel = config?.imageProvider === 'vertex-ai' ? 'Vertex AI' : 'Imagen'
+  return (
+    <section className="view-stack tools-module">
+      <div className="metric-grid">
+        <Metric title="Claude" value={config?.claudeConfigured ? 'OK' : 'Thiếu'} note={config?.claudeModel || 'Chưa cấu hình model'} />
+        <Metric title="Imagen" value={config?.geminiConfigured ? 'OK' : 'Thiếu'} note={config?.geminiImageModel || 'Google AI API'} />
+        <Metric title="Vertex AI" value={config?.vertexConfigured ? 'OK' : 'Thiếu'} note={config?.vertexRegion || 'us-central1'} />
+        <Metric title="Nguồn ảnh" value={imageProviderLabel} note="Mặc định cho công cụ Viết bài" />
+      </div>
+
+      <Panel title="Cấu hình Viết bài" action={config?.articleComposerConfigured ? 'Đã sẵn sàng' : 'Thiếu cấu hình'}>
+        <form className="tool-config-form" onSubmit={onSaveConfig} key={config?.updatedAt || 'article-tool-config'}>
+          <label>
+            <span>Nguồn tạo ảnh</span>
+            <select name="imageProvider" defaultValue={config?.imageProvider || 'google-ai'} disabled={!canEdit || configLoading}>
+              <option value="google-ai">Google AI API / Imagen</option>
+              <option value="vertex-ai">Google Cloud Vertex AI</option>
+            </select>
+          </label>
+          <label>
+            <span>Claude Gateway base URL</span>
+            <input name="claudeGatewayBaseUrl" defaultValue={config?.claudeGatewayBaseUrl || 'https://1gw.gwai.cloud'} disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Claude auth header</span>
+            <input name="claudeGatewayAuthHeader" defaultValue={config?.claudeGatewayAuthHeader || 'x-api-key'} disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Claude model</span>
+            <input name="claudeModel" defaultValue={config?.claudeModel || 'claude-3-5-sonnet'} disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Claude API key</span>
+            <input name="claudeApiKey" type="password" placeholder={config?.claudeConfigured ? 'Đã có key, để trống nếu không đổi' : 'Nhập Claude API key'} disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Google AI API base URL</span>
+            <input name="geminiApiBaseUrl" defaultValue={config?.geminiApiBaseUrl || 'https://generativelanguage.googleapis.com'} disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Imagen image model</span>
+            <input name="geminiImageModel" defaultValue={config?.geminiImageModel || 'imagen-4.0-fast-generate-001'} disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Google AI API key</span>
+            <input name="geminiApiKey" type="password" placeholder={config?.geminiConfigured ? 'Đã có key, để trống nếu không đổi' : 'Nhập Google AI API key'} disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Vertex AI Project ID</span>
+            <input name="vertexProjectId" defaultValue={config?.vertexProjectId || ''} placeholder="my-google-cloud-project" disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Vertex AI Region</span>
+            <input name="vertexRegion" defaultValue={config?.vertexRegion || 'us-central1'} placeholder="us-central1" disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Vertex AI image model</span>
+            <input name="vertexImageModel" defaultValue={config?.vertexImageModel || 'imagen-4.0-fast-generate-001'} disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Service Account JSON file</span>
+            <input name="vertexCredentialsFile" type="file" accept=".json,application/json" disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Service Account JSON paste</span>
+            <textarea name="vertexServiceAccountJson" placeholder="Dán nội dung credentials.json nếu không upload file" disabled={!canEdit || configLoading} />
+          </label>
+          <label>
+            <span>Credentials path trên server</span>
+            <input name="vertexCredentialsPath" placeholder="Tùy chọn: /path/to/credentials.json" disabled={!canEdit || configLoading} />
+          </label>
+          <div className="tool-config-checks">
+            <label>
+              <input name="clearClaudeApiKey" type="checkbox" disabled={!canEdit || configLoading} />
+              Xóa Claude key đã lưu
+            </label>
+            <label>
+              <input name="clearGeminiApiKey" type="checkbox" disabled={!canEdit || configLoading} />
+              Xóa Google AI key đã lưu
+            </label>
+            <label>
+              <input name="clearVertexCredentials" type="checkbox" disabled={!canEdit || configLoading} />
+              Xóa Vertex credentials đã lưu
+            </label>
+          </div>
+          <div className="tool-config-actions">
+            <button type="submit" disabled={!canEdit || configLoading}>
+              {configLoading ? 'Đang lưu...' : 'Lưu cấu hình'}
+            </button>
+            <button className="secondary-button" type="button" onClick={() => onTestConnection('claude')} disabled={!canEdit || configLoading || Boolean(testingProvider)}>
+              {testingProvider === 'claude' ? 'Đang kiểm tra Claude...' : 'Kiểm tra Claude'}
+            </button>
+            <button className="secondary-button" type="button" onClick={() => onTestConnection('gemini')} disabled={!canEdit || configLoading || Boolean(testingProvider)}>
+              {testingProvider === 'gemini' ? 'Đang kiểm tra Imagen...' : 'Kiểm tra Imagen'}
+            </button>
+            <button className="secondary-button" type="button" onClick={() => onTestConnection('vertex')} disabled={!canEdit || configLoading || Boolean(testingProvider)}>
+              {testingProvider === 'vertex' ? 'Đang kiểm tra Vertex...' : 'Kiểm tra Vertex'}
+            </button>
+            <button className="secondary-button" type="button" onClick={onReloadConfig} disabled={configLoading}>
+              Tải lại
+            </button>
+          </div>
+        </form>
+        <div className="tool-config-status-list">
+          <span className={config?.claudeConfigured ? 'ready' : ''}>Claude {config?.claudeConfigured ? 'đã cấu hình' : 'chưa có key'}</span>
+          <span className={config?.geminiConfigured ? 'ready' : ''}>Imagen {config?.geminiConfigured ? 'đã cấu hình' : 'chưa có key'}</span>
+          <span className={config?.vertexConfigured ? 'ready' : ''}>Vertex AI {config?.vertexConfigured ? 'đã cấu hình' : 'thiếu Project/Region/credentials'}</span>
+          <span>Nguồn ảnh: {imageProviderLabel}</span>
+          <span>Output: {config?.outputDir || 'SEO_OPS_DB_DIR/tools'}</span>
+        </div>
+        {configStatus && <p className="tool-status">{configStatus}</p>}
+      </Panel>
+
+      <Panel title="Log kết nối & lỗi" action={`${logs.length} dòng`}>
+        {logs.length === 0 ? (
+          <EmptyState title="Chưa có log" text="Bấm Kiểm tra Claude, Kiểm tra Imagen, Kiểm tra Vertex hoặc chạy Viết bài để ghi log kết quả và lỗi API tại đây." />
+        ) : (
+          <div className="tool-log-list">
+            {logs.map((log) => (
+              <article className={`tool-log-card ${log.status}`} key={log.id}>
+                <div>
+                  <strong>{log.message}</strong>
+                  <small>{formatDateTime(log.at)} · {log.action}</small>
+                </div>
+                {log.details.length > 0 && (
+                  <div className="tool-log-details">
+                    {log.details.map((detail, index) => (
+                      <span className={detail.ok ? 'ready' : 'error'} key={`${log.id}-${detail.provider}-${index}`}>
+                        {detail.provider}: {detail.message}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </section>
   )
 }
 
@@ -6763,6 +8582,7 @@ function EntityModule({
   indexedLinks,
   napOkLinks,
   importStatus,
+  editingPlatform,
   rememberedCredential,
   selectedLinkIds,
   onTab,
@@ -6771,6 +8591,8 @@ function EntityModule({
   onSaveEntity,
   onDeleteEntity,
   onAddPlatform,
+  onEditPlatform,
+  onCancelEditPlatform,
   onImportPlatformSheet,
   onImportPlatformFile,
   onAddLink,
@@ -6783,6 +8605,7 @@ function EntityModule({
   onToggleChecklist,
   onGenerateSchema,
   onExportReport,
+  onOpenGuide,
 }: {
   activeProject?: Project
   activeEntity?: SeoEntity
@@ -6800,6 +8623,7 @@ function EntityModule({
   indexedLinks: number
   napOkLinks: number
   importStatus: string
+  editingPlatform?: SeoEntityPlatform
   rememberedCredential: EntityLinkCredential
   selectedLinkIds: Set<string>
   onTab: (tab: EntityTab) => void
@@ -6808,6 +8632,8 @@ function EntityModule({
   onSaveEntity: (event: FormEvent<HTMLFormElement>) => void
   onDeleteEntity: (entityId: string) => void
   onAddPlatform: (event: FormEvent<HTMLFormElement>) => void
+  onEditPlatform: (platformId: string) => void
+  onCancelEditPlatform: () => void
   onImportPlatformSheet: (event: FormEvent<HTMLFormElement>) => void
   onImportPlatformFile: (event: ChangeEvent<HTMLInputElement>) => void
   onAddLink: (event: FormEvent<HTMLFormElement>) => void
@@ -6820,6 +8646,7 @@ function EntityModule({
   onToggleChecklist: (itemId: string) => void
   onGenerateSchema: () => void
   onExportReport: (reportType: 'internal' | 'client' | 'score') => void
+  onOpenGuide: (reference: string) => void
 }) {
   if (!activeProject) {
     return (
@@ -6943,31 +8770,49 @@ function EntityModule({
               </label>
             </div>
             <p className="entity-import-hint">
-              Hỗ trợ cột: Tên nền tảng, Domain, Link đăng ký, Link đăng nhập, Nhóm nền tảng, Cho đặt website, Cho viết bio, Cho upload logo, Cho upload cover, Loại link mặc định, Độ khó, Khả năng index, Điểm chất lượng, Trạng thái, Ghi chú.
+              Hỗ trợ cột: Tên nền tảng, Domain, Nhóm, Loại link mặc định, Điểm DA, Trạng thái, Hướng dẫn.
             </p>
             {importStatus && <p className="entity-import-status">{importStatus}</p>}
           </Panel>
-          <Panel title="Thêm nền tảng Entity" action={canEdit ? 'Kho nền tảng dùng chung' : 'Chỉ xem'}>
-            <form className="entity-platform-form" onSubmit={onAddPlatform}>
-              <input name="name" placeholder="Tên nền tảng" required disabled={!canEdit} />
-              <input name="domain" placeholder="Domain" required disabled={!canEdit} />
-              <input name="registerUrl" placeholder="Link đăng ký" disabled={!canEdit} />
-              <input name="loginUrl" placeholder="Link đăng nhập" disabled={!canEdit} />
-              <select name="group" disabled={!canEdit}>{entityPlatformGroups.map((item) => <option key={item}>{item}</option>)}</select>
-              <select name="defaultLinkType" disabled={!canEdit}>{entityLinkTypes.map((item) => <option key={item}>{item}</option>)}</select>
-              <select name="difficulty" disabled={!canEdit}>{entityDifficulties.map((item) => <option key={item}>{item}</option>)}</select>
-              <select name="indexability" disabled={!canEdit}>{entityIndexabilities.map((item) => <option key={item}>{item}</option>)}</select>
-              <input name="qualityScore" placeholder="Điểm chất lượng 1-100" type="number" min="1" max="100" disabled={!canEdit} />
-              <select name="status" disabled={!canEdit}>{entityPlatformStatuses.map((item) => <option key={item}>{item}</option>)}</select>
-              <label><input name="allowWebsite" type="checkbox" disabled={!canEdit} /> Cho đặt website</label>
-              <label><input name="allowBio" type="checkbox" disabled={!canEdit} /> Cho viết bio</label>
-              <label><input name="allowLogo" type="checkbox" disabled={!canEdit} /> Cho upload logo</label>
-              <label><input name="allowCover" type="checkbox" disabled={!canEdit} /> Cho upload cover</label>
-              <input name="notes" placeholder="Ghi chú" disabled={!canEdit} />
-              <button type="submit" disabled={!canEdit}>Thêm nền tảng</button>
+          <Panel title={editingPlatform ? 'Sửa nền tảng Entity' : 'Thêm nền tảng Entity'} action={canEdit ? 'Kho nền tảng dùng chung' : 'Chỉ xem'}>
+            <form className="entity-platform-form" onSubmit={onAddPlatform} key={editingPlatform?.id ?? 'new-entity-platform'}>
+              <label className="entity-platform-field">
+                <span>Tên nền tảng</span>
+                <input name="name" placeholder="Ví dụ: Medium" defaultValue={editingPlatform?.name ?? ''} required disabled={!canEdit} />
+              </label>
+              <label className="entity-platform-field">
+                <span>Domain</span>
+                <input name="domain" placeholder="medium.com" defaultValue={editingPlatform?.domain ?? ''} required disabled={!canEdit} />
+              </label>
+              <label className="entity-platform-field">
+                <span>Nhóm <EntityPlatformGroupHelp /></span>
+                <select name="group" defaultValue={editingPlatform?.group ?? 'Profile Link'} disabled={!canEdit}>{entityPlatformGroups.map((item) => <option key={item}>{item}</option>)}</select>
+              </label>
+              <label className="entity-platform-field">
+                <span>Loại link</span>
+                <select name="defaultLinkType" defaultValue={editingPlatform?.defaultLinkType ?? 'Nofollow'} disabled={!canEdit}>{entityLinkTypes.map((item) => <option key={item}>{item}</option>)}</select>
+              </label>
+              <label className="entity-platform-field">
+                <span>Điểm DA</span>
+                <input name="domainAuthority" placeholder="0-100" type="number" min="0" max="100" defaultValue={editingPlatform?.domainAuthority ?? ''} disabled={!canEdit} />
+              </label>
+              <label className="entity-platform-field">
+                <span>Trạng thái</span>
+                <select name="status" defaultValue={editingPlatform?.status ?? 'Dùng được'} disabled={!canEdit}>{entityPlatformStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+              </label>
+              <label className="entity-platform-field entity-platform-guide-field">
+                <span>Hướng dẫn</span>
+                <input name="guideUrl" placeholder="Mã HD-XXXXXXXX hoặc link bài hướng dẫn" defaultValue={editingPlatform?.guideUrl ?? ''} disabled={!canEdit} />
+              </label>
+              <div className="entity-platform-form-actions">
+                {editingPlatform && (
+                  <button className="secondary-button" type="button" onClick={onCancelEditPlatform}>Hủy sửa</button>
+                )}
+                <button type="submit" disabled={!canEdit}>{editingPlatform ? 'Lưu chỉnh sửa' : 'Thêm nền tảng'}</button>
+              </div>
             </form>
           </Panel>
-          <EntityPlatformTable platforms={entityPlatforms} />
+          <EntityPlatformTable platforms={entityPlatforms} canEdit={canEdit} onEdit={onEditPlatform} onOpenGuide={onOpenGuide} />
         </>
       )}
 
@@ -7115,7 +8960,34 @@ function EntityModule({
   )
 }
 
-function EntityPlatformTable({ platforms }: { platforms: SeoEntityPlatform[] }) {
+function EntityPlatformGroupHelp() {
+  return (
+    <span className="entity-group-help" tabIndex={0} aria-label="Xem chú thích các nhóm nền tảng Entity">
+      ?
+      <span className="entity-group-tooltip" role="tooltip">
+        <strong>Phân loại nền tảng Entity</strong>
+        {entityPlatformGroups.map((group) => (
+          <span key={group}>
+            <b>{group}</b>
+            <small>{entityPlatformGroupDescriptions[group]}</small>
+          </span>
+        ))}
+      </span>
+    </span>
+  )
+}
+
+function EntityPlatformTable({
+  platforms,
+  canEdit,
+  onEdit,
+  onOpenGuide,
+}: {
+  platforms: SeoEntityPlatform[]
+  canEdit: boolean
+  onEdit: (platformId: string) => void
+  onOpenGuide: (reference: string) => void
+}) {
   return (
     <Panel title="Kho nền tảng Entity" action={`${platforms.length} nền tảng`}>
       <div className="table-wrap">
@@ -7124,27 +8996,46 @@ function EntityPlatformTable({ platforms }: { platforms: SeoEntityPlatform[] }) 
             <tr>
               <th>Nền tảng</th>
               <th>Domain</th>
-              <th>Nhóm</th>
-              <th>Website/Bio/Logo/Cover</th>
+              <Th label="Nhóm" tip={entityPlatformGroupTooltipText} />
               <th>Link</th>
-              <th>Độ khó</th>
-              <th>Index</th>
-              <th>Điểm</th>
+              <th>Điểm DA</th>
               <th>Trạng thái</th>
+              <th>Hướng dẫn</th>
             </tr>
           </thead>
           <tbody>
             {platforms.map((platform) => (
               <tr key={platform.id}>
-                <td>{platform.name}</td>
+                <td>
+                  <div className="entity-platform-name-cell">
+                    <strong>{platform.name}</strong>
+                    {canEdit && (
+                      <button
+                        className="entity-platform-edit-button"
+                        type="button"
+                        onClick={() => onEdit(platform.id)}
+                        title={`Sửa nền tảng ${platform.name}`}
+                        aria-label={`Sửa nền tảng ${platform.name}`}
+                      >
+                        ✎
+                      </button>
+                    )}
+                  </div>
+                </td>
                 <td>{platform.domain}</td>
                 <td>{platform.group}</td>
-                <td>{[platform.allowWebsite, platform.allowBio, platform.allowLogo, platform.allowCover].map((value) => (value ? 'Có' : 'Không')).join(' / ')}</td>
-                <td>{platform.defaultLinkType}</td>
-                <td>{platform.difficulty}</td>
-                <td>{platform.indexability}</td>
-                <td>{platform.qualityScore}/100</td>
+                <td><span className={`entity-link-type entity-link-type-${platform.defaultLinkType.toLowerCase()}`}>{platform.defaultLinkType}</span></td>
+                <td><strong>{platform.domainAuthority}/100</strong></td>
                 <td>{platform.status}</td>
+                <td>
+                  {platform.guideUrl ? (
+                    <button className="entity-guide-link" type="button" onClick={() => onOpenGuide(platform.guideUrl)}>
+                      {guideReferenceIsUrl(platform.guideUrl) ? 'Mở link hướng dẫn' : `Mở ${platform.guideUrl}`}
+                    </button>
+                  ) : (
+                    <span className="muted-text">Chưa có</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
