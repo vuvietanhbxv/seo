@@ -206,6 +206,131 @@ function writeDb(data) {
   fs.renameSync(tempPath, dbPath)
 }
 
+const taskDeadlineDayMs = 24 * 60 * 60 * 1000
+
+function parseTaskDeadline(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return NaN
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? `${raw}T20:00:00+07:00`
+    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)
+      ? `${raw}:00+07:00`
+      : raw
+  return Date.parse(normalized)
+}
+
+function formatTaskDeadline(value) {
+  const timestamp = parseTaskDeadline(value)
+  if (!Number.isFinite(timestamp)) return String(value || '')
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour12: false,
+  }).format(new Date(timestamp))
+}
+
+function applyTaskDeadlineAutomation(data, now = new Date()) {
+  if (!data || !Array.isArray(data.tasks)) return { data, changed: false }
+  const nowIso = now.toISOString()
+  const nowMs = now.getTime()
+  const projects = Array.isArray(data.projects) ? data.projects : []
+  const users = Array.isArray(data.users) ? data.users : []
+  const projectById = new Map(projects.map((project) => [project.id, project]))
+  const adminIds = users.filter((user) => user.active && user.role === 'Quản trị viên').map((user) => user.id)
+  const notifications = []
+  const activityLogs = []
+  let changed = false
+
+  const addEvent = (task, recipientIds, title, message, action) => {
+    Array.from(new Set(recipientIds.filter(Boolean))).forEach((recipientId) => {
+      notifications.push({
+        id: `noti-${crypto.randomUUID()}`,
+        recipientId,
+        title,
+        message,
+        projectId: task.projectId,
+        taskId: task.id,
+        linkView: 'tasks',
+        createdAt: nowIso,
+      })
+    })
+    activityLogs.push({
+      id: `log-${crypto.randomUUID()}`,
+      actorId: '',
+      actorName: 'Hệ thống deadline',
+      action,
+      target: task.title,
+      at: nowIso,
+    })
+  }
+
+  const tasks = data.tasks.map((task) => {
+    if (['Hoàn thành', 'Đã hủy'].includes(task.status)) return task
+    const deadlineValue = task.deadlineAt || task.dueDate
+    const deadlineMs = parseTaskDeadline(deadlineValue)
+    if (!Number.isFinite(deadlineMs)) return task
+    const diffMs = nowMs - deadlineMs
+    const projectOwnerId = projectById.get(task.projectId)?.ownerId || ''
+    const adminRecipients = [...adminIds, projectOwnerId]
+
+    if (diffMs >= 7 * taskDeadlineDayMs && !task.cancelledAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId, ...adminRecipients],
+        'Task đã bị hủy do quá hạn',
+        `Task "${task.title}" đã quá hạn 7 ngày và được hệ thống chuyển sang trạng thái Đã hủy.`,
+        'Tự động hủy task quá hạn',
+      )
+      return { ...task, status: 'Đã hủy', cancelledAt: nowIso }
+    }
+    if (diffMs >= 4 * taskDeadlineDayMs && !task.overdueEscalatedAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId, ...adminRecipients],
+        'Yêu cầu hoàn thành task trong 3 ngày',
+        `Task "${task.title}" đã quá hạn 4 ngày. Vui lòng hoàn thành trước ${formatTaskDeadline(new Date(deadlineMs + 7 * taskDeadlineDayMs).toISOString())}.`,
+        'Cảnh báo task quá hạn 4 ngày',
+      )
+      return { ...task, overdueEscalatedAt: nowIso }
+    }
+    if (diffMs <= 0 && Math.abs(diffMs) <= taskDeadlineDayMs && !task.deadlineReminderAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId],
+        'Task sắp tới deadline',
+        `Task "${task.title}" cần hoàn thành trước ${formatTaskDeadline(deadlineValue)}.`,
+        'Nhắc task sắp tới deadline',
+      )
+      return { ...task, deadlineReminderAt: nowIso }
+    }
+    return task
+  })
+
+  if (!changed) return { data, changed: false }
+  return {
+    changed: true,
+    data: {
+      ...data,
+      tasks,
+      notifications: [...notifications, ...(data.notifications || [])].slice(0, 500),
+      activityLogs: [...activityLogs, ...(data.activityLogs || [])].slice(0, 300),
+    },
+  }
+}
+
+function runTaskDeadlineAutomation() {
+  const currentData = readDb()
+  const result = applyTaskDeadlineAutomation(currentData)
+  if (result.changed) writeDb(result.data)
+}
+
 function readGoogleConnections() {
   ensureDb()
   if (!fs.existsSync(googleOAuthPath)) return { connections: {} }
@@ -1344,7 +1469,7 @@ const server = http.createServer(async (req, res) => {
           return
         }
         try {
-          writeDb(nextData)
+          writeDb(applyTaskDeadlineAutomation(nextData).data)
         } catch (error) {
           if (error?.code === 'SEO_OPS_CLEAN_OVERWRITE') {
             sendJson(res, 409, { ok: false, message: error.message })
@@ -1703,6 +1828,10 @@ const server = http.createServer(async (req, res) => {
 
 validateDatabaseLocation()
 ensureDb()
+runTaskDeadlineAutomation()
+const taskDeadlineTimer = setInterval(runTaskDeadlineAutomation, 60 * 1000)
+taskDeadlineTimer.unref()
+
 server.listen(port, host, () => {
   console.log(`SEO Ops running at http://${host}:${port}${basePath || '/'}`)
   console.log(`Shared data file: ${dbPath}`)

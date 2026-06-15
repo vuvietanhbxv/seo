@@ -5,7 +5,7 @@ import './App.css'
 
 type View = 'overview' | 'projects' | 'entities' | 'backlinks' | 'keywords' | 'articles' | 'tasks' | 'knowledge' | 'social' | 'tools' | 'tool-article-writer' | 'tool-article-settings' | 'finance' | 'people' | 'progress' | 'system'
 type ProjectStatus = 'Đang SEO' | 'Tạm dừng' | 'Hoàn thành'
-type TaskStatus = 'Cần làm' | 'Chờ nhận' | 'Đang làm' | 'Cần chỉnh sửa' | 'Chờ duyệt' | 'Từ chối' | 'Hoàn thành'
+type TaskStatus = 'Cần làm' | 'Chờ nhận' | 'Đang làm' | 'Cần chỉnh sửa' | 'Chờ duyệt' | 'Từ chối' | 'Hoàn thành' | 'Đã hủy'
 type TransactionType = 'Thu' | 'Chi'
 type Role = 'Quản trị viên' | 'Trưởng nhóm SEO' | 'Nội dung' | 'Tài chính' | 'Chỉ xem'
 type SearchIntent = 'Informational' | 'Commercial' | 'Transactional' | 'Navigational'
@@ -324,6 +324,9 @@ type Task = {
   salaryModule?: TaskSalaryModule
   payrollSettlementId?: string
   payrollSettledAt?: string
+  deadlineReminderAt?: string
+  overdueEscalatedAt?: string
+  cancelledAt?: string
   status: TaskStatus
 }
 
@@ -791,7 +794,6 @@ const storageKey = 'seo-demo-data-v5'
 const entityCredentialKey = 'seo-demo-entity-link-credentials'
 const appVersion = '1.0.0'
 const appTimeZone = 'Asia/Bangkok'
-const appUtcOffsetLabel = 'UTC+7'
 const permissions = ['Dự án', 'Ghi chú', 'Tài chính', 'Nhân sự', 'Tiến độ', 'Hệ thống']
 const toolPermissionName = 'Công cụ'
 if (!permissions.includes(toolPermissionName)) permissions.push(toolPermissionName)
@@ -819,7 +821,7 @@ const defaultTaskSalarySettings: TaskSalarySettings = {
   Backlink: 0,
   'SEO Entity': 0,
 }
-const editableTaskStatuses: TaskStatus[] = ['Chờ nhận', 'Đang làm', 'Cần chỉnh sửa', 'Chờ duyệt', 'Từ chối', 'Hoàn thành']
+const editableTaskStatuses: TaskStatus[] = ['Chờ nhận', 'Đang làm', 'Cần chỉnh sửa', 'Chờ duyệt', 'Từ chối', 'Hoàn thành', 'Đã hủy']
 const entityTabs: { id: EntityTab; label: string }[] = [
   { id: 'overview', label: 'Tổng quan Entity' },
   { id: 'profile', label: 'Hồ sơ Entity' },
@@ -1480,8 +1482,8 @@ const appDateParts = (value: Date) =>
     }).formatToParts(value).map((part) => [part.type, part.value]),
   ) as Record<string, string>
 const defaultTaskDeadlineInput = (assignedAt = appNow()) => {
-  const nextDay = new Date(assignedAt.getTime() + 24 * 60 * 60 * 1000)
-  const parts = appDateParts(nextDay)
+  const defaultDeadline = new Date(assignedAt.getTime() + 3 * 24 * 60 * 60 * 1000)
+  const parts = appDateParts(defaultDeadline)
   return `${parts.year}-${parts.month}-${parts.day}T20:00`
 }
 const currentPayrollPeriod = () => {
@@ -1566,7 +1568,7 @@ const formatDateTime = (value?: string) => {
   const normalizedValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00+07:00` : value
   const date = new Date(normalizedValue)
   if (Number.isNaN(date.getTime())) return value
-  return `${new Intl.DateTimeFormat('vi-VN', {
+  return new Intl.DateTimeFormat('vi-VN', {
     timeZone: appTimeZone,
     hour: '2-digit',
     minute: '2-digit',
@@ -1574,7 +1576,7 @@ const formatDateTime = (value?: string) => {
     month: '2-digit',
     year: 'numeric',
     hour12: false,
-  }).format(date)} (${appUtcOffsetLabel})`
+  }).format(date)
 }
 const permissionKey = (permission: string, action: PermissionAction) => `${permission}:${action}`
 const normalizePermissions = (userPermissions: string[] = []) => {
@@ -1762,6 +1764,129 @@ const calculateBacklinkScore = (backlink: SeoBacklink, source?: SeoBacklinkSourc
 }
 const taskStatusOf = (task: Task): TaskStatus => (task.status === 'Cần làm' ? 'Chờ nhận' : task.status)
 const taskDeadline = (task: Task) => task.deadlineAt || task.dueDate
+const taskDeadlineDate = (task: Task) => {
+  const value = taskDeadline(task)
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T20:00:00+07:00`
+    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)
+      ? `${value}:00+07:00`
+      : value
+  return new Date(normalized)
+}
+const taskDeadlineDayMs = 24 * 60 * 60 * 1000
+type TaskDeadlineState = 'on-track' | 'due-soon' | 'overdue' | 'escalated' | 'cancelled' | 'done'
+const taskDeadlineInfo = (task: Task, now = appNow()) => {
+  const status = taskStatusOf(task)
+  const deadline = taskDeadlineDate(task)
+  if (status === 'Hoàn thành') return { state: 'done' as TaskDeadlineState, overdueDays: 0, finalDaysRemaining: 0 }
+  if (status === 'Đã hủy') return { state: 'cancelled' as TaskDeadlineState, overdueDays: 7, finalDaysRemaining: 0 }
+  if (Number.isNaN(deadline.getTime())) return { state: 'on-track' as TaskDeadlineState, overdueDays: 0, finalDaysRemaining: 0 }
+
+  const diffMs = now.getTime() - deadline.getTime()
+  if (diffMs >= 7 * taskDeadlineDayMs) {
+    return { state: 'cancelled' as TaskDeadlineState, overdueDays: Math.floor(diffMs / taskDeadlineDayMs), finalDaysRemaining: 0 }
+  }
+  if (diffMs >= 4 * taskDeadlineDayMs) {
+    return {
+      state: 'escalated' as TaskDeadlineState,
+      overdueDays: Math.floor(diffMs / taskDeadlineDayMs),
+      finalDaysRemaining: Math.max(1, Math.ceil((7 * taskDeadlineDayMs - diffMs) / taskDeadlineDayMs)),
+    }
+  }
+  if (diffMs > 0) {
+    return { state: 'overdue' as TaskDeadlineState, overdueDays: Math.max(1, Math.ceil(diffMs / taskDeadlineDayMs)), finalDaysRemaining: 0 }
+  }
+  if (Math.abs(diffMs) <= taskDeadlineDayMs) {
+    return { state: 'due-soon' as TaskDeadlineState, overdueDays: 0, finalDaysRemaining: 0 }
+  }
+  return { state: 'on-track' as TaskDeadlineState, overdueDays: 0, finalDaysRemaining: 0 }
+}
+const taskDeadlineBadge = (task: Task, now = appNow()) => {
+  const info = taskDeadlineInfo(task, now)
+  if (info.state === 'due-soon') return { label: 'Sắp hết hạn', className: 'due-soon' }
+  if (info.state === 'overdue') return { label: `Quá hạn ${info.overdueDays} ngày`, className: 'overdue' }
+  if (info.state === 'escalated') return { label: `Còn ${info.finalDaysRemaining} ngày cuối`, className: 'escalated' }
+  if (info.state === 'cancelled') return { label: 'Đã hủy do quá hạn', className: 'cancelled' }
+  return null
+}
+const applyTaskDeadlineAutomation = (data: AppData, now = appNow()): AppData => {
+  const nowIso = now.toISOString()
+  const notifications: NotificationItem[] = []
+  const logs: ActivityLog[] = []
+  let changed = false
+  const projectById = new Map(data.projects.map((project) => [project.id, project]))
+  const adminIds = data.users.filter((user) => user.active && user.role === 'Quản trị viên').map((user) => user.id)
+  const addEvent = (task: Task, recipientIds: string[], title: string, message: string, action: string) => {
+    Array.from(new Set(recipientIds.filter(Boolean))).forEach((recipientId) => {
+      notifications.push({
+        id: uid('noti'),
+        recipientId,
+        title,
+        message,
+        projectId: task.projectId,
+        taskId: task.id,
+        linkView: 'tasks',
+        createdAt: nowIso,
+      })
+    })
+    logs.push({
+      id: uid('log'),
+      actorId: '',
+      actorName: 'Hệ thống deadline',
+      action,
+      target: task.title,
+      at: nowIso,
+    })
+  }
+  const projectAdminIds = (task: Task) => [...adminIds, projectById.get(task.projectId)?.ownerId ?? '']
+
+  const tasks = data.tasks.map((task) => {
+    if (['Hoàn thành', 'Đã hủy'].includes(taskStatusOf(task))) return task
+    const info = taskDeadlineInfo(task, now)
+    if (info.state === 'cancelled' && !task.cancelledAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId, ...projectAdminIds(task)],
+        'Task đã bị hủy do quá hạn',
+        `Task "${task.title}" đã quá hạn 7 ngày và được hệ thống chuyển sang trạng thái Đã hủy.`,
+        'Tự động hủy task quá hạn',
+      )
+      return { ...task, status: 'Đã hủy' as TaskStatus, cancelledAt: nowIso }
+    }
+    if (info.state === 'escalated' && !task.overdueEscalatedAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId, ...projectAdminIds(task)],
+        'Yêu cầu hoàn thành task trong 3 ngày',
+        `Task "${task.title}" đã quá hạn 4 ngày. Vui lòng hoàn thành trước ${formatDateTime(new Date(taskDeadlineDate(task).getTime() + 7 * taskDeadlineDayMs).toISOString())}.`,
+        'Cảnh báo task quá hạn 4 ngày',
+      )
+      return { ...task, overdueEscalatedAt: nowIso }
+    }
+    if (info.state === 'due-soon' && !task.deadlineReminderAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId],
+        'Task sắp tới deadline',
+        `Task "${task.title}" cần hoàn thành trước ${formatDateTime(taskDeadline(task))}.`,
+        'Nhắc task sắp tới deadline',
+      )
+      return { ...task, deadlineReminderAt: nowIso }
+    }
+    return task
+  })
+
+  if (!changed) return data
+  return {
+    ...data,
+    tasks,
+    notifications: [...notifications, ...(data.notifications ?? [])].slice(0, 500),
+    activityLogs: [...logs, ...(data.activityLogs ?? [])].slice(0, 300),
+  }
+}
 const formatWorkDuration = (startedAt?: string) => {
   if (!startedAt) return 'Chưa check-in'
   const diffMs = Math.max(0, appNow().getTime() - new Date(startedAt).getTime())
@@ -2068,6 +2193,9 @@ const normalizeData = (data: AppData): AppData => ({
     salaryModule: validTaskSalaryModule(task.salaryModule) ? task.salaryModule : undefined,
     payrollSettlementId: task.payrollSettlementId ?? '',
     payrollSettledAt: task.payrollSettledAt ?? '',
+    deadlineReminderAt: task.deadlineReminderAt ?? '',
+    overdueEscalatedAt: task.overdueEscalatedAt ?? '',
+    cancelledAt: task.cancelledAt ?? '',
   })),
   payrollSettlements: (data.payrollSettlements ?? []).map((settlement) => ({
     ...settlement,
@@ -2240,9 +2368,11 @@ function useStoredData() {
 
 function App() {
   const [data, setData, reloadData, importData, apiEnabled, loadingRemoteData] = useStoredData()
+  const projectFormRef = useRef<HTMLFormElement | null>(null)
   const wordpressFormRef = useRef<HTMLFormElement | null>(null)
   const [view, setView] = useState<View>(getViewFromHash)
   const [activeProjectId, setActiveProjectId] = useState(data.projects[0]?.id ?? '')
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem('seo-demo-current-user') || '')
   const [loginError, setLoginError] = useState('')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
@@ -2363,6 +2493,11 @@ function App() {
       cancelled = true
     }
   }, [selectedProject?.id, view])
+  useEffect(() => {
+    if (!apiEnabled || loadingRemoteData) return
+    const nextData = applyTaskDeadlineAutomation(data)
+    if (nextData !== data) setData(nextData)
+  }, [apiEnabled, data, loadingRemoteData, setData])
   const currentUser = data.users.find((user) => user.id === currentUserId && user.active)
   const isAdmin = currentUser?.role === 'Quản trị viên'
   const currentUserIdValue = currentUser?.id ?? ''
@@ -2444,6 +2579,7 @@ function App() {
   }, [view, currentUserIdValue, loadArticleToolConfig, loadArticleToolHistory])
   const visibleProjects = hasProjectViewPermission ? activeProjects : activeProjects.filter((project) => assignedProjectIds.has(project.id))
   const activeProject = visibleProjects.find((project) => project.id === activeProjectId) ?? visibleProjects[0] ?? selectedProject
+  const editingProject = editingProjectId ? data.projects.find((project) => project.id === editingProjectId) : undefined
   const canEditAssignedArticle = (keyword: Keyword) => assignedArticleKeywordIds.has(keyword.id)
   const projectTasks = data.tasks.filter((task) =>
     task.projectId === activeProject?.id &&
@@ -2455,6 +2591,9 @@ function App() {
   const activeUserTasks = currentUserTasks.filter((task) => ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task)))
   const reviewUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Chờ duyệt')
   const approvedUserTasks = currentUserTasks.filter((task) => taskStatusOf(task) === 'Hoàn thành')
+  const dueSoonTasks = activeTasks.filter((task) => taskDeadlineInfo(task).state === 'due-soon')
+  const overdueTasks = activeTasks.filter((task) => ['overdue', 'escalated'].includes(taskDeadlineInfo(task).state))
+  const cancelledDeadlineTasks = activeTasks.filter((task) => taskStatusOf(task) === 'Đã hủy')
   const taskSalarySettings = taskSalarySettingsOf(data.taskSalarySettings)
   const taskSalary = approvedUserTasks.filter((task) => !task.payrollSettlementId).reduce((sum, task) => sum + (task.taskSalary ?? 0), 0)
   const payrollSettlements = data.payrollSettlements ?? []
@@ -2564,6 +2703,8 @@ function App() {
   const projectCompletion = projectTasks.length
     ? (projectTasks.filter((task) => task.status === 'Hoàn thành').length / projectTasks.length) * 100
     : 0
+  const projectOverdueTasks = projectTasks.filter((task) => ['overdue', 'escalated'].includes(taskDeadlineInfo(task).state))
+  const projectCancelledDeadlineTasks = projectTasks.filter((task) => taskStatusOf(task) === 'Đã hủy')
 
   const completedTasks = activeTasks.filter((task) => task.status === 'Hoàn thành').length
   const completionRate = activeTasks.length ? (completedTasks / activeTasks.length) * 100 : 0
@@ -2653,6 +2794,7 @@ function App() {
   }
   const selectActiveProject = (projectId: string) => {
     setActiveProjectId(projectId)
+    setEditingProjectId(null)
     setExpandedKeywordIds(new Set())
     setSelectedKeywordIds(new Set())
     setGoogleOAuthStatus(emptyGoogleOAuthStatus)
@@ -2782,23 +2924,53 @@ function App() {
     setHashView('overview')
   }
 
-  const addProject = (event: FormEvent<HTMLFormElement>) => {
+  const saveProject = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const existingProject = editingProjectId ? data.projects.find((item) => item.id === editingProjectId) : undefined
+    const name = String(form.get('name')).trim()
+    const website = String(form.get('website')).trim()
+    const startDate = String(form.get('startDate')).trim()
+    const endDate = String(form.get('endDate')).trim()
+    const budget = Number(form.get('budget')) || 0
+
+    if (!name || !website) {
+      window.alert('Vui lòng nhập tên dự án và website.')
+      return
+    }
+    if (budget < 0) {
+      window.alert('Ngân sách không được nhỏ hơn 0.')
+      return
+    }
+    if (startDate && endDate && startDate > endDate) {
+      window.alert('Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.')
+      return
+    }
+
     const project: Project = {
-      id: uid('p'),
-      name: String(form.get('name')).trim(),
+      ...(existingProject ?? {}),
+      id: existingProject?.id ?? uid('p'),
+      name,
       client: String(form.get('client')).trim(),
-      website: String(form.get('website')).trim(),
-      startDate: String(form.get('startDate')).trim(),
-      endDate: String(form.get('endDate')).trim(),
-      budget: Number(form.get('budget')) || 0,
+      website,
+      startDate,
+      endDate,
+      budget,
       status: (String(form.get('status')) as ProjectStatus) || 'Đang SEO',
       ownerId: String(form.get('ownerId')),
     }
-    saveData({ ...data, projects: [project, ...data.projects] }, 'Tạo dự án', project.name)
+    const projects = existingProject
+      ? data.projects.map((item) => (item.id === existingProject.id ? project : item))
+      : [project, ...data.projects]
+
+    saveData({ ...data, projects }, existingProject ? 'Cập nhật dự án' : 'Tạo dự án', project.name)
     selectActiveProject(project.id)
-    event.currentTarget.reset()
+    if (!existingProject) event.currentTarget.reset()
+  }
+
+  const editProject = (projectId: string) => {
+    setEditingProjectId(projectId)
+    window.requestAnimationFrame(() => projectFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }
 
   const archiveProject = (projectId: string) => {
@@ -3597,8 +3769,16 @@ function App() {
 
   const updateKeywordArticle = (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleMetaDescription' | 'articleContent' | 'articleStatus' | 'articleUpdatedAt' | 'articleSource' | 'articleAssigneeId' | 'articleUrl'>>) => {
     if (!canEditProjects && !assignedArticleKeywordIds.has(keywordId)) return
+    const keywordToUpdate = data.keywords.find((keyword) => keyword.id === keywordId)
+    const articleTask = keywordToUpdate?.articleTaskId ? data.tasks.find((task) => task.id === keywordToUpdate.articleTaskId) : undefined
+    const articleTaskCompleted = articleTask ? taskStatusOf(articleTask) === 'Hoàn thành' : false
     const allowedUpdates = { ...updates }
     if (!canEditProjects && 'articleAssigneeId' in allowedUpdates) delete allowedUpdates.articleAssigneeId
+    if (articleTaskCompleted) {
+      if ('articleAssigneeId' in allowedUpdates) delete allowedUpdates.articleAssigneeId
+      if ('articleUrl' in allowedUpdates) delete allowedUpdates.articleUrl
+    }
+    if (Object.keys(allowedUpdates).length === 0) return
     saveData({
       ...data,
       keywords: data.keywords.map((keyword) =>
@@ -3619,6 +3799,8 @@ function App() {
     if (!canEditProjects) return
     const keyword = data.keywords.find((item) => item.id === keywordId)
     if (!keyword || !activeProject) return
+    const linkedTask = keyword.articleTaskId ? data.tasks.find((task) => task.id === keyword.articleTaskId) : undefined
+    if (linkedTask && taskStatusOf(linkedTask) === 'Hoàn thành') return
     if (!keyword.articleAssigneeId) {
       window.alert('Vui lòng chọn người phụ trách trước khi gửi task.')
       return
@@ -3628,7 +3810,7 @@ function App() {
     const existingTask = keyword.articleTaskId ? data.tasks.find((task) => task.id === keyword.articleTaskId) : undefined
     const taskId = existingTask?.id ?? uid('t')
     const assignedAt = appNowIso()
-    const deadlineAt = existingTask?.deadlineAt || defaultTaskDeadlineInput(new Date(assignedAt))
+    const deadlineAt = defaultTaskDeadlineInput(new Date(assignedAt))
     const articleTaskSalary = existingTask?.taskSalary ?? taskSalarySettings['Bài viết']
     const task: Task = existingTask
       ? {
@@ -3644,6 +3826,9 @@ function App() {
           approvedAt: '',
           rejectionReason: '',
           revisionNote: '',
+          deadlineReminderAt: '',
+          overdueEscalatedAt: '',
+          cancelledAt: '',
           taskSalary: articleTaskSalary,
           salaryModule: 'Bài viết',
           status: 'Chờ nhận',
@@ -3976,7 +4161,9 @@ function App() {
     if (!canEditTasks) return
     const task = data.tasks.find((item) => item.id === taskId)
     if (!task) return
-    const updatedTask = { ...task, assigneeId, status: 'Chờ nhận' as TaskStatus }
+    const assignedAt = appNowIso()
+    const deadlineAt = defaultTaskDeadlineInput(new Date(assignedAt))
+    const updatedTask = { ...task, assigneeId, status: 'Chờ nhận' as TaskStatus, assignedAt, deadlineAt, dueDate: taskDueDateFromDeadline(deadlineAt) }
     const nextData = {
       ...data,
       tasks: data.tasks.map((item) =>
@@ -3985,12 +4172,17 @@ function App() {
               ...item,
               assigneeId,
               status: 'Chờ nhận' as TaskStatus,
-              assignedAt: appNowIso(),
+              assignedAt,
+              dueDate: taskDueDateFromDeadline(deadlineAt),
+              deadlineAt,
               acceptedAt: '',
               completedAt: '',
               approvedAt: '',
               rejectionReason: '',
               revisionNote: '',
+              deadlineReminderAt: '',
+              overdueEscalatedAt: '',
+              cancelledAt: '',
             }
           : item,
       ),
@@ -4263,6 +4455,9 @@ function App() {
         approvedAt: '',
         rejectionReason: '',
         revisionNote: '',
+        deadlineReminderAt: '',
+        overdueEscalatedAt: '',
+        cancelledAt: '',
         taskSalary: task.taskSalary ?? entityTaskSalary,
         salaryModule: 'SEO Entity' as TaskSalaryModule,
       }
@@ -5274,12 +5469,35 @@ function App() {
               />
             ) : (
               <>
-                <div className="metric-grid">
+                <div className="metric-grid task-overview-metrics">
                   <Metric title="Tổng dự án" value={activeProjects.length} note={`${projectProgress.filter((p) => p.status === 'Đang SEO').length} đang SEO`} />
                   <Metric title="Tổng chi phí" value={currency.format(expense)} note="Không tính doanh thu" />
                   <Metric title="Task hoàn thành" value={pct(completionRate)} note={`${completedTasks}/${activeTasks.length} công việc`} />
+                  <Metric title="Task quá hạn" value={overdueTasks.length} note={`${cancelledDeadlineTasks.length} đã hủy · ${dueSoonTasks.length} sắp hạn`} />
                   <Metric title="Position TB" value={avgPosition.toFixed(1)} note={`${activeKeywords.length} keyword đang theo dõi`} />
                 </div>
+
+                {(overdueTasks.length > 0 || cancelledDeadlineTasks.length > 0) && (
+                  <Panel title="Cảnh báo task quá hạn" action={`${overdueTasks.length} cần xử lý · ${cancelledDeadlineTasks.length} đã hủy`}>
+                    <div className="deadline-alert-list">
+                      {[...overdueTasks, ...cancelledDeadlineTasks].slice(0, 10).map((task) => {
+                        const badge = taskDeadlineBadge(task)
+                        return (
+                          <article className={`deadline-alert-item ${badge?.className ?? ''}`} key={task.id}>
+                            <div>
+                              <strong>{task.title}</strong>
+                              <span>{data.projects.find((project) => project.id === task.projectId)?.name ?? 'Dự án đã xóa'} · {ownerName(task.assigneeId)}</span>
+                            </div>
+                            <div>
+                              {badge && <b className={`task-deadline-badge ${badge.className}`}>{badge.label}</b>}
+                              <small>Hạn {formatDateTime(taskDeadline(task))}</small>
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  </Panel>
+                )}
 
                 <div className="dashboard-grid">
                   <Panel title="Thống kê chi phí công ty" action={currency.format(expense)}>
@@ -5345,29 +5563,63 @@ function App() {
                 )}
               </Panel>
 
-              <Panel title="Tạo dự án SEO" action={canEditProjects ? 'Chỉ bắt buộc tên và website' : 'Chỉ xem'}>
+              <Panel
+                title={editingProject ? 'Chỉnh sửa dự án SEO' : 'Tạo dự án SEO'}
+                action={canEditProjects ? (editingProject ? `Đang sửa: ${editingProject.name}` : 'Chỉ bắt buộc tên và website') : 'Chỉ xem'}
+              >
                 {canEditProjects ? (
-                  <form className="form-grid compact" onSubmit={addProject}>
-                    <input name="name" placeholder="Tên dự án *" required />
-                    <input name="website" placeholder="Website *" required />
-                    <input name="client" placeholder="Khách hàng" />
-                    <input name="budget" placeholder="Ngân sách" type="number" min="0" />
-                    <input name="startDate" aria-label="Ngày bắt đầu" type="date" />
-                    <input name="endDate" aria-label="Ngày kết thúc" type="date" />
-                    <select name="status">
-                      <option>Đang SEO</option>
-                      <option>Tạm dừng</option>
-                      <option>Hoàn thành</option>
-                    </select>
-                    <select name="ownerId">
-                      <option value="">Chưa gán phụ trách</option>
-                      {data.users.map((user) => (
-                        <option value={user.id} key={user.id}>
-                          {user.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button type="submit">Tạo dự án</button>
+                  <form className="project-editor-form" onSubmit={saveProject} ref={projectFormRef} key={editingProject?.id ?? 'new-project'}>
+                    <label className="project-editor-wide">
+                      <span>Tên dự án *</span>
+                      <input name="name" placeholder="Ví dụ: SEO website thương hiệu" defaultValue={editingProject?.name} required />
+                    </label>
+                    <label className="project-editor-wide">
+                      <span>Website *</span>
+                      <input name="website" placeholder="https://tenmien.vn" defaultValue={editingProject?.website} required />
+                    </label>
+                    <label>
+                      <span>Khách hàng</span>
+                      <input name="client" placeholder="Tên khách hàng" defaultValue={editingProject?.client} />
+                    </label>
+                    <label>
+                      <span>Ngân sách</span>
+                      <input name="budget" placeholder="0" type="number" min="0" defaultValue={editingProject?.budget || ''} />
+                    </label>
+                    <label>
+                      <span>Ngày bắt đầu</span>
+                      <input name="startDate" type="date" defaultValue={editingProject?.startDate} />
+                    </label>
+                    <label>
+                      <span>Ngày kết thúc</span>
+                      <input name="endDate" type="date" defaultValue={editingProject?.endDate} />
+                    </label>
+                    <label>
+                      <span>Trạng thái</span>
+                      <select name="status" defaultValue={editingProject?.status ?? 'Đang SEO'}>
+                        <option>Đang SEO</option>
+                        <option>Tạm dừng</option>
+                        <option>Hoàn thành</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Người phụ trách</span>
+                      <select name="ownerId" defaultValue={editingProject?.ownerId ?? ''}>
+                        <option value="">Chưa gán phụ trách</option>
+                        {data.users.map((user) => (
+                          <option value={user.id} key={user.id}>
+                            {user.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="project-editor-actions">
+                      {editingProject && (
+                        <button className="secondary-button" type="button" onClick={() => setEditingProjectId(null)}>
+                          Hủy chỉnh sửa
+                        </button>
+                      )}
+                      <button type="submit">{editingProject ? 'Lưu thay đổi' : 'Tạo dự án'}</button>
+                    </div>
                   </form>
                 ) : (
                   <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền chỉnh sửa dự án." />
@@ -5395,6 +5647,9 @@ function App() {
                       <Detail label="Ngày kết thúc" value={formatDateOnly(activeProject.endDate)} />
                     </div>
                     {canEditProjects && <div className="panel-actions">
+                      <button className="secondary-button" type="button" onClick={() => editProject(activeProject.id)}>
+                        Chỉnh sửa dự án
+                      </button>
                       <button className="danger-button" type="button" onClick={() => archiveProject(activeProject.id)}>
                         Xóa dự án
                       </button>
@@ -5737,6 +5992,7 @@ function App() {
                 key={`articles-${activeProject?.id ?? 'none'}`}
                 keywords={articleProjectKeywords}
                 users={data.users}
+                tasks={data.tasks}
                 onUpdateKeyword={updateKeywordArticle}
                 onSendTask={sendArticleTask}
                 onDeleteKeyword={deleteKeywordFromArticles}
@@ -5822,11 +6078,12 @@ function App() {
 
         {view === 'tasks' && canView(view) && (
           <section className="view-stack">
-            <div className="metric-grid">
+            <div className="metric-grid task-overview-metrics">
               <Metric title="Task dự án" value={projectTasks.length} note={activeProject?.name ?? 'Chưa có dự án'} />
               <Metric title="Hoàn thành" value={projectTasks.filter((task) => task.status === 'Hoàn thành').length} note={pct(projectCompletion)} />
               <Metric title="Đang làm" value={projectTasks.filter((task) => ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task))).length} note="Đang xử lý" />
               <Metric title="Chờ nhận" value={projectTasks.filter((task) => taskStatusOf(task) === 'Chờ nhận').length} note="Admin đã phân" />
+              <Metric title="Task quá hạn" value={projectOverdueTasks.length} note={`${projectCancelledDeadlineTasks.length} đã hủy do quá hạn`} />
             </div>
             <Panel title="Thêm công việc" action={canEditTasks ? 'Theo dự án đang chọn' : 'Chỉ xem'}>
               {canEditTasks ? (
@@ -9494,6 +9751,7 @@ function KeywordTable({
 function ArticleTable({
   keywords,
   users,
+  tasks,
   onUpdateKeyword,
   onSendTask,
   onDeleteKeyword,
@@ -9502,6 +9760,7 @@ function ArticleTable({
 }: {
   keywords: Keyword[]
   users: User[]
+  tasks: Task[]
   onUpdateKeyword: (keywordId: string, updates: Partial<Pick<Keyword, 'articleType' | 'articleTitle' | 'articleMetaDescription' | 'articleContent' | 'articleStatus' | 'articleUpdatedAt' | 'articleSource' | 'articleAssigneeId' | 'articleUrl'>>) => void
   onSendTask: (keywordId: string) => void
   onDeleteKeyword: (keywordId: string) => void
@@ -9513,6 +9772,7 @@ function ArticleTable({
   const [currentPage, setCurrentPage] = useState(1)
   const editingDraft = keywords.find((keyword) => keyword.id === editingDraftId)
   const canEditArticle = (keyword: Keyword) => canEdit || Boolean(canEditKeyword?.(keyword))
+  const taskById = new Map(tasks.map((task) => [task.id, task]))
   const canEditDraft = editingDraft ? canEditArticle(editingDraft) : false
   const totalPages = Math.max(1, Math.ceil(keywords.length / pageSize))
   const page = Math.min(currentPage, totalPages)
@@ -9561,8 +9821,10 @@ function ArticleTable({
         <tbody>
           {paginatedKeywords.map((keyword) => {
             const canEditRow = canEditArticle(keyword)
+            const articleTask = keyword.articleTaskId ? taskById.get(keyword.articleTaskId) : undefined
+            const articleTaskCompleted = articleTask ? taskStatusOf(articleTask) === 'Hoàn thành' : false
             return (
-            <tr key={keyword.id}>
+            <tr className={articleTaskCompleted ? 'article-row-completed' : undefined} key={keyword.id}>
               <td>{keyword.term}</td>
               <td>
                 <input
@@ -9590,7 +9852,7 @@ function ArticleTable({
                 <select
                   value={keyword.articleAssigneeId ?? ''}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleAssigneeId: event.target.value })}
-                  disabled={!canEdit}
+                  disabled={!canEdit || articleTaskCompleted}
                 >
                   <option value="">Chưa chọn</option>
                   {users.map((user) => (
@@ -9601,9 +9863,13 @@ function ArticleTable({
                 </select>
               </td>
               <td>
-                <button className="secondary-button" type="button" onClick={() => onSendTask(keyword.id)} disabled={!canEdit}>
-                  {keyword.articleTaskId ? 'Phân việc lại' : 'Gửi Task'}
-                </button>
+                {articleTaskCompleted ? (
+                  <span className="article-task-completed">Hoàn thành</span>
+                ) : (
+                  <button className="secondary-button" type="button" onClick={() => onSendTask(keyword.id)} disabled={!canEdit}>
+                    {keyword.articleTaskId ? 'Phân việc lại' : 'Gửi Task'}
+                  </button>
+                )}
               </td>
               <td>
                 <div className="article-draft-cell">
@@ -9618,7 +9884,8 @@ function ArticleTable({
                   value={keyword.articleUrl ?? ''}
                   onChange={(event) => onUpdateKeyword(keyword.id, { articleUrl: event.target.value })}
                   placeholder="https://..."
-                  disabled={!canEditRow}
+                  disabled={!canEditRow || articleTaskCompleted}
+                  title={articleTaskCompleted ? 'Link bài viết đã khóa vì task đã được xác nhận hoàn thành.' : undefined}
                 />
               </td>
               <td>
@@ -9873,12 +10140,15 @@ function EmployeeOverview({
             <EmptyState title="Chưa có task được giao" text="Khi admin phân công, task sẽ xuất hiện tại đây để nhận hoặc từ chối." />
           ) : (
             <div className="employee-task-list">
-              {tasks.map((task) => (
-                <article className={`employee-task-card status-${taskStatusOf(task).replace(/\s+/g, '-').toLowerCase()}`} key={task.id}>
+              {tasks.map((task) => {
+                const deadlineBadge = taskDeadlineBadge(task)
+                return (
+                <article className={`employee-task-card status-${taskStatusOf(task).replace(/\s+/g, '-').toLowerCase()} ${deadlineBadge?.className ?? ''}`} key={task.id}>
                   <div>
                     <strong>{task.title}</strong>
                     <span>{projects.find((project) => project.id === task.projectId)?.name ?? 'Dự án đã xóa'}</span>
                     <small>Giao: {formatDateTime(task.assignedAt)} · Hạn: {formatDateTime(taskDeadline(task))}</small>
+                    {deadlineBadge && <b className={`task-deadline-badge ${deadlineBadge.className}`}>{deadlineBadge.label}</b>}
                     {task.rejectionReason && <small>Từ chối: {task.rejectionReason}</small>}
                     {task.revisionNote && <small>Cần chỉnh sửa: {task.revisionNote}</small>}
                   </div>
@@ -9901,7 +10171,8 @@ function EmployeeOverview({
                     )}
                   </div>
                 </article>
-              ))}
+                )
+              })}
             </div>
           )}
         </Panel>
@@ -9947,14 +10218,13 @@ function TaskTable({
 
   return (
     <div className="table-wrap">
-      <table>
+      <table className={compact ? 'task-table compact' : 'task-table'}>
         <thead>
           <tr>
             <th>Công việc</th>
             {!compact && <th>Dự án</th>}
             <th>Nhân sự</th>
-            <th>Thời gian giao</th>
-            <th>Yêu cầu hoàn thành</th>
+            {compact ? <th>Thời hạn</th> : <><th>Thời gian giao</th><th>Yêu cầu hoàn thành</th></>}
             <th>Lương task</th>
             <th>Trạng thái</th>
             {(canEdit || allowAssigneeWorkflow) && <th>Tác vụ</th>}
@@ -9964,9 +10234,12 @@ function TaskTable({
           {tasks.map((task) => {
             const canUseAssigneeWorkflow = Boolean(allowAssigneeWorkflow && currentUserId && task.assigneeId === currentUserId)
             const canShowTaskActions = canEdit || canUseAssigneeWorkflow
+            const status = taskStatusOf(task)
+            const deadlineBadge = taskDeadlineBadge(task)
+            const showAdminReviewActions = canEdit && status === 'Chờ duyệt'
             return (
-            <tr key={task.id}>
-              <td>{task.title}</td>
+            <tr className={deadlineBadge ? `task-deadline-${deadlineBadge.className}` : undefined} key={task.id}>
+              <td><strong className="task-table-title">{task.title}</strong></td>
               {!compact && <td>{projects.find((project) => project.id === task.projectId)?.name}</td>}
               <td>
                 <select
@@ -9983,14 +10256,27 @@ function TaskTable({
                   ))}
                 </select>
               </td>
-              <td>{formatDateTime(task.assignedAt)}</td>
-              <td>{formatDateTime(taskDeadline(task))}</td>
+              {compact ? (
+                <td className="task-time-cell">
+                  <span>Giao {formatDateTime(task.assignedAt)}</span>
+                  <strong>Hạn {formatDateTime(taskDeadline(task))}</strong>
+                  {deadlineBadge && <b className={`task-deadline-badge ${deadlineBadge.className}`}>{deadlineBadge.label}</b>}
+                </td>
+              ) : (
+                <>
+                  <td>{formatDateTime(task.assignedAt)}</td>
+                  <td className="task-time-cell">
+                    <strong>{formatDateTime(taskDeadline(task))}</strong>
+                    {deadlineBadge && <b className={`task-deadline-badge ${deadlineBadge.className}`}>{deadlineBadge.label}</b>}
+                  </td>
+                </>
+              )}
               <td>
                 <strong>{currency.format(task.taskSalary ?? 0)}</strong>
                 {task.salaryModule && <small className="task-note task-module">{task.salaryModule}</small>}
               </td>
               <td>
-                <select className="status-select" value={taskStatusOf(task)} onChange={(event) => onStatus(task.id, event.target.value as TaskStatus)} disabled={!canEdit}>
+                <select className="status-select" value={status} onChange={(event) => onStatus(task.id, event.target.value as TaskStatus)} disabled={!canEdit || status === 'Đã hủy'}>
                   {editableTaskStatuses.map((status) => (
                     <option key={status}>{status}</option>
                   ))}
@@ -10000,32 +10286,33 @@ function TaskTable({
               </td>
               {canShowTaskActions && (
                 <td>
-                  <div className="table-actions">
-                    {canEdit && (
+                  <div className="table-actions task-table-actions">
+                    {showAdminReviewActions && (
                       <>
-                        <button className="secondary-button" type="button" onClick={() => onApprove(task.id)} disabled={taskStatusOf(task) !== 'Chờ duyệt'}>
+                        <button className="secondary-button task-action-button" type="button" onClick={() => onApprove(task.id)}>
                           Xác nhận
                         </button>
-                        <button className="danger-button" type="button" onClick={() => onRevision(task.id)} disabled={taskStatusOf(task) !== 'Chờ duyệt'}>
+                        <button className="danger-button task-action-button" type="button" onClick={() => onRevision(task.id)}>
                           Cần sửa
                         </button>
                       </>
                     )}
-                    {canUseAssigneeWorkflow && taskStatusOf(task) === 'Chờ nhận' && (
+                    {canUseAssigneeWorkflow && status === 'Chờ nhận' && (
                       <>
-                        <button className="secondary-button" type="button" onClick={() => onAcceptTask?.(task.id)}>
+                        <button className="secondary-button task-action-button" type="button" onClick={() => onAcceptTask?.(task.id)}>
                           Nhận task
                         </button>
-                        <button className="danger-button" type="button" onClick={() => onRejectTask?.(task.id)}>
+                        <button className="danger-button task-action-button" type="button" onClick={() => onRejectTask?.(task.id)}>
                           Từ chối
                         </button>
                       </>
                     )}
-                    {canUseAssigneeWorkflow && ['Đang làm', 'Cần chỉnh sửa'].includes(taskStatusOf(task)) && (
-                      <button className="secondary-button" type="button" onClick={() => onSubmitTask?.(task.id)}>
+                    {canUseAssigneeWorkflow && ['Đang làm', 'Cần chỉnh sửa'].includes(status) && (
+                      <button className="secondary-button task-action-button" type="button" onClick={() => onSubmitTask?.(task.id)}>
                         Gửi hoàn thành
                       </button>
                     )}
+                    {!showAdminReviewActions && !(canUseAssigneeWorkflow && ['Chờ nhận', 'Đang làm', 'Cần chỉnh sửa'].includes(status)) && <span className="task-action-empty">—</span>}
                   </div>
                 </td>
               )}

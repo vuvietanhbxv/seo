@@ -521,6 +521,10 @@ textarea:focus {
   gap: 14px;
 }
 
+.task-overview-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
 .metric-card,
 .panel {
   border: 1px solid var(--line);
@@ -994,6 +998,51 @@ textarea:focus {
 
 .form-grid.compact {
   grid-template-columns: 1fr;
+}
+
+.project-editor-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.project-editor-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.project-editor-form label span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.project-editor-wide,
+.project-editor-actions {
+  grid-column: 1 / -1;
+}
+
+.project-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.project-editor-actions button {
+  flex: 1 1 0;
+  border: 0;
+  border-radius: 8px;
+  min-height: 42px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.project-editor-actions .secondary-button {
+  background: #e0f2fe;
+  color: #075985;
 }
 
 .inline-form {
@@ -2251,6 +2300,21 @@ select:disabled {
   font-size: 12px;
 }
 
+.employee-task-card.overdue,
+.employee-task-card.escalated,
+.employee-task-card.cancelled {
+  border-left-width: 4px;
+}
+
+.employee-task-card.overdue {
+  border-left-color: #f59e0b;
+}
+
+.employee-task-card.escalated,
+.employee-task-card.cancelled {
+  border-left-color: #dc2626;
+}
+
 .employee-task-actions {
   display: flex;
   align-items: flex-start;
@@ -2285,9 +2349,162 @@ select:disabled {
   color: var(--muted);
 }
 
+.task-deadline-badge {
+  display: inline-flex;
+  width: max-content;
+  margin-top: 5px;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.task-deadline-badge.due-soon {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.task-deadline-badge.overdue {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.task-deadline-badge.escalated,
+.task-deadline-badge.cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.deadline-alert-list {
+  display: grid;
+  gap: 8px;
+}
+
+.deadline-alert-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #f59e0b;
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: #fffaf2;
+}
+
+.deadline-alert-item.escalated,
+.deadline-alert-item.cancelled {
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+  background: #fff7f7;
+}
+
+.deadline-alert-item strong,
+.deadline-alert-item span,
+.deadline-alert-item small {
+  display: block;
+}
+
+.deadline-alert-item strong {
+  font-size: 13px;
+}
+
+.deadline-alert-item span,
+.deadline-alert-item small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.deadline-alert-item > div:last-child {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.deadline-alert-item .task-deadline-badge {
+  margin-left: auto;
+}
+
 .table-wrap {
   width: 100%;
   overflow-x: auto;
+}
+
+.task-table.compact {
+  min-width: 920px;
+}
+
+.task-table.compact th,
+.task-table.compact td {
+  padding: 8px 7px;
+}
+
+.task-table.compact th {
+  font-size: 10px;
+}
+
+.task-table.compact td {
+  font-size: 12px;
+}
+
+.task-table-title {
+  display: block;
+  min-width: 190px;
+  max-width: 300px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.task-time-cell > span,
+.task-time-cell > strong {
+  display: block;
+  white-space: nowrap;
+}
+
+.task-time-cell > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.task-time-cell > strong {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.task-table.compact .status-select {
+  min-height: 30px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.task-table-actions {
+  min-width: 108px;
+  gap: 5px;
+}
+
+.task-action-button {
+  min-height: 28px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.task-action-empty {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.task-table tr.task-deadline-overdue td {
+  background: #fffbeb;
+}
+
+.task-table tr.task-deadline-escalated td,
+.task-table tr.task-deadline-cancelled td {
+  background: #fff7f7;
 }
 
 .table-pagination {
@@ -2346,6 +2563,29 @@ table {
 .article-table input {
   width: 100%;
   min-width: 190px;
+}
+
+.article-row-completed td {
+  background: #f0fdf4;
+}
+
+.article-task-completed {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.article-row-completed input:disabled,
+.article-row-completed select:disabled {
+  border-color: #bbf7d0;
+  background: #f8fffa;
 }
 
 .article-draft-cell {
@@ -3424,6 +3664,15 @@ tr:last-child td {
     grid-template-columns: 1fr;
   }
 
+  .project-editor-form {
+    grid-template-columns: 1fr;
+  }
+
+  .project-editor-wide,
+  .project-editor-actions {
+    grid-column: auto;
+  }
+
   .social-filter-grid,
   .social-form-grid,
   .social-metric-form {
@@ -3521,6 +3770,19 @@ tr:last-child td {
   .employee-task-card {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .deadline-alert-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .deadline-alert-item > div:last-child {
+    text-align: left;
+  }
+
+  .deadline-alert-item .task-deadline-badge {
+    margin-left: 0;
   }
 
   .employee-task-actions,
