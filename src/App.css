@@ -2458,6 +2458,16 @@ select:disabled {
   line-height: 1.35;
 }
 
+.article-task-title-link {
+  color: var(--accent);
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.article-task-title-link:hover {
+  text-decoration: underline;
+}
+
 .task-time-cell > span,
 .task-time-cell > strong {
   display: block;
@@ -2563,6 +2573,96 @@ table {
 .article-table input {
   width: 100%;
   min-width: 190px;
+}
+
+.article-field-view {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 230px;
+}
+
+.article-field-view > span,
+.article-field-view > a {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.article-field-view > a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.article-field-view > a:hover {
+  text-decoration: underline;
+}
+
+.article-inline-editor {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 360px;
+}
+
+.article-save-button,
+.article-cancel-button {
+  min-height: 32px;
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ghost-button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.ghost-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-button.article-edit-button {
+  display: inline-grid;
+  flex: 0 0 30px;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.icon-button.article-edit-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.article-save-toast {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 11px 14px;
+  background: #f0fdf4;
+  color: #15803d;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .article-row-completed td {

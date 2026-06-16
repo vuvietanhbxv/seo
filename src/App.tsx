@@ -5521,6 +5521,7 @@ function App() {
                 <Panel title="Công việc gần đây" action="Theo tất cả dự án">
                   <TaskTable
                     tasks={activeTasks.slice(0, 6)}
+                    keywords={data.keywords}
                     users={data.users}
                     projects={data.projects}
                     onStatus={updateTaskStatus}
@@ -6113,6 +6114,7 @@ function App() {
             <Panel title="Task công việc" action={`${projectTasks.filter((task) => task.status === 'Hoàn thành').length}/${projectTasks.length} xong`}>
               <TaskTable
                 tasks={projectTasks}
+                keywords={data.keywords}
                 users={data.users}
                 projects={data.projects}
                 onStatus={updateTaskStatus}
@@ -6444,6 +6446,7 @@ function App() {
             <Panel title="Bảng công việc tổng hợp" action={`${activeTasks.length} công việc`}>
               <TaskTable
                 tasks={activeTasks}
+                keywords={data.keywords}
                 users={data.users}
                 projects={data.projects}
                 onStatus={updateTaskStatus}
@@ -9748,6 +9751,14 @@ function KeywordTable({
   )
 }
 
+type ArticleEditableField = 'articleTitle' | 'articleUrl'
+
+type ArticleFieldEditState = {
+  keywordId: string
+  field: ArticleEditableField
+  value: string
+}
+
 function ArticleTable({
   keywords,
   users,
@@ -9768,6 +9779,8 @@ function ArticleTable({
   canEditKeyword?: (keyword: Keyword) => boolean
 }) {
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
+  const [editingArticleField, setEditingArticleField] = useState<ArticleFieldEditState | null>(null)
+  const [articleSaveNotice, setArticleSaveNotice] = useState('')
   const [pageSize, setPageSize] = useState(25)
   const [currentPage, setCurrentPage] = useState(1)
   const editingDraft = keywords.find((keyword) => keyword.id === editingDraftId)
@@ -9783,6 +9796,35 @@ function ArticleTable({
     'Cho duyet': 'Chờ duyệt',
     'Da duyet': 'Đã duyệt',
     'Can chinh sua': 'Cần chỉnh sửa',
+  }
+
+  useEffect(() => {
+    if (!articleSaveNotice) return undefined
+    const timer = window.setTimeout(() => setArticleSaveNotice(''), 1800)
+    return () => window.clearTimeout(timer)
+  }, [articleSaveNotice])
+
+  const startArticleFieldEdit = (keyword: Keyword, field: ArticleEditableField) => {
+    setEditingArticleField({
+      keywordId: keyword.id,
+      field,
+      value: field === 'articleTitle' ? keyword.articleTitle ?? '' : keyword.articleUrl ?? '',
+    })
+  }
+
+  const saveArticleFieldEdit = () => {
+    if (!editingArticleField) return
+    const keyword = keywords.find((item) => item.id === editingArticleField.keywordId)
+    if (!keyword || !canEditArticle(keyword)) return
+    const articleTask = keyword.articleTaskId ? taskById.get(keyword.articleTaskId) : undefined
+    const articleTaskCompleted = articleTask ? taskStatusOf(articleTask) === 'Hoàn thành' : false
+    if (editingArticleField.field === 'articleUrl' && articleTaskCompleted) return
+    const updates = editingArticleField.field === 'articleTitle'
+      ? { articleTitle: editingArticleField.value }
+      : { articleUrl: editingArticleField.value }
+    onUpdateKeyword(keyword.id, updates)
+    setEditingArticleField(null)
+    setArticleSaveNotice('Đã lưu thay đổi bài viết.')
   }
 
   if (keywords.length === 0) {
@@ -9823,16 +9865,37 @@ function ArticleTable({
             const canEditRow = canEditArticle(keyword)
             const articleTask = keyword.articleTaskId ? taskById.get(keyword.articleTaskId) : undefined
             const articleTaskCompleted = articleTask ? taskStatusOf(articleTask) === 'Hoàn thành' : false
+            const editingTitle = editingArticleField?.keywordId === keyword.id && editingArticleField.field === 'articleTitle'
+            const editingUrl = editingArticleField?.keywordId === keyword.id && editingArticleField.field === 'articleUrl'
+            const articleTitle = keyword.articleTitle?.trim()
+            const articleUrl = keyword.articleUrl?.trim()
             return (
             <tr className={articleTaskCompleted ? 'article-row-completed' : undefined} key={keyword.id}>
               <td>{keyword.term}</td>
               <td>
-                <input
-                  value={keyword.articleTitle ?? ''}
-                  onChange={(event) => onUpdateKeyword(keyword.id, { articleTitle: event.target.value })}
-                  placeholder={`Tiêu đề bài viết # ${keyword.term}`}
-                  disabled={!canEditRow}
-                />
+                {editingTitle ? (
+                  <div className="article-inline-editor">
+                    <input
+                      value={editingArticleField.value}
+                      onChange={(event) => setEditingArticleField({ ...editingArticleField, value: event.target.value })}
+                      placeholder={`Tiêu đề bài viết # ${keyword.term}`}
+                      disabled={!canEditRow}
+                    />
+                    <button className="secondary-button article-save-button" type="button" onClick={saveArticleFieldEdit} disabled={!canEditRow}>
+                      Lưu
+                    </button>
+                    <button className="ghost-button article-cancel-button" type="button" onClick={() => setEditingArticleField(null)}>
+                      Hủy
+                    </button>
+                  </div>
+                ) : (
+                  <div className="article-field-view">
+                    <span className={articleTitle ? undefined : 'muted-text'}>{articleTitle || `Tiêu đề bài viết # ${keyword.term}`}</span>
+                    <button className="icon-button article-edit-button" type="button" onClick={() => startArticleFieldEdit(keyword, 'articleTitle')} disabled={!canEditRow} title="Sửa tiêu đề bài viết" aria-label={`Sửa tiêu đề bài viết ${keyword.term}`}>
+                      ✎
+                    </button>
+                  </div>
+                )}
               </td>
               <td>
                 <span className={`keyword-type-badge type-${keywordTypeOf(keyword)}`}>{keywordTypeOf(keyword)}</span>
@@ -9880,13 +9943,41 @@ function ArticleTable({
                 </div>
               </td>
               <td>
-                <input
-                  value={keyword.articleUrl ?? ''}
-                  onChange={(event) => onUpdateKeyword(keyword.id, { articleUrl: event.target.value })}
-                  placeholder="https://..."
-                  disabled={!canEditRow || articleTaskCompleted}
-                  title={articleTaskCompleted ? 'Link bài viết đã khóa vì task đã được xác nhận hoàn thành.' : undefined}
-                />
+                {editingUrl ? (
+                  <div className="article-inline-editor">
+                    <input
+                      value={editingArticleField.value}
+                      onChange={(event) => setEditingArticleField({ ...editingArticleField, value: event.target.value })}
+                      placeholder="https://..."
+                      disabled={!canEditRow || articleTaskCompleted}
+                      title={articleTaskCompleted ? 'Link bài viết đã khóa vì task đã được xác nhận hoàn thành.' : undefined}
+                    />
+                    <button className="secondary-button article-save-button" type="button" onClick={saveArticleFieldEdit} disabled={!canEditRow || articleTaskCompleted}>
+                      Lưu
+                    </button>
+                    <button className="ghost-button article-cancel-button" type="button" onClick={() => setEditingArticleField(null)}>
+                      Hủy
+                    </button>
+                  </div>
+                ) : (
+                  <div className="article-field-view">
+                    {articleUrl ? (
+                      <a href={articleUrl} target="_blank" rel="noreferrer">{articleUrl}</a>
+                    ) : (
+                      <span className="muted-text">Chưa có link</span>
+                    )}
+                    <button
+                      className="icon-button article-edit-button"
+                      type="button"
+                      onClick={() => startArticleFieldEdit(keyword, 'articleUrl')}
+                      disabled={!canEditRow || articleTaskCompleted}
+                      title={articleTaskCompleted ? 'Link bài viết đã khóa vì task đã được xác nhận hoàn thành.' : 'Sửa link bài viết'}
+                      aria-label={`Sửa link bài viết ${keyword.term}`}
+                    >
+                      ✎
+                    </button>
+                  </div>
+                )}
               </td>
               <td>
                 <button className="danger-button article-remove-button" type="button" onClick={() => onDeleteKeyword(keyword.id)} disabled={!canEdit}>
@@ -9953,6 +10044,7 @@ function ArticleTable({
         </section>
       </div>
     )}
+    {articleSaveNotice && <div className="article-save-toast" role="status">{articleSaveNotice}</div>}
     </>
   )
 }
@@ -10183,6 +10275,7 @@ function EmployeeOverview({
 
 function TaskTable({
   tasks,
+  keywords = [],
   users,
   projects,
   onStatus,
@@ -10198,6 +10291,7 @@ function TaskTable({
   compact,
 }: {
   tasks: Task[]
+  keywords?: Keyword[]
   users: User[]
   projects: Project[]
   onStatus: (taskId: string, status: TaskStatus) => void
@@ -10215,6 +10309,12 @@ function TaskTable({
   if (tasks.length === 0) {
     return <EmptyState title="Chưa có công việc" text="Thêm task đầu tiên để theo dõi tiến độ thực thi của dự án." />
   }
+
+  const articleKeywordByTaskId = new Map(
+    keywords
+      .filter((keyword) => keyword.articleTaskId && keyword.articleTitle?.trim() && keyword.articleUrl?.trim())
+      .map((keyword) => [keyword.articleTaskId as string, keyword]),
+  )
 
   return (
     <div className="table-wrap">
@@ -10237,9 +10337,19 @@ function TaskTable({
             const status = taskStatusOf(task)
             const deadlineBadge = taskDeadlineBadge(task)
             const showAdminReviewActions = canEdit && status === 'Chờ duyệt'
+            const articleKeyword = articleKeywordByTaskId.get(task.id)
+            const canOpenArticle = Boolean(articleKeyword && ['Chờ duyệt', 'Hoàn thành'].includes(status))
             return (
             <tr className={deadlineBadge ? `task-deadline-${deadlineBadge.className}` : undefined} key={task.id}>
-              <td><strong className="task-table-title">{task.title}</strong></td>
+              <td>
+                {canOpenArticle && articleKeyword?.articleUrl ? (
+                  <a className="task-table-title article-task-title-link" href={articleKeyword.articleUrl.trim()} target="_blank" rel="noreferrer" title={`Mở bài viết: ${articleKeyword.articleTitle?.trim()}`}>
+                    {task.title}
+                  </a>
+                ) : (
+                  <strong className="task-table-title">{task.title}</strong>
+                )}
+              </td>
               {!compact && <td>{projects.find((project) => project.id === task.projectId)?.name}</td>}
               <td>
                 <select
