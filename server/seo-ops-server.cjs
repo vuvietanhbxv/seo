@@ -170,11 +170,51 @@ function isCleanDefaultData(data) {
   return hasOnlyDefaultAdmin && Object.entries(counts).every(([key, count]) => key === 'users' || count === 0)
 }
 
-function assertSafeDbWrite(currentData, nextData) {
+function detectLargeDataDrop(currentData, nextData) {
+  const currentCounts = dataCounts(currentData)
+  const nextCounts = dataCounts(nextData)
+  const protectedKeys = [
+    'projects',
+    'keywords',
+    'tasks',
+    'users',
+    'seoEntities',
+    'seoEntityPlatforms',
+    'seoEntityLinks',
+    'seoBacklinks',
+    'internalNotes',
+    'socialPosts',
+  ]
+
+  for (const key of protectedKeys) {
+    const currentCount = currentCounts[key] || 0
+    const nextCount = nextCounts[key] || 0
+    if (currentCount >= 10 && nextCount < Math.floor(currentCount * 0.5)) {
+      return `${key}: ${currentCount} -> ${nextCount}`
+    }
+  }
+
+  const currentImportant = importantRecordCount(currentData)
+  const nextImportant = importantRecordCount(nextData)
+  if (currentImportant >= 100 && nextImportant < Math.floor(currentImportant * 0.65)) {
+    return `total records: ${currentImportant} -> ${nextImportant}`
+  }
+
+  return ''
+}
+
+function assertSafeDbWrite(currentData, nextData, options = {}) {
   if (!currentData) return
+  if (options.allowLargeOverwrite) return
   if (importantRecordCount(currentData) > importantRecordCount(nextData) && isCleanDefaultData(nextData)) {
     const error = new Error('Refused to overwrite existing SEO Ops data with clean default data.')
     error.code = 'SEO_OPS_CLEAN_OVERWRITE'
+    throw error
+  }
+  const largeDrop = detectLargeDataDrop(currentData, nextData)
+  if (largeDrop) {
+    const error = new Error(`Refused to overwrite existing SEO Ops data because the new payload is much smaller (${largeDrop}). Use Import backup JSON to intentionally replace production data.`)
+    error.code = 'SEO_OPS_LARGE_DATA_DROP'
     throw error
   }
 }
@@ -196,10 +236,10 @@ function backupDb() {
   }
 }
 
-function writeDb(data) {
+function writeDb(data, options = {}) {
   ensureDb()
   const currentData = fs.existsSync(dbPath) ? JSON.parse(fs.readFileSync(dbPath, 'utf8')) : null
-  assertSafeDbWrite(currentData, data)
+  assertSafeDbWrite(currentData, data, options)
   backupDb()
   const tempPath = `${dbPath}.tmp`
   fs.writeFileSync(tempPath, JSON.stringify(data, null, 2))
@@ -1469,9 +1509,11 @@ const server = http.createServer(async (req, res) => {
           return
         }
         try {
-          writeDb(applyTaskDeadlineAutomation(nextData).data)
+          writeDb(applyTaskDeadlineAutomation(nextData).data, {
+            allowLargeOverwrite: req.headers['x-seo-ops-allow-large-overwrite'] === 'true',
+          })
         } catch (error) {
-          if (error?.code === 'SEO_OPS_CLEAN_OVERWRITE') {
+          if (error?.code === 'SEO_OPS_CLEAN_OVERWRITE' || error?.code === 'SEO_OPS_LARGE_DATA_DROP') {
             sendJson(res, 409, { ok: false, message: error.message })
             return
           }

@@ -2315,12 +2315,11 @@ const readStoredData = () => {
   const raw = localStorage.getItem(storageKey)
   return raw ? normalizeData(JSON.parse(raw)) : initialData
 }
-const hasStoredData = () => Boolean(localStorage.getItem(storageKey))
 
 function useStoredData() {
   const [data, setData] = useState<AppData>(readStoredData)
   const [apiEnabled, setApiEnabled] = useState(false)
-  const [loadingRemoteData, setLoadingRemoteData] = useState(() => !hasStoredData())
+  const [loadingRemoteData, setLoadingRemoteData] = useState(true)
 
   useEffect(() => {
     fetch(apiDataUrl)
@@ -2335,22 +2334,32 @@ function useStoredData() {
       .finally(() => setLoadingRemoteData(false))
   }, [])
 
-  const syncRemoteData = useCallback((next: AppData) => {
+  const syncRemoteData = useCallback((next: AppData, options?: { allowLargeOverwrite?: boolean }) => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (options?.allowLargeOverwrite) headers['x-seo-ops-allow-large-overwrite'] = 'true'
     fetch(apiDataUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(next),
     })
-      .then((response) => {
-        if (response.ok) setApiEnabled(true)
+      .then(async (response) => {
+        if (response.ok) {
+          setApiEnabled(true)
+          return
+        }
+        const payload = await response.json().catch(() => ({ message: `HTTP ${response.status}` }))
+        setApiEnabled(false)
+        window.alert(`Không lưu được dữ liệu lên server. ${payload.message || `HTTP ${response.status}`}`)
       })
-      .catch(() => setApiEnabled(false))
+      .catch(() => {
+        setApiEnabled(false)
+      })
   }, [])
 
-  const updateData = useCallback((next: AppData) => {
+  const updateData = useCallback((next: AppData, options?: { allowLargeOverwrite?: boolean }) => {
     setData(next)
     localStorage.setItem(storageKey, JSON.stringify(next))
-    syncRemoteData(next)
+    syncRemoteData(next, options)
   }, [syncRemoteData])
 
   const reloadData = useCallback(() => {
@@ -2360,7 +2369,7 @@ function useStoredData() {
   }, [])
 
   const importData = useCallback((next: AppData) => {
-    updateData(normalizeData(next))
+    updateData(normalizeData(next), { allowLargeOverwrite: true })
   }, [updateData])
 
   return [data, updateData, reloadData, importData, apiEnabled, loadingRemoteData] as const
@@ -5346,8 +5355,9 @@ function App() {
     }
   }
 
+  if (loadingRemoteData) return <LoadingPage />
+
   if (!currentUser) {
-    if (loadingRemoteData) return <LoadingPage />
     return <LoginPage error={loginError} users={data.users} onRefresh={reloadData} onSubmit={login} />
   }
 
