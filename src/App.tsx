@@ -4410,6 +4410,38 @@ function App() {
     updateEntityLinkCredential({ loginWithGoogle, loginAccount, loginPassword })
   }
 
+  const createEntityLinkFromPlatform = (platformId: string) => {
+    if (!canEditProjects || !activeProject || !activeEntity) return
+    const platform = entityPlatforms.find((item) => item.id === platformId)
+    if (!platform) return
+    const link: SeoEntityLink = {
+      id: uid('el'),
+      projectId: activeProject.id,
+      entityId: activeEntity.id,
+      platformId: platform.id,
+      loginWithGoogle: false,
+      loginAccount: '',
+      loginPassword: '',
+      accountUsed: '',
+      liveUrl: '',
+      targetUrl: activeEntity.website || activeProject.website,
+      anchorText: activeEntity.name,
+      displayName: activeEntity.name,
+      usedDescription: activeEntity.shortDescription || activeEntity.longDescription,
+      assigneeId: '',
+      deployedDate: '',
+      deploymentStatus: 'Chưa làm',
+      linkStatus: 'Chưa check',
+      indexStatus: 'Chưa check',
+      napStatus: 'Chưa check',
+      taskId: '',
+      notes: `Tạo nhanh từ nền tảng ${platform.name}.`,
+    }
+    saveData({ ...data, seoEntityLinks: [link, ...(data.seoEntityLinks ?? [])] }, 'Đẩy nền tảng sang Link Entity', `${platform.name} - ${activeEntity.name}`)
+    setSelectedEntityLinkIds(new Set([link.id]))
+    setEntityTab('links')
+  }
+
   const updateEntityLink = (linkId: string, updates: Partial<SeoEntityLink>) => {
     const link = (data.seoEntityLinks ?? []).find((item) => item.id === linkId)
     saveData({
@@ -6042,6 +6074,7 @@ function App() {
             onDeleteEntity={deleteEntityProfile}
             onAddPlatform={addEntityPlatform}
             onEditPlatform={startEditEntityPlatform}
+            onCreateLinkFromPlatform={createEntityLinkFromPlatform}
             onCancelEditPlatform={() => setEditingEntityPlatformId(null)}
             onImportPlatformSheet={importEntityPlatformsFromSheet}
             onImportPlatformFile={importEntityPlatformsFromFile}
@@ -8885,6 +8918,7 @@ function EntityModule({
   onDeleteEntity,
   onAddPlatform,
   onEditPlatform,
+  onCreateLinkFromPlatform,
   onCancelEditPlatform,
   onImportPlatformSheet,
   onImportPlatformFile,
@@ -8926,6 +8960,7 @@ function EntityModule({
   onDeleteEntity: (entityId: string) => void
   onAddPlatform: (event: FormEvent<HTMLFormElement>) => void
   onEditPlatform: (platformId: string) => void
+  onCreateLinkFromPlatform: (platformId: string) => void
   onCancelEditPlatform: () => void
   onImportPlatformSheet: (event: FormEvent<HTMLFormElement>) => void
   onImportPlatformFile: (event: ChangeEvent<HTMLInputElement>) => void
@@ -9105,7 +9140,14 @@ function EntityModule({
               </div>
             </form>
           </Panel>
-          <EntityPlatformTable platforms={entityPlatforms} canEdit={canEdit} onEdit={onEditPlatform} onOpenGuide={onOpenGuide} />
+          <EntityPlatformTable
+            platforms={entityPlatforms}
+            canEdit={canEdit}
+            canCreateLink={Boolean(activeEntity)}
+            onEdit={onEditPlatform}
+            onCreateLink={onCreateLinkFromPlatform}
+            onOpenGuide={onOpenGuide}
+          />
         </>
       )}
 
@@ -9273,12 +9315,16 @@ function EntityPlatformGroupHelp() {
 function EntityPlatformTable({
   platforms,
   canEdit,
+  canCreateLink,
   onEdit,
+  onCreateLink,
   onOpenGuide,
 }: {
   platforms: SeoEntityPlatform[]
   canEdit: boolean
+  canCreateLink: boolean
   onEdit: (platformId: string) => void
+  onCreateLink: (platformId: string) => void
   onOpenGuide: (reference: string) => void
 }) {
   return (
@@ -9303,15 +9349,27 @@ function EntityPlatformTable({
                   <div className="entity-platform-name-cell">
                     <strong>{platform.name}</strong>
                     {canEdit && (
-                      <button
-                        className="entity-platform-edit-button"
-                        type="button"
-                        onClick={() => onEdit(platform.id)}
-                        title={`Sửa nền tảng ${platform.name}`}
-                        aria-label={`Sửa nền tảng ${platform.name}`}
-                      >
-                        ✎
-                      </button>
+                      <span className="entity-platform-row-actions">
+                        <button
+                          className="entity-platform-action-button entity-platform-edit-button"
+                          type="button"
+                          onClick={() => onEdit(platform.id)}
+                          title={`Sửa nền tảng ${platform.name}`}
+                          aria-label={`Sửa nền tảng ${platform.name}`}
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="entity-platform-action-button entity-platform-push-button"
+                          type="button"
+                          onClick={() => onCreateLink(platform.id)}
+                          disabled={!canCreateLink}
+                          title={canCreateLink ? `Đẩy ${platform.name} sang Link Entity` : 'Tạo hồ sơ Entity trước khi thêm Link Entity'}
+                          aria-label={`Đẩy ${platform.name} sang Link Entity`}
+                        >
+                          +
+                        </button>
+                      </span>
                     )}
                   </div>
                 </td>
@@ -9769,6 +9827,20 @@ type ArticleFieldEditState = {
   value: string
 }
 
+const compactWords = (value: string, maxWords: number) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const words = trimmed.split(/\s+/)
+  return words.length > maxWords ? `${words.slice(0, maxWords).join(' ')}...` : trimmed
+}
+
+const compactChars = (value: string, maxChars: number) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const chars = Array.from(trimmed)
+  return chars.length > maxChars ? `${chars.slice(0, maxChars).join('')}...` : trimmed
+}
+
 function ArticleTable({
   keywords,
   users,
@@ -9857,6 +9929,17 @@ function ArticleTable({
     />
     <div className="table-wrap article-table-wrap">
       <table className="article-table">
+        <colgroup>
+          <col className="article-col-keyword" />
+          <col className="article-col-title" />
+          <col className="article-col-type" />
+          <col className="article-col-article-type" />
+          <col className="article-col-assignee" />
+          <col className="article-col-task" />
+          <col className="article-col-draft" />
+          <col className="article-col-url" />
+          <col className="article-col-actions" />
+        </colgroup>
         <thead>
           <tr>
             <th>Keyword</th>
@@ -9879,9 +9962,12 @@ function ArticleTable({
             const editingUrl = editingArticleField?.keywordId === keyword.id && editingArticleField.field === 'articleUrl'
             const articleTitle = keyword.articleTitle?.trim()
             const articleUrl = keyword.articleUrl?.trim()
+            const articleTitleFull = articleTitle || `Tiêu đề bài viết # ${keyword.term}`
             return (
             <tr className={articleTaskCompleted ? 'article-row-completed' : undefined} key={keyword.id}>
-              <td>{keyword.term}</td>
+              <td>
+                <span className="article-keyword-text" title={keyword.term}>{keyword.term}</span>
+              </td>
               <td>
                 {editingTitle ? (
                   <div className="article-inline-editor">
@@ -9900,7 +9986,7 @@ function ArticleTable({
                   </div>
                 ) : (
                   <div className="article-field-view">
-                    <span className={articleTitle ? undefined : 'muted-text'}>{articleTitle || `Tiêu đề bài viết # ${keyword.term}`}</span>
+                    <span className={articleTitle ? undefined : 'muted-text'} title={articleTitleFull}>{compactWords(articleTitleFull, 5)}</span>
                     <button className="icon-button article-edit-button" type="button" onClick={() => startArticleFieldEdit(keyword, 'articleTitle')} disabled={!canEditRow} title="Sửa tiêu đề bài viết" aria-label={`Sửa tiêu đề bài viết ${keyword.term}`}>
                       ✎
                     </button>
@@ -9972,7 +10058,7 @@ function ArticleTable({
                 ) : (
                   <div className="article-field-view">
                     {articleUrl ? (
-                      <a href={articleUrl} target="_blank" rel="noreferrer">{articleUrl}</a>
+                      <a href={articleUrl} target="_blank" rel="noreferrer" title={articleUrl}>{compactChars(articleUrl, 15)}</a>
                     ) : (
                       <span className="muted-text">Chưa có link</span>
                     )}
