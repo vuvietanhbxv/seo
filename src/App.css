@@ -1487,6 +1487,76 @@ textarea:focus {
   text-decoration: underline;
 }
 
+.entity-link-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.entity-link-row-actions button {
+  min-height: 32px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.entity-link-filter-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(140px, 1fr);
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.entity-link-filter-row label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.entity-link-filter-row small {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.entity-link-deployment-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.entity-link-deployment-status.idle {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.entity-link-deployment-status.doing {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.entity-link-deployment-status.done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
 .entity-link-approved-status {
   display: inline-flex;
   align-items: center;
@@ -4750,6 +4820,7 @@ tr:last-child td {
   .entity-toolbar,
   .entity-profile-form,
   .entity-profile-text-grid,
+  .entity-link-filter-row,
   .entity-platform-form,
   .entity-link-form,
   .backlink-source-form,

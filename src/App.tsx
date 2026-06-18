@@ -981,7 +981,6 @@ const entityPlatformGroupTooltipText = entityPlatformGroups
   .join('\n\n')
 const entityLinkTypes: EntityLinkType[] = ['Dofollow', 'Nofollow', 'Redirect', 'Mention']
 const entityPlatformStatuses: EntityPlatformStatus[] = ['Dùng được', 'Lỗi', 'Khó đăng ký', 'Không cho đặt link', 'Ngừng dùng']
-const entityDeploymentStatuses: EntityDeploymentStatus[] = ['Chưa làm', 'Đang làm', 'Chờ xác minh', 'Chờ duyệt', 'Đã live', 'Lỗi', 'Không phù hợp']
 const entityLiveStatuses: EntityLiveStatus[] = ['Chưa check', 'Live', 'Redirect', '404', '403', 'Mất link', 'Không tìm thấy URL đích']
 const entityIndexStatuses: EntityIndexStatus[] = ['Chưa check', 'Đã index', 'Chưa index', 'Không thể check']
 const entityNapStatuses: EntityNapStatus[] = ['Chưa check', 'Đúng', 'Sai tên', 'Sai SĐT', 'Sai địa chỉ', 'Thiếu thông tin']
@@ -4679,6 +4678,9 @@ function App() {
       return
     }
     updateEntityLinkCredential({ loginWithGoogle, useDefaultEntityAccount, loginAccount, loginPassword, loginEmail, accountUsed })
+    const submittedAssigneeId = String(form.get('assigneeId')).trim()
+    const pendingTask = pendingLink.taskId ? data.tasks.find((task) => task.id === pendingLink.taskId) : undefined
+    const resolvedAssigneeId = pendingLink.assigneeId || pendingTask?.assigneeId || submittedAssigneeId
     const link: SeoEntityLink = {
       ...pendingLink,
       loginWithGoogle,
@@ -4692,9 +4694,9 @@ function App() {
       anchorText: String(form.get('anchorText')).trim() || entityAnchorTextOf(activeEntity),
       displayName: String(form.get('displayName')).trim() || entityDisplayNameOf(activeEntity),
       usedDescription: String(form.get('usedDescription')).trim() || entityUsedDescriptionOf(activeEntity),
-      assigneeId: String(form.get('assigneeId')),
+      assigneeId: resolvedAssigneeId,
       deployedDate: appNowIso(),
-      deploymentStatus: String(form.get('deploymentStatus')) as EntityDeploymentStatus,
+      deploymentStatus: pendingLink.deploymentStatus,
       notes: String(form.get('notes')).trim(),
     }
     saveData({
@@ -4735,10 +4737,43 @@ function App() {
     }
   }
 
+  const duplicateEntityLinkPlatforms = (platformsToCheck: SeoEntityPlatform[]) => {
+    const activePlatformById = new Map(entityPlatforms.map((platform) => [platform.id, platform]))
+    const seenPlatformIds = new Set(activeEntityLinks.map((link) => link.platformId).filter(Boolean))
+    const seenDomains = new Set(
+      activeEntityLinks
+        .map((link) => cleanDomainCandidate(activePlatformById.get(link.platformId)?.domain ?? ''))
+        .filter(Boolean),
+    )
+    const duplicatePlatforms: SeoEntityPlatform[] = []
+    platformsToCheck.forEach((platform) => {
+      const domain = cleanDomainCandidate(platform.domain)
+      if (seenPlatformIds.has(platform.id) || Boolean(domain && seenDomains.has(domain))) {
+        duplicatePlatforms.push(platform)
+        return
+      }
+      seenPlatformIds.add(platform.id)
+      if (domain) seenDomains.add(domain)
+    })
+    return duplicatePlatforms
+  }
+
+  const alertDuplicateEntityLinks = (duplicatePlatforms: SeoEntityPlatform[]) => {
+    if (!activeEntity || duplicatePlatforms.length === 0) return
+    const names = duplicatePlatforms.map((platform) => `- ${platform.name}${platform.domain ? ` (${platform.domain})` : ''}`).join('\n')
+    window.alert(`Các nền tảng sau đã có Link Entity trong hồ sơ "${activeEntity.name}", SEO Ops sẽ không tạo bản trùng:\n${names}`)
+  }
+
   const createEntityLinkFromPlatform = (platformId: string) => {
     if (!canEditProjects || !activeProject || !activeEntity) return
     const platform = entityPlatforms.find((item) => item.id === platformId)
     if (!platform) return
+    const duplicatePlatforms = duplicateEntityLinkPlatforms([platform])
+    if (duplicatePlatforms.length > 0) {
+      alertDuplicateEntityLinks(duplicatePlatforms)
+      setEntityTab('links')
+      return
+    }
     const link = buildEntityLinkFromPlatform(platform)
     if (!link) return
     saveData({ ...data, seoEntityLinks: [link, ...(data.seoEntityLinks ?? [])] }, 'Đẩy nền tảng sang Link Entity', `${platform.name} - ${activeEntity.name}`)
@@ -4750,7 +4785,11 @@ function App() {
     if (!canEditProjects || !activeProject || !activeEntity || platformIds.length === 0) return false
     const selectedIdSet = new Set(platformIds)
     const selectedPlatforms = entityPlatforms.filter((platform) => selectedIdSet.has(platform.id))
-    const links = selectedPlatforms.map(buildEntityLinkFromPlatform).filter((link): link is SeoEntityLink => Boolean(link))
+    const duplicatePlatforms = duplicateEntityLinkPlatforms(selectedPlatforms)
+    if (duplicatePlatforms.length > 0) alertDuplicateEntityLinks(duplicatePlatforms)
+    const duplicatePlatformIds = new Set(duplicatePlatforms.map((platform) => platform.id))
+    const uniquePlatforms = selectedPlatforms.filter((platform) => !duplicatePlatformIds.has(platform.id))
+    const links = uniquePlatforms.map(buildEntityLinkFromPlatform).filter((link): link is SeoEntityLink => Boolean(link))
     if (links.length === 0) return false
     saveData({
       ...data,
@@ -4781,6 +4820,22 @@ function App() {
       ...data,
       seoEntityLinks: (data.seoEntityLinks ?? []).map((item) => (item.id === linkId ? { ...item, ...updates } : item)),
     }, 'Cập nhật link Entity', link?.liveUrl || linkId)
+  }
+
+  const deleteEntityLink = (linkId: string) => {
+    const link = (data.seoEntityLinks ?? []).find((item) => item.id === linkId)
+    if (!link) return
+    const platformName = entityPlatforms.find((platform) => platform.id === link.platformId)?.name ?? 'Link Entity'
+    if (!window.confirm(`Thu hồi và xóa Link Entity "${platformName}" khỏi hồ sơ hiện tại?`)) return
+    saveData({
+      ...data,
+      seoEntityLinks: (data.seoEntityLinks ?? []).filter((item) => item.id !== linkId),
+    }, 'Thu hồi Link Entity', platformName)
+    setSelectedEntityLinkIds((current) => {
+      const next = new Set(current)
+      next.delete(linkId)
+      return next
+    })
   }
 
   const toggleEntityLinkSelection = (linkId: string) => {
@@ -6509,6 +6564,7 @@ function App() {
             onAddLink={addEntityLink}
             onCredentialChange={updateEntityLinkCredential}
             onUpdateLink={updateEntityLink}
+            onDeleteLink={deleteEntityLink}
             onCheckLink={checkEntityLink}
             onToggleLinkSelect={toggleEntityLinkSelection}
             onSelectIncompleteLinks={selectIncompleteEntityLinks}
@@ -9437,6 +9493,7 @@ function EntityModule({
   onAddLink,
   onCredentialChange,
   onUpdateLink,
+  onDeleteLink,
   onCheckLink,
   onToggleLinkSelect,
   onSelectIncompleteLinks,
@@ -9484,6 +9541,7 @@ function EntityModule({
   onAddLink: (event: FormEvent<HTMLFormElement>) => void
   onCredentialChange: (updates: Partial<EntityLinkCredential>) => void
   onUpdateLink: (linkId: string, updates: Partial<SeoEntityLink>) => void
+  onDeleteLink: (linkId: string) => void
   onCheckLink: (linkId: string) => void
   onToggleLinkSelect: (linkId: string) => void
   onSelectIncompleteLinks: () => void
@@ -9493,6 +9551,17 @@ function EntityModule({
   onExportReport: (reportType: 'internal' | 'client' | 'score') => void
   onOpenGuide: (reference: string) => void
 }) {
+  const defaultPendingAssigneeId = users.find((user) => user.role === 'Quản trị viên')?.id ?? users[0]?.id ?? ''
+  const [pendingLinkAssigneeId, setPendingLinkAssigneeId] = useState(defaultPendingAssigneeId)
+  const userIdsSignature = users.map((user) => user.id).join('|')
+
+  useEffect(() => {
+    if (!defaultPendingAssigneeId) return
+    if (!pendingLinkAssigneeId || !users.some((user) => user.id === pendingLinkAssigneeId)) {
+      setPendingLinkAssigneeId(defaultPendingAssigneeId)
+    }
+  }, [defaultPendingAssigneeId, pendingLinkAssigneeId, userIdsSignature, users])
+
   if (!activeProject) {
     return (
       <section className="view-stack">
@@ -9502,7 +9571,15 @@ function EntityModule({
   }
 
   const activeEntityId = activeEntity?.id ?? ''
-  const pendingEntityLinks = activeEntityLinks.filter((link) => !link.liveUrl.trim())
+  const allPendingEntityLinks = activeEntityLinks.filter((link) => !link.liveUrl.trim())
+  const selectedPendingAssignee = users.find((user) => user.id === pendingLinkAssigneeId)
+  const selectedPendingAssigneeIsAdmin = selectedPendingAssignee?.role === 'Quản trị viên'
+  const pendingEntityLinks = selectedPendingAssigneeIsAdmin
+    ? allPendingEntityLinks
+    : allPendingEntityLinks.filter((link) => {
+        const linkedTask = link.taskId ? tasks.find((task) => task.id === link.taskId) : undefined
+        return Boolean(link.taskId && pendingLinkAssigneeId && (linkedTask?.assigneeId === pendingLinkAssigneeId || link.assigneeId === pendingLinkAssigneeId))
+      })
   const firstPendingEntityLink = pendingEntityLinks[0]
   const setEntityLinkFormField = (form: HTMLFormElement | null, name: string, value: string) => {
     const field = form?.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null
@@ -9764,7 +9841,20 @@ function EntityModule({
         <>
           <Panel title="Thêm Link Entity" action={activeEntity?.name ?? 'Chưa chọn Entity'}>
             {activeEntity ? (
-              pendingEntityLinks.length > 0 ? (
+              allPendingEntityLinks.length > 0 ? (
+              <>
+              <div className="entity-link-filter-row">
+                <label>
+                  <span>Nhân sự xử lý</span>
+                  <select value={pendingLinkAssigneeId} onChange={(event) => setPendingLinkAssigneeId(event.target.value)} disabled={!canEdit}>
+                    {users.map((user) => (
+                      <option value={user.id} key={user.id}>{user.name}{user.role === 'Quản trị viên' ? ' - xem tất cả' : ''}</option>
+                    ))}
+                  </select>
+                </label>
+                <small>{selectedPendingAssigneeIsAdmin ? `${allPendingEntityLinks.length} link chờ` : `${pendingEntityLinks.length}/${allPendingEntityLinks.length} link được phân cho nhân sự này`}</small>
+              </div>
+              {pendingEntityLinks.length > 0 ? (
               <form className="entity-link-form" onSubmit={onAddLink} key={firstPendingEntityLink?.id ?? 'pending-link-form'}>
                 <select
                   name="pendingLinkId"
@@ -9784,7 +9874,7 @@ function EntityModule({
                     )
                   })}
                 </select>
-                <select name="assigneeId" disabled={!canEdit}>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
+                <input type="hidden" name="assigneeId" value={pendingLinkAssigneeId} readOnly />
                 <fieldset className="entity-link-account-box">
                   <legend>Tài khoản đăng nhập</legend>
                   <label className="entity-google-login">
@@ -9856,11 +9946,15 @@ function EntityModule({
                 <input name="targetUrl" placeholder="URL đích / Link website" defaultValue={entityTargetUrlOf(activeEntity, activeProject)} disabled={!canEdit} />
                 <input name="anchorText" placeholder="Anchor Text" defaultValue={entityAnchorTextOf(activeEntity)} disabled={!canEdit} />
                 <input name="displayName" placeholder="Tên hiển thị / Tên chuẩn" defaultValue={entityDisplayNameOf(activeEntity)} disabled={!canEdit} />
-                <select name="deploymentStatus" defaultValue="Đã live" disabled={!canEdit}>{entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}</select>
                 <textarea name="usedDescription" placeholder="Mô tả đã dùng" defaultValue={entityUsedDescriptionOf(activeEntity)} disabled={!canEdit} />
                 <textarea name="notes" placeholder="Ghi chú nội bộ" disabled={!canEdit} />
                 <button type="submit" disabled={!canEdit}>Lưu link chờ</button>
               </form>
+              ) : (
+                <EmptyState title="Không có link chờ cho nhân sự này" text="Nhân sự này chưa được phân task Link Entity. Chọn quản trị viên để xem tất cả link chờ." />
+              )
+              }
+              </>
               ) : (
                 <EmptyState title="Chưa có link chờ" text="Vào tab Nền tảng Entity, bấm nút + hoặc chọn hàng loạt để đẩy nền tảng sang Link Entity trước." />
               )
@@ -9895,6 +9989,7 @@ function EntityModule({
             selectedLinkIds={selectedLinkIds}
             onToggleSelect={onToggleLinkSelect}
             onUpdate={onUpdateLink}
+            onDelete={onDeleteLink}
             onCheck={onCheckLink}
             onOpenGuide={onOpenGuide}
           />
@@ -9945,6 +10040,7 @@ function EntityModule({
             selectedLinkIds={selectedLinkIds}
             onToggleSelect={onToggleLinkSelect}
             onUpdate={onUpdateLink}
+            onDelete={onDeleteLink}
             onCheck={onCheckLink}
             onOpenGuide={onOpenGuide}
             compact
@@ -10410,6 +10506,7 @@ function EntityLinkTable({
   compact,
   onToggleSelect,
   onUpdate,
+  onDelete,
   onCheck,
   onOpenGuide,
 }: {
@@ -10422,6 +10519,7 @@ function EntityLinkTable({
   compact?: boolean
   onToggleSelect: (linkId: string) => void
   onUpdate: (linkId: string, updates: Partial<SeoEntityLink>) => void
+  onDelete: (linkId: string) => void
   onCheck: (linkId: string) => void
   onOpenGuide: (reference: string) => void
 }) {
@@ -10453,6 +10551,11 @@ function EntityLinkTable({
             const platform = platforms.find((item) => item.id === link.platformId)
             const platformUrl = platform ? platformDomainUrl(platform.domain) : ''
             const guideReference = entityPlatformGuideReferenceOf(platform)
+            const deploymentView = approvedByTask
+              ? { label: 'Đã hoàn thành', className: 'done' }
+              : link.taskId
+                ? { label: 'Đang làm', className: 'doing' }
+                : { label: 'Chưa làm', className: 'idle' }
             return (
             <tr key={link.id}>
               {!compact && (
@@ -10498,13 +10601,7 @@ function EntityLinkTable({
                 </td>
               )}
               <td>
-                {approvedByTask ? (
-                  <span className="entity-link-approved-status">Đã duyệt</span>
-                ) : (
-                  <select value={link.deploymentStatus} onChange={(event) => onUpdate(link.id, { deploymentStatus: event.target.value as EntityDeploymentStatus })} disabled={!canEdit}>
-                    {entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}
-                  </select>
-                )}
+                <span className={`entity-link-deployment-status ${deploymentView.className}`}>{deploymentView.label}</span>
               </td>
               <td>
                 <select value={link.linkStatus} onChange={(event) => onUpdate(link.id, { linkStatus: event.target.value as EntityLiveStatus })} disabled={!canEdit}>
@@ -10522,9 +10619,14 @@ function EntityLinkTable({
                 </select>
               </td>
               <td>
-                <button className="secondary-button" type="button" onClick={() => onCheck(link.id)} disabled={!canEdit}>
-                  Check nhanh
-                </button>
+                <div className="entity-link-row-actions">
+                  <button className="secondary-button" type="button" onClick={() => onCheck(link.id)} disabled={!canEdit}>
+                    Check nhanh
+                  </button>
+                  <button className="danger-button" type="button" onClick={() => onDelete(link.id)} disabled={!canEdit}>
+                    Thu hồi
+                  </button>
+                </div>
               </td>
             </tr>
             )
