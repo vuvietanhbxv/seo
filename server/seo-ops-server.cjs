@@ -39,7 +39,6 @@ const googleClientId = process.env.SEO_OPS_GOOGLE_CLIENT_ID || ''
 const googleClientSecret = process.env.SEO_OPS_GOOGLE_CLIENT_SECRET || ''
 const googleRedirectUri = process.env.SEO_OPS_GOOGLE_REDIRECT_URI || ''
 const googleTokenSecret = process.env.SEO_OPS_GOOGLE_TOKEN_SECRET || ''
-const googleDriveApiKey = process.env.SEO_OPS_GOOGLE_DRIVE_API_KEY || process.env.GOOGLE_DRIVE_API_KEY || ''
 const claudeGatewayBaseUrl = process.env.CLAUDE_GATEWAY_BASE_URL || process.env.SEO_OPS_CLAUDE_GATEWAY_BASE_URL || 'https://1gw.gwai.cloud'
 const claudeGatewayAuthHeader = process.env.CLAUDE_GATEWAY_AUTH_HEADER || process.env.SEO_OPS_CLAUDE_GATEWAY_AUTH_HEADER || 'x-api-key'
 const claudeApiKey = process.env.CLAUDE_API_KEY || process.env.SEO_OPS_CLAUDE_API_KEY || ''
@@ -1448,11 +1447,11 @@ function serveToolOutput(scopedPathname, res) {
 }
 
 function safeEntityGuideFileName(value) {
-  const baseName = path.basename(String(value || '').trim())
+  const baseName = path.posix.basename(String(value || '').trim().replace(/\\/g, '/')).trim()
   if (!baseName || !/\.html?$/i.test(baseName)) {
     throw new Error('Tên file hướng dẫn Entity phải là file .html hoặc .htm.')
   }
-  const safeName = baseName.replace(/[^A-Za-z0-9._ -]/g, '-').replace(/\s+/g, '-')
+  const safeName = baseName.replace(/[<>:"|?*\x00-\x1F]/g, '-')
   if (!safeName || safeName === '.' || safeName === '..') {
     throw new Error('Tên file hướng dẫn Entity không hợp lệ.')
   }
@@ -1478,102 +1477,8 @@ function sendEntityGuideError(res, status, title, message) {
   res.end(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;margin:40px;background:#f8fafc;color:#0f172a}.box{max-width:760px;background:white;border:1px solid #dbe4f0;border-radius:14px;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.08)}h1{margin:0 0 12px;font-size:22px}p{line-height:1.6;color:#475569}</style></head><body><main class="box"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main></body></html>`)
 }
 
-function googleDriveIdFromRef(value) {
-  const text = String(value || '').trim()
-  if (!text) return ''
-  if (/^[A-Za-z0-9_-]{20,}$/.test(text)) return text
-  try {
-    const url = new URL(text)
-    if (!/(^|\.)drive\.google\.com$/i.test(url.hostname) && !/(^|\.)docs\.google\.com$/i.test(url.hostname)) return ''
-    const patterns = [
-      /\/folders\/([A-Za-z0-9_-]+)/,
-      /\/file\/d\/([A-Za-z0-9_-]+)/,
-      /\/document\/d\/([A-Za-z0-9_-]+)/,
-      /\/presentation\/d\/([A-Za-z0-9_-]+)/,
-      /\/spreadsheets\/d\/([A-Za-z0-9_-]+)/,
-    ]
-    for (const pattern of patterns) {
-      const match = url.pathname.match(pattern)
-      if (match?.[1]) return match[1]
-    }
-    return url.searchParams.get('id') || ''
-  } catch {
-    return ''
-  }
-}
-
-function googleDriveQueryStringLiteral(value) {
-  return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
-}
-
-async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetch(url, { ...options, signal: controller.signal })
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function findGoogleDriveFileIdByName(folderRef, fileName) {
-  if (!googleDriveApiKey) {
-    throw new Error('Server chưa cấu hình SEO_OPS_GOOGLE_DRIVE_API_KEY nên chưa thể tìm file theo tên trong thư mục Drive. Có thể dán thẳng link file Google Drive vào ô Hướng dẫn khác để mở không cần API key.')
-  }
-  const folderId = googleDriveIdFromRef(folderRef)
-  if (!folderId) throw new Error('Link thư mục Google Drive không hợp lệ.')
-  const apiUrl = new URL('https://www.googleapis.com/drive/v3/files')
-  apiUrl.searchParams.set('key', googleDriveApiKey)
-  apiUrl.searchParams.set('pageSize', '10')
-  apiUrl.searchParams.set('fields', 'files(id,name,mimeType,size)')
-  apiUrl.searchParams.set('q', `${googleDriveQueryStringLiteral(folderId)} in parents and name = ${googleDriveQueryStringLiteral(fileName)} and trashed = false`)
-  const response = await fetchWithTimeout(apiUrl.toString(), { headers: { Accept: 'application/json' } }, 20000)
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload?.error?.message || `Google Drive API HTTP ${response.status}`)
-  const file = Array.isArray(payload.files) ? payload.files.find((item) => item.name === fileName) : null
-  if (!file?.id) throw new Error(`Không tìm thấy file "${fileName}" trong thư mục Google Drive.`)
-  return file.id
-}
-
-async function fetchGoogleDriveHtml(fileId) {
-  if (!/^[A-Za-z0-9_-]{20,}$/.test(fileId)) throw new Error('Google Drive file ID không hợp lệ.')
-  const response = await fetchWithTimeout(`https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`, {
-    headers: { Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1' },
-  }, 25000)
-  const bytes = Buffer.from(await response.arrayBuffer())
-  if (!response.ok) throw new Error(`Google Drive download HTTP ${response.status}`)
-  if (!bytes.length) throw new Error('File Google Drive rỗng.')
-  if (bytes.length > 2 * 1024 * 1024) throw new Error('File HTML hướng dẫn Entity tối đa 2MB.')
-  return bytes
-}
-
-async function serveGoogleDriveEntityGuide(fileName, searchParams, res) {
-  const driveFileRef = searchParams.get('driveFile') || ''
-  const driveFolderRef = searchParams.get('driveFolder') || process.env.SEO_OPS_ENTITY_GUIDE_DRIVE_FOLDER || ''
-  let fileId = googleDriveIdFromRef(driveFileRef)
-  if (!fileId && driveFolderRef) fileId = await findGoogleDriveFileIdByName(driveFolderRef, fileName)
-  if (!fileId) return false
-  const bytes = await fetchGoogleDriveHtml(fileId)
-  res.writeHead(200, {
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-cache',
-    'Content-Disposition': `inline; filename="${fileName.replace(/"/g, '')}"`,
-    'X-Content-Type-Options': 'nosniff',
-  })
-  res.end(bytes)
-  return true
-}
-
-async function serveEntityGuide(scopedPathname, res, searchParams = new URLSearchParams()) {
-  let fileName = ''
-  try {
-    fileName = safeEntityGuideFileName(decodeURIComponent(scopedPathname.replace(/^\/entity-guides\/?/, '')))
-  } catch {
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
-    res.end('Not found')
-    return
-  }
-  const resolvedPath = entityGuideSearchDirs
+function findEntityGuidePath(fileName) {
+  return entityGuideSearchDirs
     .map((guideDir) => ({
       guideDir,
       filePath: path.resolve(path.join(guideDir, fileName)),
@@ -1582,15 +1487,21 @@ async function serveEntityGuide(scopedPathname, res, searchParams = new URLSearc
       isInsideDirectory(guideDir, filePath) &&
       fs.existsSync(filePath) &&
       fs.statSync(filePath).isFile(),
-    )?.filePath
+    )?.filePath || ''
+}
+
+function serveEntityGuide(scopedPathname, res) {
+  let fileName = ''
+  try {
+    fileName = safeEntityGuideFileName(decodeURIComponent(scopedPathname.replace(/^\/entity-guides\/?/, '')))
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('Not found')
+    return
+  }
+  const resolvedPath = findEntityGuidePath(fileName)
   if (!resolvedPath) {
-    try {
-      if (await serveGoogleDriveEntityGuide(fileName, searchParams, res)) return
-    } catch (error) {
-      sendEntityGuideError(res, 502, 'Không mở được hướng dẫn Google Drive', error.message || 'Không tải được file HTML từ Google Drive.')
-      return
-    }
-    sendEntityGuideError(res, 404, 'Không tìm thấy file hướng dẫn', `Không tìm thấy "${fileName}" trong storage server hoặc Google Drive đã cấu hình.`)
+    sendEntityGuideError(res, 404, 'Không tìm thấy file hướng dẫn', `Không tìm thấy "${fileName}" trong thư mục hướng dẫn Entity đã cấu hình.`)
     return
   }
   res.writeHead(200, {
@@ -1636,7 +1547,7 @@ const server = http.createServer(async (req, res) => {
 
     if (scopedPathname === '/api/health') {
       const articleConfig = publicArticleComposerConfig()
-      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, entityGuideDir, entityGuideSearchDirs, entityGuideDriveConfigured: Boolean(googleDriveApiKey || process.env.SEO_OPS_ENTITY_GUIDE_DRIVE_FOLDER), toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, entityGuideDir, entityGuideSearchDirs, toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
       return
     }
 
@@ -1646,7 +1557,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (scopedPathname.startsWith('/entity-guides/')) {
-      await serveEntityGuide(scopedPathname, res, url.searchParams)
+      serveEntityGuide(scopedPathname, res)
       return
     }
 
@@ -1665,31 +1576,58 @@ const server = http.createServer(async (req, res) => {
         return
       }
       const payload = JSON.parse(await readBody(req))
-      let fileName = ''
-      try {
-        fileName = safeEntityGuideFileName(payload.fileName)
-      } catch (error) {
-        sendJson(res, 400, { ok: false, message: error.message || 'Tên file không hợp lệ.' })
-        return
-      }
-      const contentBase64 = String(payload.contentBase64 || '')
-      if (!contentBase64) {
-        sendJson(res, 400, { ok: false, message: 'Thiếu nội dung file HTML.' })
-        return
-      }
-      const bytes = Buffer.from(contentBase64, 'base64')
-      if (!bytes.length || bytes.length > 2 * 1024 * 1024) {
-        sendJson(res, 400, { ok: false, message: 'File HTML hướng dẫn Entity tối đa 2MB.' })
+      const uploadItems = Array.isArray(payload.files) ? payload.files : [payload]
+      if (uploadItems.length === 0) {
+        sendJson(res, 400, { ok: false, message: 'Thiếu file HTML hướng dẫn Entity.' })
         return
       }
       fs.mkdirSync(entityGuideDir, { recursive: true })
-      const targetPath = path.resolve(path.join(entityGuideDir, fileName))
-      if (!isInsideDirectory(entityGuideDir, targetPath)) {
-        sendJson(res, 400, { ok: false, message: 'Tên file không hợp lệ.' })
+      const savedAt = new Date().toISOString()
+      const files = []
+      for (const item of uploadItems) {
+        const fileName = safeEntityGuideFileName(item.fileName)
+        const contentBase64 = String(item.contentBase64 || '')
+        if (!contentBase64) {
+          sendJson(res, 400, { ok: false, message: `Thiếu nội dung file HTML: ${fileName}` })
+          return
+        }
+        const bytes = Buffer.from(contentBase64, 'base64')
+        if (!bytes.length || bytes.length > 2 * 1024 * 1024) {
+          sendJson(res, 400, { ok: false, message: `File ${fileName} tối đa 2MB.` })
+          return
+        }
+        const targetPath = path.resolve(path.join(entityGuideDir, fileName))
+        if (!isInsideDirectory(entityGuideDir, targetPath)) {
+          sendJson(res, 400, { ok: false, message: 'Tên file không hợp lệ.' })
+          return
+        }
+        fs.writeFileSync(targetPath, bytes)
+        files.push({ fileName, url: entityGuidePublicUrl(fileName), exists: true, checkedAt: savedAt })
+      }
+      sendJson(res, 200, { ok: true, files, savedAt })
+      return
+    }
+
+    if (scopedPathname === '/api/entity-guides/scan') {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { ok: false, message: 'Unauthorized' })
         return
       }
-      fs.writeFileSync(targetPath, bytes)
-      sendJson(res, 200, { ok: true, fileName, url: entityGuidePublicUrl(fileName), savedAt: new Date().toISOString() })
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      const payload = JSON.parse(await readBody(req))
+      const requestedNames = Array.isArray(payload.fileNames) ? payload.fileNames : []
+      const checkedAt = new Date().toISOString()
+      const uniqueNames = Array.from(new Set(requestedNames.map((fileName) => safeEntityGuideFileName(fileName))))
+      const files = uniqueNames.map((fileName) => ({
+        fileName,
+        exists: Boolean(findEntityGuidePath(fileName)),
+        url: entityGuidePublicUrl(fileName),
+        checkedAt,
+      }))
+      sendJson(res, 200, { ok: true, files, checkedAt, entityGuideDir, entityGuideSearchDirs })
       return
     }
 

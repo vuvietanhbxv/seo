@@ -79,13 +79,12 @@ Truoc lan pull/deploy ban code nay tren Plesk:
 ```text
 SEO_OPS_DB_DIR=/mnt/data_web/cuahangphaohoa.shop/seo-ops-storage
 SEO_OPS_ENTITY_GUIDE_DIR=/mnt/data_web/cuahangphaohoa.shop/seo-ops-storage/Entity Guide
-SEO_OPS_GOOGLE_DRIVE_API_KEY=your_google_drive_api_key
 ```
 
 Neu khong khai bao `SEO_OPS_ENTITY_GUIDE_DIR`, app se mac dinh dung thu muc `Entity Guide` nam trong `SEO_OPS_DB_DIR` va van doc fallback thu muc cu `entity-guides`.
-Neu luu huong dan Entity HTML tren Google Drive va muon SEO Ops tim file theo ten trong folder, can khai bao `SEO_OPS_GOOGLE_DRIVE_API_KEY` va dat folder o che do public. Neu dan truc tiep link file Google Drive vao o Huong dan khac thi co the mo qua SEO Ops ma khong can API key.
+File huong dan Entity HTML se upload vao `SEO_OPS_ENTITY_GUIDE_DIR`. Thu muc nay nen nam ngoai source app de pull/redeploy code khong ghi de file huong dan.
 
-3. Restart app va truy cap `/api/health`. Kiem tra `dbPath` la duong dan storage rieng, `entityGuideDir` tro toi thu muc `Entity Guide`, `entityGuideDriveConfigured` dung voi cau hinh Drive, va `databaseProtected` la `true`.
+3. Restart app va truy cap `/api/health`. Kiem tra `dbPath` la duong dan storage rieng, `entityGuideDir` tro toi thu muc `Entity Guide`, va `databaseProtected` la `true`.
 4. Chi sau khi xac nhan xong moi Git pull/deploy code moi.
 
 O che do `production`, server se tu choi khoi dong neu `SEO_OPS_DB_DIR` thieu hoac van tro vao ben trong thu muc ung dung. Quy tac nay ngan deploy code ghi de du lieu that.
