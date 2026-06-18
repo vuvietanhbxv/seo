@@ -1655,7 +1655,7 @@ const server = http.createServer(async (req, res) => {
           })
         } catch (error) {
           if (error?.code === 'SEO_OPS_CLEAN_OVERWRITE' || error?.code === 'SEO_OPS_LARGE_DATA_DROP') {
-            sendJson(res, 409, { ok: false, message: error.message })
+            sendJson(res, 409, { ok: false, code: error.code, message: error.message })
             return
           }
           throw error

@@ -2504,6 +2504,18 @@ function useStoredData() {
           return
         }
         const payload = await response.json().catch(() => ({ message: `HTTP ${response.status}` }))
+        if (response.status === 409 && ['SEO_OPS_CLEAN_OVERWRITE', 'SEO_OPS_LARGE_DATA_DROP'].includes(payload.code)) {
+          const latestResponse = await fetch(apiDataUrl)
+          if (latestResponse.ok) {
+            const remoteData = await latestResponse.json()
+            const latest = normalizeData(remoteData?.data ?? remoteData)
+            setData(latest)
+            localStorage.setItem(storageKey, JSON.stringify(latest))
+            setApiEnabled(true)
+            window.alert('Server đã chặn thao tác lưu vì dữ liệu trên trình duyệt thiếu nhiều bản ghi so với database thật. SEO Ops đã tải lại dữ liệu mới nhất từ server, bạn hãy thao tác lại trên bản vừa tải.')
+            return
+          }
+        }
         setApiEnabled(false)
         window.alert(`Không lưu được dữ liệu lên server. ${payload.message || `HTTP ${response.status}`}`)
       })
