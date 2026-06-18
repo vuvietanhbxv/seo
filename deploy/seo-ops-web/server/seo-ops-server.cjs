@@ -175,9 +175,47 @@ function isCleanDefaultData(data) {
   return hasOnlyDefaultAdmin && Object.entries(counts).every(([key, count]) => key === 'users' || count === 0)
 }
 
+function arrayOf(data, key) {
+  return Array.isArray(data?.[key]) ? data[key] : []
+}
+
+function idsOf(items) {
+  return new Set(items.map((item) => item?.id).filter(Boolean))
+}
+
+function removedSeoEntityIds(currentData, nextData) {
+  const nextIds = idsOf(arrayOf(nextData, 'seoEntities'))
+  return new Set(arrayOf(currentData, 'seoEntities').map((entity) => entity?.id).filter((id) => id && !nextIds.has(id)))
+}
+
+function removedRecords(currentData, nextData, key) {
+  const nextIds = idsOf(arrayOf(nextData, key))
+  return arrayOf(currentData, key).filter((item) => item?.id && !nextIds.has(item.id))
+}
+
+function removedRecordsBelongToEntities(currentData, nextData, key, entityIds) {
+  if (!entityIds.size) return false
+  const removed = removedRecords(currentData, nextData, key)
+  return removed.length > 0 && removed.every((item) => item?.entityId && entityIds.has(item.entityId))
+}
+
+function cascadeEntityDeleteDropAllowance(currentData, nextData) {
+  const entityIds = removedSeoEntityIds(currentData, nextData)
+  if (!entityIds.size) return 0
+  const removedEntities = removedRecords(currentData, nextData, 'seoEntities').filter((item) => entityIds.has(item.id)).length
+  const scopedChildKeys = ['seoEntityLinks', 'seoEntityChecklist', 'seoEntitySchemas']
+  const removedChildren = scopedChildKeys.reduce((total, key) => {
+    const removed = removedRecords(currentData, nextData, key)
+    if (!removed.every((item) => item?.entityId && entityIds.has(item.entityId))) return total
+    return total + removed.length
+  }, 0)
+  return removedEntities + removedChildren
+}
+
 function detectLargeDataDrop(currentData, nextData) {
   const currentCounts = dataCounts(currentData)
   const nextCounts = dataCounts(nextData)
+  const deletedEntityIds = removedSeoEntityIds(currentData, nextData)
   const protectedKeys = [
     'projects',
     'keywords',
@@ -194,6 +232,9 @@ function detectLargeDataDrop(currentData, nextData) {
   for (const key of protectedKeys) {
     const currentCount = currentCounts[key] || 0
     const nextCount = nextCounts[key] || 0
+    if (key === 'seoEntityLinks' && removedRecordsBelongToEntities(currentData, nextData, key, deletedEntityIds)) {
+      continue
+    }
     if (currentCount >= 10 && nextCount < Math.floor(currentCount * 0.5)) {
       return `${key}: ${currentCount} -> ${nextCount}`
     }
@@ -201,7 +242,8 @@ function detectLargeDataDrop(currentData, nextData) {
 
   const currentImportant = importantRecordCount(currentData)
   const nextImportant = importantRecordCount(nextData)
-  if (currentImportant >= 100 && nextImportant < Math.floor(currentImportant * 0.65)) {
+  const cascadeAllowance = cascadeEntityDeleteDropAllowance(currentData, nextData)
+  if (currentImportant >= 100 && nextImportant + cascadeAllowance < Math.floor(currentImportant * 0.65)) {
     return `total records: ${currentImportant} -> ${nextImportant}`
   }
 
