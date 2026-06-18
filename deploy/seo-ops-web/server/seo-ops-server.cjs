@@ -20,6 +20,11 @@ const dbBackupDir = path.join(dbDir, 'backups')
 const toolOutputDir = process.env.SEO_OPS_TOOL_OUTPUT_DIR
   ? path.resolve(process.env.SEO_OPS_TOOL_OUTPUT_DIR)
   : path.join(dbDir, 'tools')
+const entityGuideDir = process.env.SEO_OPS_ENTITY_GUIDE_DIR
+  ? path.resolve(process.env.SEO_OPS_ENTITY_GUIDE_DIR)
+  : path.join(dbDir, 'Entity Guide')
+const legacyEntityGuideDir = path.join(dbDir, 'entity-guides')
+const entityGuideSearchDirs = [...new Set([entityGuideDir, legacyEntityGuideDir].map((item) => path.resolve(item)))]
 const toolConfigPath = path.join(dbDir, 'seo-ops-tool-config.json')
 const toolVertexCredentialsPath = path.join(dbDir, 'seo-ops-vertex-credentials.json')
 const googleOAuthPath = path.join(dbDir, 'seo-ops-google-oauth.json')
@@ -170,11 +175,51 @@ function isCleanDefaultData(data) {
   return hasOnlyDefaultAdmin && Object.entries(counts).every(([key, count]) => key === 'users' || count === 0)
 }
 
-function assertSafeDbWrite(currentData, nextData) {
+function detectLargeDataDrop(currentData, nextData) {
+  const currentCounts = dataCounts(currentData)
+  const nextCounts = dataCounts(nextData)
+  const protectedKeys = [
+    'projects',
+    'keywords',
+    'tasks',
+    'users',
+    'seoEntities',
+    'seoEntityPlatforms',
+    'seoEntityLinks',
+    'seoBacklinks',
+    'internalNotes',
+    'socialPosts',
+  ]
+
+  for (const key of protectedKeys) {
+    const currentCount = currentCounts[key] || 0
+    const nextCount = nextCounts[key] || 0
+    if (currentCount >= 10 && nextCount < Math.floor(currentCount * 0.5)) {
+      return `${key}: ${currentCount} -> ${nextCount}`
+    }
+  }
+
+  const currentImportant = importantRecordCount(currentData)
+  const nextImportant = importantRecordCount(nextData)
+  if (currentImportant >= 100 && nextImportant < Math.floor(currentImportant * 0.65)) {
+    return `total records: ${currentImportant} -> ${nextImportant}`
+  }
+
+  return ''
+}
+
+function assertSafeDbWrite(currentData, nextData, options = {}) {
   if (!currentData) return
+  if (options.allowLargeOverwrite) return
   if (importantRecordCount(currentData) > importantRecordCount(nextData) && isCleanDefaultData(nextData)) {
     const error = new Error('Refused to overwrite existing SEO Ops data with clean default data.')
     error.code = 'SEO_OPS_CLEAN_OVERWRITE'
+    throw error
+  }
+  const largeDrop = detectLargeDataDrop(currentData, nextData)
+  if (largeDrop) {
+    const error = new Error(`Refused to overwrite existing SEO Ops data because the new payload is much smaller (${largeDrop}). Use Import backup JSON to intentionally replace production data.`)
+    error.code = 'SEO_OPS_LARGE_DATA_DROP'
     throw error
   }
 }
@@ -196,14 +241,139 @@ function backupDb() {
   }
 }
 
-function writeDb(data) {
+function writeDb(data, options = {}) {
   ensureDb()
   const currentData = fs.existsSync(dbPath) ? JSON.parse(fs.readFileSync(dbPath, 'utf8')) : null
-  assertSafeDbWrite(currentData, data)
+  assertSafeDbWrite(currentData, data, options)
   backupDb()
   const tempPath = `${dbPath}.tmp`
   fs.writeFileSync(tempPath, JSON.stringify(data, null, 2))
   fs.renameSync(tempPath, dbPath)
+}
+
+const taskDeadlineDayMs = 24 * 60 * 60 * 1000
+
+function parseTaskDeadline(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return NaN
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? `${raw}T20:00:00+07:00`
+    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)
+      ? `${raw}:00+07:00`
+      : raw
+  return Date.parse(normalized)
+}
+
+function formatTaskDeadline(value) {
+  const timestamp = parseTaskDeadline(value)
+  if (!Number.isFinite(timestamp)) return String(value || '')
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour12: false,
+  }).format(new Date(timestamp))
+}
+
+function applyTaskDeadlineAutomation(data, now = new Date()) {
+  if (!data || !Array.isArray(data.tasks)) return { data, changed: false }
+  const nowIso = now.toISOString()
+  const nowMs = now.getTime()
+  const projects = Array.isArray(data.projects) ? data.projects : []
+  const users = Array.isArray(data.users) ? data.users : []
+  const projectById = new Map(projects.map((project) => [project.id, project]))
+  const adminIds = users.filter((user) => user.active && user.role === 'Quản trị viên').map((user) => user.id)
+  const notifications = []
+  const activityLogs = []
+  let changed = false
+
+  const addEvent = (task, recipientIds, title, message, action) => {
+    Array.from(new Set(recipientIds.filter(Boolean))).forEach((recipientId) => {
+      notifications.push({
+        id: `noti-${crypto.randomUUID()}`,
+        recipientId,
+        title,
+        message,
+        projectId: task.projectId,
+        taskId: task.id,
+        linkView: 'tasks',
+        createdAt: nowIso,
+      })
+    })
+    activityLogs.push({
+      id: `log-${crypto.randomUUID()}`,
+      actorId: '',
+      actorName: 'Hệ thống deadline',
+      action,
+      target: task.title,
+      at: nowIso,
+    })
+  }
+
+  const tasks = data.tasks.map((task) => {
+    if (['Hoàn thành', 'Đã hủy'].includes(task.status)) return task
+    const deadlineValue = task.deadlineAt || task.dueDate
+    const deadlineMs = parseTaskDeadline(deadlineValue)
+    if (!Number.isFinite(deadlineMs)) return task
+    const diffMs = nowMs - deadlineMs
+    const projectOwnerId = projectById.get(task.projectId)?.ownerId || ''
+    const adminRecipients = [...adminIds, projectOwnerId]
+
+    if (diffMs >= 7 * taskDeadlineDayMs && !task.cancelledAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId, ...adminRecipients],
+        'Task đã bị hủy do quá hạn',
+        `Task "${task.title}" đã quá hạn 7 ngày và được hệ thống chuyển sang trạng thái Đã hủy.`,
+        'Tự động hủy task quá hạn',
+      )
+      return { ...task, status: 'Đã hủy', cancelledAt: nowIso }
+    }
+    if (diffMs >= 4 * taskDeadlineDayMs && !task.overdueEscalatedAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId, ...adminRecipients],
+        'Yêu cầu hoàn thành task trong 3 ngày',
+        `Task "${task.title}" đã quá hạn 4 ngày. Vui lòng hoàn thành trước ${formatTaskDeadline(new Date(deadlineMs + 7 * taskDeadlineDayMs).toISOString())}.`,
+        'Cảnh báo task quá hạn 4 ngày',
+      )
+      return { ...task, overdueEscalatedAt: nowIso }
+    }
+    if (diffMs <= 0 && Math.abs(diffMs) <= taskDeadlineDayMs && !task.deadlineReminderAt) {
+      changed = true
+      addEvent(
+        task,
+        [task.assigneeId],
+        'Task sắp tới deadline',
+        `Task "${task.title}" cần hoàn thành trước ${formatTaskDeadline(deadlineValue)}.`,
+        'Nhắc task sắp tới deadline',
+      )
+      return { ...task, deadlineReminderAt: nowIso }
+    }
+    return task
+  })
+
+  if (!changed) return { data, changed: false }
+  return {
+    changed: true,
+    data: {
+      ...data,
+      tasks,
+      notifications: [...notifications, ...(data.notifications || [])].slice(0, 500),
+      activityLogs: [...activityLogs, ...(data.activityLogs || [])].slice(0, 300),
+    },
+  }
+}
+
+function runTaskDeadlineAutomation() {
+  const currentData = readDb()
+  const result = applyTaskDeadlineAutomation(currentData)
+  if (result.changed) writeDb(result.data)
 }
 
 function readGoogleConnections() {
@@ -1276,6 +1446,72 @@ function serveToolOutput(scopedPathname, res) {
   fs.createReadStream(resolvedPath).pipe(res)
 }
 
+function safeEntityGuideFileName(value) {
+  const baseName = path.posix.basename(String(value || '').trim().replace(/\\/g, '/')).trim()
+  if (!baseName || !/\.html?$/i.test(baseName)) {
+    throw new Error('Tên file hướng dẫn Entity phải là file .html hoặc .htm.')
+  }
+  const safeName = baseName.replace(/[<>:"|?*\x00-\x1F]/g, '-')
+  if (!safeName || safeName === '.' || safeName === '..') {
+    throw new Error('Tên file hướng dẫn Entity không hợp lệ.')
+  }
+  return safeName
+}
+
+function entityGuidePublicUrl(fileName) {
+  const prefix = basePath || ''
+  return `${prefix}/entity-guides/${encodeURIComponent(fileName)}`
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function sendEntityGuideError(res, status, title, message) {
+  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
+  res.end(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;margin:40px;background:#f8fafc;color:#0f172a}.box{max-width:760px;background:white;border:1px solid #dbe4f0;border-radius:14px;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.08)}h1{margin:0 0 12px;font-size:22px}p{line-height:1.6;color:#475569}</style></head><body><main class="box"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main></body></html>`)
+}
+
+function findEntityGuidePath(fileName) {
+  return entityGuideSearchDirs
+    .map((guideDir) => ({
+      guideDir,
+      filePath: path.resolve(path.join(guideDir, fileName)),
+    }))
+    .find(({ guideDir, filePath }) =>
+      isInsideDirectory(guideDir, filePath) &&
+      fs.existsSync(filePath) &&
+      fs.statSync(filePath).isFile(),
+    )?.filePath || ''
+}
+
+function serveEntityGuide(scopedPathname, res) {
+  let fileName = ''
+  try {
+    fileName = safeEntityGuideFileName(decodeURIComponent(scopedPathname.replace(/^\/entity-guides\/?/, '')))
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('Not found')
+    return
+  }
+  const resolvedPath = findEntityGuidePath(fileName)
+  if (!resolvedPath) {
+    sendEntityGuideError(res, 404, 'Không tìm thấy file hướng dẫn', `Không tìm thấy "${fileName}" trong thư mục hướng dẫn Entity đã cấu hình.`)
+    return
+  }
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  fs.createReadStream(resolvedPath).pipe(res)
+}
+
 const mcp = createMcpHandler({ readDb, writeDb, token: mcpToken, connectorKey: mcpConnectorKey })
 
 function serveStatic(req, res) {
@@ -1311,7 +1547,7 @@ const server = http.createServer(async (req, res) => {
 
     if (scopedPathname === '/api/health') {
       const articleConfig = publicArticleComposerConfig()
-      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, entityGuideDir, entityGuideSearchDirs, toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
       return
     }
 
@@ -1320,8 +1556,78 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    if (scopedPathname.startsWith('/entity-guides/')) {
+      serveEntityGuide(scopedPathname, res)
+      return
+    }
+
     if (scopedPathname === '/mcp' || scopedPathname === '/api/mcp') {
       await mcp.handle(req, res, readBody, sendJson)
+      return
+    }
+
+    if (scopedPathname === '/api/entity-guides/upload') {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { ok: false, message: 'Unauthorized' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      const payload = JSON.parse(await readBody(req))
+      const uploadItems = Array.isArray(payload.files) ? payload.files : [payload]
+      if (uploadItems.length === 0) {
+        sendJson(res, 400, { ok: false, message: 'Thiếu file HTML hướng dẫn Entity.' })
+        return
+      }
+      fs.mkdirSync(entityGuideDir, { recursive: true })
+      const savedAt = new Date().toISOString()
+      const files = []
+      for (const item of uploadItems) {
+        const fileName = safeEntityGuideFileName(item.fileName)
+        const contentBase64 = String(item.contentBase64 || '')
+        if (!contentBase64) {
+          sendJson(res, 400, { ok: false, message: `Thiếu nội dung file HTML: ${fileName}` })
+          return
+        }
+        const bytes = Buffer.from(contentBase64, 'base64')
+        if (!bytes.length || bytes.length > 2 * 1024 * 1024) {
+          sendJson(res, 400, { ok: false, message: `File ${fileName} tối đa 2MB.` })
+          return
+        }
+        const targetPath = path.resolve(path.join(entityGuideDir, fileName))
+        if (!isInsideDirectory(entityGuideDir, targetPath)) {
+          sendJson(res, 400, { ok: false, message: 'Tên file không hợp lệ.' })
+          return
+        }
+        fs.writeFileSync(targetPath, bytes)
+        files.push({ fileName, url: entityGuidePublicUrl(fileName), exists: true, checkedAt: savedAt })
+      }
+      sendJson(res, 200, { ok: true, files, savedAt })
+      return
+    }
+
+    if (scopedPathname === '/api/entity-guides/scan') {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { ok: false, message: 'Unauthorized' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      const payload = JSON.parse(await readBody(req))
+      const requestedNames = Array.isArray(payload.fileNames) ? payload.fileNames : []
+      const checkedAt = new Date().toISOString()
+      const uniqueNames = Array.from(new Set(requestedNames.map((fileName) => safeEntityGuideFileName(fileName))))
+      const files = uniqueNames.map((fileName) => ({
+        fileName,
+        exists: Boolean(findEntityGuidePath(fileName)),
+        url: entityGuidePublicUrl(fileName),
+        checkedAt,
+      }))
+      sendJson(res, 200, { ok: true, files, checkedAt, entityGuideDir, entityGuideSearchDirs })
       return
     }
 
@@ -1344,9 +1650,11 @@ const server = http.createServer(async (req, res) => {
           return
         }
         try {
-          writeDb(nextData)
+          writeDb(applyTaskDeadlineAutomation(nextData).data, {
+            allowLargeOverwrite: req.headers['x-seo-ops-allow-large-overwrite'] === 'true',
+          })
         } catch (error) {
-          if (error?.code === 'SEO_OPS_CLEAN_OVERWRITE') {
+          if (error?.code === 'SEO_OPS_CLEAN_OVERWRITE' || error?.code === 'SEO_OPS_LARGE_DATA_DROP') {
             sendJson(res, 409, { ok: false, message: error.message })
             return
           }
@@ -1703,6 +2011,10 @@ const server = http.createServer(async (req, res) => {
 
 validateDatabaseLocation()
 ensureDb()
+runTaskDeadlineAutomation()
+const taskDeadlineTimer = setInterval(runTaskDeadlineAutomation, 60 * 1000)
+taskDeadlineTimer.unref()
+
 server.listen(port, host, () => {
   console.log(`SEO Ops running at http://${host}:${port}${basePath || '/'}`)
   console.log(`Shared data file: ${dbPath}`)
