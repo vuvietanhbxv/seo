@@ -4493,11 +4493,9 @@ function App() {
     updateEntityLinkCredential({ loginWithGoogle, loginAccount, loginPassword })
   }
 
-  const createEntityLinkFromPlatform = (platformId: string) => {
-    if (!canEditProjects || !activeProject || !activeEntity) return
-    const platform = entityPlatforms.find((item) => item.id === platformId)
-    if (!platform) return
-    const link: SeoEntityLink = {
+  const buildEntityLinkFromPlatform = (platform: SeoEntityPlatform): SeoEntityLink | null => {
+    if (!activeProject || !activeEntity) return null
+    return {
       id: uid('el'),
       projectId: activeProject.id,
       entityId: activeEntity.id,
@@ -4520,9 +4518,46 @@ function App() {
       taskId: '',
       notes: `Tạo nhanh từ nền tảng ${platform.name}.`,
     }
+  }
+
+  const createEntityLinkFromPlatform = (platformId: string) => {
+    if (!canEditProjects || !activeProject || !activeEntity) return
+    const platform = entityPlatforms.find((item) => item.id === platformId)
+    if (!platform) return
+    const link = buildEntityLinkFromPlatform(platform)
+    if (!link) return
     saveData({ ...data, seoEntityLinks: [link, ...(data.seoEntityLinks ?? [])] }, 'Đẩy nền tảng sang Link Entity', `${platform.name} - ${activeEntity.name}`)
     setSelectedEntityLinkIds(new Set([link.id]))
     setEntityTab('links')
+  }
+
+  const createEntityLinksFromPlatforms = (platformIds: string[]) => {
+    if (!canEditProjects || !activeProject || !activeEntity || platformIds.length === 0) return false
+    const selectedIdSet = new Set(platformIds)
+    const selectedPlatforms = entityPlatforms.filter((platform) => selectedIdSet.has(platform.id))
+    const links = selectedPlatforms.map(buildEntityLinkFromPlatform).filter((link): link is SeoEntityLink => Boolean(link))
+    if (links.length === 0) return false
+    saveData({
+      ...data,
+      seoEntityLinks: [...links, ...(data.seoEntityLinks ?? [])],
+    }, 'Đẩy hàng loạt nền tảng sang Link Entity', `${links.length} nền tảng - ${activeEntity.name}`)
+    setSelectedEntityLinkIds(new Set(links.map((link) => link.id)))
+    setEntityTab('links')
+    return true
+  }
+
+  const deleteEntityPlatforms = (platformIds: string[]) => {
+    if (!canEditProjects || platformIds.length === 0) return false
+    const selectedIdSet = new Set(platformIds)
+    const selectedPlatforms = entityPlatforms.filter((platform) => selectedIdSet.has(platform.id))
+    if (selectedPlatforms.length === 0) return false
+    if (!window.confirm(`Xóa ${selectedPlatforms.length} nền tảng Entity đã chọn khỏi kho nền tảng? Các Link Entity đã tạo trước đó sẽ không bị xóa.`)) return false
+    saveData({
+      ...data,
+      seoEntityPlatforms: entityPlatforms.filter((platform) => !selectedIdSet.has(platform.id)),
+    }, 'Xóa nền tảng Entity hàng loạt', `${selectedPlatforms.length} nền tảng`)
+    if (editingEntityPlatformId && selectedIdSet.has(editingEntityPlatformId)) setEditingEntityPlatformId(null)
+    return true
   }
 
   const updateEntityLink = (linkId: string, updates: Partial<SeoEntityLink>) => {
@@ -6201,6 +6236,8 @@ function App() {
             onAddPlatform={addEntityPlatform}
             onEditPlatform={startEditEntityPlatform}
             onCreateLinkFromPlatform={createEntityLinkFromPlatform}
+            onCreateLinksFromPlatforms={createEntityLinksFromPlatforms}
+            onDeletePlatforms={deleteEntityPlatforms}
             onCancelEditPlatform={() => setEditingEntityPlatformId(null)}
             onImportPlatformSheet={importEntityPlatformsFromSheet}
             onImportPlatformFile={importEntityPlatformsFromFile}
@@ -9114,6 +9151,8 @@ function EntityModule({
   onAddPlatform,
   onEditPlatform,
   onCreateLinkFromPlatform,
+  onCreateLinksFromPlatforms,
+  onDeletePlatforms,
   onCancelEditPlatform,
   onImportPlatformSheet,
   onImportPlatformFile,
@@ -9156,6 +9195,8 @@ function EntityModule({
   onAddPlatform: (event: FormEvent<HTMLFormElement>) => void
   onEditPlatform: (platformId: string) => void
   onCreateLinkFromPlatform: (platformId: string) => void
+  onCreateLinksFromPlatforms: (platformIds: string[]) => boolean
+  onDeletePlatforms: (platformIds: string[]) => boolean
   onCancelEditPlatform: () => void
   onImportPlatformSheet: (event: FormEvent<HTMLFormElement>) => void
   onImportPlatformFile: (event: ChangeEvent<HTMLInputElement>) => void
@@ -9349,6 +9390,8 @@ function EntityModule({
             canCreateLink={Boolean(activeEntity)}
             onEdit={onEditPlatform}
             onCreateLink={onCreateLinkFromPlatform}
+            onCreateLinks={onCreateLinksFromPlatforms}
+            onDeletePlatforms={onDeletePlatforms}
             onOpenGuide={onOpenGuide}
           />
         </>
@@ -9524,6 +9567,8 @@ function EntityPlatformTable({
   canCreateLink,
   onEdit,
   onCreateLink,
+  onCreateLinks,
+  onDeletePlatforms,
   onOpenGuide,
 }: {
   platforms: SeoEntityPlatform[]
@@ -9531,6 +9576,8 @@ function EntityPlatformTable({
   canCreateLink: boolean
   onEdit: (platformId: string) => void
   onCreateLink: (platformId: string) => void
+  onCreateLinks: (platformIds: string[]) => boolean
+  onDeletePlatforms: (platformIds: string[]) => boolean
   onOpenGuide: (reference: string) => void
 }) {
   const [searchQuery, setSearchQuery] = useState('')
@@ -9542,6 +9589,9 @@ function EntityPlatformTable({
   const [guideFilter, setGuideFilter] = useState<EntityPlatformGuideFilter>('all')
   const [minDa, setMinDa] = useState('')
   const [maxDa, setMaxDa] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [selectedPlatformIds, setSelectedPlatformIds] = useState<Set<string>>(() => new Set())
   const normalizedQuery = searchQuery.trim().toLowerCase()
   const minimumDa = minDa === '' ? null : Number(minDa)
   const maximumDa = maxDa === '' ? null : Number(maxDa)
@@ -9587,6 +9637,15 @@ function EntityPlatformTable({
       if (sortBy === 'name-desc') return b.name.localeCompare(a.name, 'vi')
       return 0
     })
+  const totalPages = Math.max(1, Math.ceil(filteredPlatforms.length / pageSize))
+  const safeCurrentPage = Math.min(currentPage, totalPages)
+  const pageStart = (safeCurrentPage - 1) * pageSize
+  const pagedPlatforms = filteredPlatforms.slice(pageStart, pageStart + pageSize)
+  const pagedPlatformIds = pagedPlatforms.map((platform) => platform.id)
+  const existingPlatformIdSet = new Set(platforms.map((platform) => platform.id))
+  const selectedPlatformIdList = Array.from(selectedPlatformIds).filter((platformId) => existingPlatformIdSet.has(platformId))
+  const currentPageFullySelected = pagedPlatformIds.length > 0 && pagedPlatformIds.every((platformId) => selectedPlatformIds.has(platformId))
+
   const resetFilters = () => {
     setSearchQuery('')
     setSortBy('default')
@@ -9596,6 +9655,35 @@ function EntityPlatformTable({
     setGuideFilter('all')
     setMinDa('')
     setMaxDa('')
+    setCurrentPage(1)
+  }
+  const togglePlatformSelection = (platformId: string) => {
+    setSelectedPlatformIds((current) => {
+      const next = new Set(current)
+      if (next.has(platformId)) {
+        next.delete(platformId)
+      } else {
+        next.add(platformId)
+      }
+      return next
+    })
+  }
+  const toggleCurrentPageSelection = () => {
+    setSelectedPlatformIds((current) => {
+      const next = new Set(current)
+      if (currentPageFullySelected) {
+        pagedPlatformIds.forEach((platformId) => next.delete(platformId))
+      } else {
+        pagedPlatformIds.forEach((platformId) => next.add(platformId))
+      }
+      return next
+    })
+  }
+  const pushSelectedPlatforms = () => {
+    if (onCreateLinks(selectedPlatformIdList)) setSelectedPlatformIds(new Set())
+  }
+  const deleteSelectedPlatforms = () => {
+    if (onDeletePlatforms(selectedPlatformIdList)) setSelectedPlatformIds(new Set())
   }
 
   return (
@@ -9605,7 +9693,10 @@ function EntityPlatformTable({
           <span className="entity-platform-search-icon">⌕</span>
           <input
             value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
+            onChange={(event) => {
+              setSearchQuery(event.target.value)
+              setCurrentPage(1)
+            }}
             placeholder="Tìm theo tên, domain, nhóm, trạng thái hoặc mã hướng dẫn..."
           />
         </label>
@@ -9613,7 +9704,10 @@ function EntityPlatformTable({
         <div className="entity-platform-toolbar">
           <label className="entity-platform-sort-group">
             <span>Sort By:</span>
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as EntityPlatformSortOption)}>
+            <select value={sortBy} onChange={(event) => {
+              setSortBy(event.target.value as EntityPlatformSortOption)
+              setCurrentPage(1)
+            }}>
               <option value="default">Thứ tự hiện tại</option>
               <option value="da-desc">DA cao đến thấp</option>
               <option value="da-asc">DA thấp đến cao</option>
@@ -9642,7 +9736,10 @@ function EntityPlatformTable({
             <div className="entity-platform-filter-grid">
               <label title={entityPlatformGroupTooltipText}>
                 <span>Nhóm <EntityPlatformGroupHelp /></span>
-                <select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value as EntityPlatformGroup | 'all')}>
+                <select value={groupFilter} onChange={(event) => {
+                  setGroupFilter(event.target.value as EntityPlatformGroup | 'all')
+                  setCurrentPage(1)
+                }}>
                   <option value="all">Tất cả nhóm</option>
                   {entityPlatformGroups.map((group) => (
                     <option value={group} key={group}>{group}</option>
@@ -9651,7 +9748,10 @@ function EntityPlatformTable({
               </label>
               <label>
                 <span>Loại link</span>
-                <select value={linkTypeFilter} onChange={(event) => setLinkTypeFilter(event.target.value as EntityLinkType | 'all')}>
+                <select value={linkTypeFilter} onChange={(event) => {
+                  setLinkTypeFilter(event.target.value as EntityLinkType | 'all')
+                  setCurrentPage(1)
+                }}>
                   <option value="all">Tất cả loại link</option>
                   {entityLinkTypes.map((type) => (
                     <option value={type} key={type}>{type}</option>
@@ -9660,7 +9760,10 @@ function EntityPlatformTable({
               </label>
               <label>
                 <span>Trạng thái</span>
-                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as EntityPlatformStatus | 'all')}>
+                <select value={statusFilter} onChange={(event) => {
+                  setStatusFilter(event.target.value as EntityPlatformStatus | 'all')
+                  setCurrentPage(1)
+                }}>
                   <option value="all">Tất cả trạng thái</option>
                   {entityPlatformStatuses.map((status) => (
                     <option value={status} key={status}>{status}</option>
@@ -9669,7 +9772,10 @@ function EntityPlatformTable({
               </label>
               <label>
                 <span>Hướng dẫn</span>
-                <select value={guideFilter} onChange={(event) => setGuideFilter(event.target.value as EntityPlatformGuideFilter)}>
+                <select value={guideFilter} onChange={(event) => {
+                  setGuideFilter(event.target.value as EntityPlatformGuideFilter)
+                  setCurrentPage(1)
+                }}>
                   <option value="all">Tất cả</option>
                   <option value="with-guide">Có hướng dẫn</option>
                   <option value="without-guide">Chưa có hướng dẫn</option>
@@ -9677,25 +9783,80 @@ function EntityPlatformTable({
               </label>
               <label>
                 <span>DA từ</span>
-                <input value={minDa} onChange={(event) => setMinDa(event.target.value)} type="number" min="0" max="100" placeholder="0" />
+                <input value={minDa} onChange={(event) => {
+                  setMinDa(event.target.value)
+                  setCurrentPage(1)
+                }} type="number" min="0" max="100" placeholder="0" />
               </label>
               <label>
                 <span>DA đến</span>
-                <input value={maxDa} onChange={(event) => setMaxDa(event.target.value)} type="number" min="0" max="100" placeholder="100" />
+                <input value={maxDa} onChange={(event) => {
+                  setMaxDa(event.target.value)
+                  setCurrentPage(1)
+                }} type="number" min="0" max="100" placeholder="100" />
               </label>
             </div>
           </div>
+        )}
+
+        <div className="entity-platform-bulk-toolbar">
+          <label>
+            <input
+              type="checkbox"
+              checked={currentPageFullySelected}
+              onChange={toggleCurrentPageSelection}
+              disabled={!canEdit || pagedPlatformIds.length === 0}
+            />
+            <span>Chọn trang này</span>
+          </label>
+          <strong>{selectedPlatformIdList.length} nền tảng được chọn</strong>
+          <div className="entity-platform-bulk-actions">
+            <button className="secondary-button" type="button" onClick={() => setSelectedPlatformIds(new Set())} disabled={selectedPlatformIdList.length === 0}>
+              Bỏ chọn
+            </button>
+            <button type="button" onClick={pushSelectedPlatforms} disabled={!canCreateLink || selectedPlatformIdList.length === 0}>
+              Đẩy sang Link Entity
+            </button>
+            <button className="danger-button" type="button" onClick={deleteSelectedPlatforms} disabled={!canEdit || selectedPlatformIdList.length === 0}>
+              Xóa đã chọn
+            </button>
+          </div>
+        </div>
+
+        {filteredPlatforms.length > 0 && (
+          <TablePagination
+            currentPage={safeCurrentPage}
+            pageSize={pageSize}
+            totalItems={filteredPlatforms.length}
+            totalPages={totalPages}
+            itemLabel="nền tảng"
+            pageSizeOptions={[50, 100, 300]}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize)
+              setCurrentPage(1)
+            }}
+          />
         )}
 
         {filteredPlatforms.length === 0 ? (
           <EmptyState title="Không có nền tảng phù hợp" text="Thử đổi từ khóa tìm kiếm hoặc bỏ bớt bộ lọc nâng cao." />
         ) : (
           <div className="entity-platform-card-list">
-            {filteredPlatforms.map((platform) => {
+            {pagedPlatforms.map((platform) => {
               const domainUrl = /^https?:\/\//i.test(platform.domain) ? platform.domain : `https://${platform.domain}`
               const guideReference = platform.guideFileName || platform.guideUrl
               return (
-                <article className="entity-platform-card" key={platform.id}>
+                <article className={`entity-platform-card${selectedPlatformIds.has(platform.id) ? ' is-selected' : ''}`} key={platform.id}>
+                  <label className="entity-platform-select-control" title={`Chọn ${platform.name}`}>
+                    <input
+                      type="checkbox"
+                      checked={selectedPlatformIds.has(platform.id)}
+                      onChange={() => togglePlatformSelection(platform.id)}
+                      disabled={!canEdit}
+                      aria-label={`Chọn nền tảng ${platform.name}`}
+                    />
+                  </label>
                   <div className="entity-platform-card-left">
                     <div className="entity-platform-card-icon" aria-hidden="true">
                       {platform.name.slice(0, 1).toUpperCase()}
@@ -9755,6 +9916,22 @@ function EntityPlatformTable({
               )
             })}
           </div>
+        )}
+
+        {filteredPlatforms.length > pageSize && (
+          <TablePagination
+            currentPage={safeCurrentPage}
+            pageSize={pageSize}
+            totalItems={filteredPlatforms.length}
+            totalPages={totalPages}
+            itemLabel="nền tảng"
+            pageSizeOptions={[50, 100, 300]}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize)
+              setCurrentPage(1)
+            }}
+          />
         )}
       </div>
     </Panel>
@@ -9894,6 +10071,7 @@ function TablePagination({
   totalItems,
   totalPages,
   itemLabel,
+  pageSizeOptions = [25, 50, 100],
   onPageChange,
   onPageSizeChange,
 }: {
@@ -9902,6 +10080,7 @@ function TablePagination({
   totalItems: number
   totalPages: number
   itemLabel: string
+  pageSizeOptions?: number[]
   onPageChange: (page: number) => void
   onPageSizeChange: (pageSize: number) => void
 }) {
@@ -9913,7 +10092,7 @@ function TablePagination({
       <label className="table-page-size">
         <span>Hiển thị</span>
         <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
-          {[25, 50, 100].map((size) => (
+          {pageSizeOptions.map((size) => (
             <option value={size} key={size}>{size}</option>
           ))}
         </select>
