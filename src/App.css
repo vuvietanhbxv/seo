@@ -1362,6 +1362,40 @@ textarea:focus {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.entity-account-fieldset,
+.entity-link-account-box {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 14px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f0f9ff 100%);
+}
+
+.entity-account-fieldset {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.entity-link-account-box {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.entity-account-fieldset legend,
+.entity-link-account-box legend {
+  padding: 0 8px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.entity-link-account-box small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .backlink-source-form {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
@@ -4667,6 +4701,15 @@ tr:last-child td {
   }
 
   .entity-platform-guide-field {
+    grid-column: auto;
+  }
+
+  .entity-account-fieldset,
+  .entity-link-account-box {
+    grid-template-columns: 1fr;
+  }
+
+  .entity-google-login {
     grid-column: auto;
   }
 

@@ -375,6 +375,14 @@ type SeoEntity = {
   address: string
   mapsUrl: string
   status: EntityStatus
+  googleAccountEmail?: string
+  googleAccountPassword?: string
+  googleAccountPhone?: string
+  googleBackupAccount?: string
+  googleTwoFactorCode?: string
+  defaultAccountId?: string
+  defaultAccountPassword?: string
+  defaultAccountEmail?: string
 }
 
 type SeoEntityPlatform = {
@@ -399,8 +407,10 @@ type SeoEntityLink = {
   entityId: string
   platformId: string
   loginWithGoogle?: boolean
+  useDefaultEntityAccount?: boolean
   loginAccount?: string
   loginPassword?: string
+  loginEmail?: string
   accountUsed: string
   liveUrl: string
   targetUrl: string
@@ -421,8 +431,11 @@ type SeoEntityLink = {
 
 type EntityLinkCredential = {
   loginWithGoogle: boolean
+  useDefaultEntityAccount: boolean
   loginAccount: string
   loginPassword: string
+  loginEmail: string
+  accountUsed: string
 }
 
 type SeoEntityChecklistItem = {
@@ -1251,6 +1264,14 @@ const initialData: AppData = {
       address: 'Hà Nội, Việt Nam',
       mapsUrl: '',
       status: 'Đang dùng',
+      googleAccountEmail: '',
+      googleAccountPassword: '',
+      googleAccountPhone: '',
+      googleBackupAccount: '',
+      googleTwoFactorCode: '',
+      defaultAccountId: '',
+      defaultAccountPassword: '',
+      defaultAccountEmail: '',
     },
   ],
   seoEntityPlatforms: [
@@ -1691,12 +1712,29 @@ const entityPlatformGroupOf = (value: unknown): EntityPlatformGroup => {
     ?? 'Other'
 }
 const entityDomainAuthorityOf = (value: unknown) => Math.min(100, Math.max(0, Number(value) || 0))
+const cleanDomainCandidate = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const fromUrl = trimmed.match(/https?:\/\/(?:www\.)?([^/\s?#)]+)/i)?.[1]
+  return (fromUrl ?? trimmed)
+    .replace(/^www\./i, '')
+    .replace(/^[\s(<]+|[\s)>.,;]+$/g, '')
+    .split(/[/?#\s]/)[0]
+    .toLowerCase()
+}
+const domainHasTld = (value: string) => /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(cleanDomainCandidate(value))
 const extractDomainFromText = (value: string) => {
   const fromParentheses = value.match(/\(([a-z0-9.-]+\.[a-z]{2,})(?:\/[^)]*)?\)/i)?.[1]
-  if (fromParentheses) return fromParentheses.trim()
+  if (fromParentheses) return cleanDomainCandidate(fromParentheses)
   const fromUrl = value.match(/https?:\/\/(?:www\.)?([^/\s)]+)/i)?.[1]
-  if (fromUrl) return fromUrl.trim()
+  if (fromUrl) return cleanDomainCandidate(fromUrl)
   return ''
+}
+const entityPlatformDomainOf = (domainValue: string, description: string) => {
+  const primaryDomain = cleanDomainCandidate(domainValue)
+  if (domainHasTld(primaryDomain)) return primaryDomain
+  const descriptionDomain = extractDomainFromText(description)
+  return domainHasTld(descriptionDomain) ? descriptionDomain : ''
 }
 const parseCsvRows = (text: string) => {
   const delimiter = text.includes('\t') ? '\t' : ','
@@ -1741,7 +1779,7 @@ const googleSheetExportUrl = (url: string) => {
 const mapPlatformImportRow = (row: Record<string, unknown>): SeoEntityPlatform | null => {
   const name = readImportValue(row, ['Tên nền tảng', 'Tên Website', 'Ten nen tang', 'Ten Website', 'tn website', 'tnwebsite', 'name', 'platform', 'website'])
   const description = readImportValue(row, ['Mô tả', 'Mo ta', 'mt', 'description', 'desc'])
-  const domain = readImportValue(row, ['Domain', 'Tên miền', 'ten mien', 'domain']) || extractDomainFromText(description)
+  const domain = entityPlatformDomainOf(readImportValue(row, ['Domain', 'Tên miền', 'ten mien', 'domain']), description)
   if (!name || !domain) return null
   const importGroupHint = readImportValue(row, ['Nhóm', 'Nhóm nền tảng', 'group', 'nhom']) || readImportValue(row, ['Loại Backlink', 'Loai Backlink', 'loi backlink', 'loibacklink', 'Backlink Type', 'type'])
   const guideFileName = readImportValue(row, ['Tên File HTML', 'Ten File HTML', 'tn file html', 'tnfilehtml', 'File HTML', 'HTML File', 'guideFileName'])
@@ -1994,6 +2032,20 @@ const readFileAsBase64 = async (file: File) => {
 }
 const isHtmlFile = (file: File) =>
   file.type === 'text/html' || /\.(html?|xhtml)$/i.test(file.name)
+const readApiJson = async (response: Response) => {
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const text = await response.text().catch(() => '')
+    const isHtml = /^\s*(<!doctype html|<html[\s>])/i.test(text)
+    return {
+      ok: false,
+      message: isHtml
+        ? 'Endpoint upload trả về HTML thay vì JSON. Khi test local hãy restart Vite dev server để middleware upload mới hoạt động.'
+        : `Response không phải JSON (${contentType || 'không rõ content-type'}). HTTP ${response.status}`,
+    }
+  }
+  return response.json().catch(() => ({ ok: false, message: `JSON không hợp lệ. HTTP ${response.status}` }))
+}
 const isHtmlGuideFile = (file: InternalNoteFile) =>
   file.fileType === htmlGuideFileType && file.fileUrl.startsWith('data:text/html')
 const htmlGuideFileOf = (note: InternalNote, files: InternalNoteFile[]) =>
@@ -2261,7 +2313,17 @@ const normalizeData = (data: AppData): AppData => ({
     taskIds: settlement.taskIds ?? [],
     note: settlement.note ?? '',
   })),
-  seoEntities: data.seoEntities ?? [],
+  seoEntities: (data.seoEntities ?? []).map((entity) => ({
+    ...entity,
+    googleAccountEmail: entity.googleAccountEmail ?? '',
+    googleAccountPassword: entity.googleAccountPassword ?? '',
+    googleAccountPhone: entity.googleAccountPhone ?? '',
+    googleBackupAccount: entity.googleBackupAccount ?? '',
+    googleTwoFactorCode: entity.googleTwoFactorCode ?? '',
+    defaultAccountId: entity.defaultAccountId ?? '',
+    defaultAccountPassword: entity.defaultAccountPassword ?? '',
+    defaultAccountEmail: entity.defaultAccountEmail ?? '',
+  })),
   seoEntityPlatforms: (data.seoEntityPlatforms ?? []).map((platform) => {
     const legacyPlatform = platform as SeoEntityPlatform & {
       qualityScore?: number
@@ -2270,8 +2332,8 @@ const normalizeData = (data: AppData): AppData => ({
     return {
       id: platform.id,
       name: platform.name ?? '',
-      domain: platform.domain ?? '',
       description: platform.description ?? '',
+      domain: entityPlatformDomainOf(platform.domain ?? '', platform.description ?? '') || cleanDomainCandidate(platform.domain ?? ''),
       group: entityPlatformGroupOf(platform.group),
       defaultLinkType: pickEnum(String(platform.defaultLinkType ?? ''), entityLinkTypes, 'Nofollow'),
       backlinkType: platform.backlinkType ?? '',
@@ -2286,8 +2348,11 @@ const normalizeData = (data: AppData): AppData => ({
   seoEntityLinks: (data.seoEntityLinks ?? []).map((link) => ({
     ...link,
     loginWithGoogle: link.loginWithGoogle ?? false,
+    useDefaultEntityAccount: link.useDefaultEntityAccount ?? false,
     loginAccount: link.loginAccount ?? link.accountUsed ?? '',
     loginPassword: link.loginPassword ?? '',
+    loginEmail: link.loginEmail ?? '',
+    accountUsed: link.accountUsed ?? link.loginAccount ?? '',
     taskId: link.taskId ?? '',
   })),
   seoEntityChecklist: [
@@ -2508,7 +2573,15 @@ function App() {
   const [editingInternalNoteId, setEditingInternalNoteId] = useState<string | null>(null)
   const [entityLinkCredential, setEntityLinkCredential] = useState<EntityLinkCredential>(() => {
     const raw = localStorage.getItem(entityCredentialKey)
-    return raw ? JSON.parse(raw) : { loginWithGoogle: false, loginAccount: '', loginPassword: '' }
+    const parsed = raw ? JSON.parse(raw) as Partial<EntityLinkCredential> : {}
+    return {
+      loginWithGoogle: parsed.loginWithGoogle ?? false,
+      useDefaultEntityAccount: parsed.useDefaultEntityAccount ?? false,
+      loginAccount: parsed.loginAccount ?? '',
+      loginPassword: parsed.loginPassword ?? '',
+      loginEmail: parsed.loginEmail ?? '',
+      accountUsed: parsed.accountUsed ?? '',
+    }
   })
 
   useEffect(() => {
@@ -4306,6 +4379,24 @@ function App() {
     )
   }
 
+  const deleteTask = (taskId: string) => {
+    if (!isAdmin) return
+    const task = data.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    if (!window.confirm(`Xóa task "${task.title}" khỏi hệ thống? Liên kết task trong bài viết, Entity, Backlink và chốt lương sẽ được gỡ.`)) return
+    saveData({
+      ...data,
+      tasks: data.tasks.filter((item) => item.id !== taskId),
+      keywords: data.keywords.map((keyword) => keyword.articleTaskId === taskId ? { ...keyword, articleTaskId: '' } : keyword),
+      seoEntityLinks: (data.seoEntityLinks ?? []).map((link) => link.taskId === taskId ? { ...link, taskId: '' } : link),
+      seoBacklinkPlans: (data.seoBacklinkPlans ?? []).map((plan) => plan.taskId === taskId ? { ...plan, taskId: '' } : plan),
+      payrollSettlements: (data.payrollSettlements ?? []).map((settlement) => ({
+        ...settlement,
+        taskIds: settlement.taskIds.filter((item) => item !== taskId),
+      })),
+    }, 'Xóa task', task.title)
+  }
+
   const saveEntityProfile = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!activeProject) return
@@ -4330,6 +4421,14 @@ function App() {
       address: String(form.get('address')).trim(),
       mapsUrl: String(form.get('mapsUrl')).trim(),
       status: String(form.get('status')) as EntityStatus,
+      googleAccountEmail: String(form.get('googleAccountEmail')).trim(),
+      googleAccountPassword: String(form.get('googleAccountPassword')).trim(),
+      googleAccountPhone: String(form.get('googleAccountPhone')).trim(),
+      googleBackupAccount: String(form.get('googleBackupAccount')).trim(),
+      googleTwoFactorCode: String(form.get('googleTwoFactorCode')).trim(),
+      defaultAccountId: String(form.get('defaultAccountId')).trim(),
+      defaultAccountPassword: String(form.get('defaultAccountPassword')).trim(),
+      defaultAccountEmail: String(form.get('defaultAccountEmail')).trim(),
     }
     const isUpdate = projectEntities.some((item) => item.id === entityId)
     const nextData: AppData = {
@@ -4398,17 +4497,35 @@ function App() {
       setEntityImportStatus(`Không tìm thấy nền tảng hợp lệ trong ${sourceLabel}. Cần tối thiểu cột Tên nền tảng và Domain.`)
       return
     }
-    const existingKeys = new Set((data.seoEntityPlatforms ?? []).map((platform) => normalizeImportHeader(`${platform.name}-${platform.domain}`)))
-    const uniquePlatforms = importedPlatforms.filter((platform) => !existingKeys.has(normalizeImportHeader(`${platform.name}-${platform.domain}`)))
-    if (uniquePlatforms.length === 0) {
+    const repairedNames = new Set<string>()
+    const existingPlatforms = data.seoEntityPlatforms ?? []
+    const repairedPlatforms = existingPlatforms.map((platform) => {
+      if (domainHasTld(platform.domain)) return platform
+      const importedMatch = importedPlatforms.find((importedPlatform) =>
+        normalizeImportHeader(importedPlatform.name) === normalizeImportHeader(platform.name) &&
+        domainHasTld(importedPlatform.domain),
+      )
+      if (!importedMatch) return platform
+      repairedNames.add(normalizeImportHeader(importedMatch.name))
+      return {
+        ...importedMatch,
+        id: platform.id,
+      }
+    })
+    const existingKeys = new Set(repairedPlatforms.map((platform) => normalizeImportHeader(`${platform.name}-${platform.domain}`)))
+    const uniquePlatforms = importedPlatforms.filter((platform) =>
+      !repairedNames.has(normalizeImportHeader(platform.name)) &&
+      !existingKeys.has(normalizeImportHeader(`${platform.name}-${platform.domain}`)),
+    )
+    if (uniquePlatforms.length === 0 && repairedNames.size === 0) {
       setEntityImportStatus(`Các nền tảng trong ${sourceLabel} đã tồn tại, không import thêm dòng mới.`)
       return
     }
     saveData({
       ...data,
-      seoEntityPlatforms: [...uniquePlatforms, ...(data.seoEntityPlatforms ?? [])],
+      seoEntityPlatforms: [...uniquePlatforms, ...repairedPlatforms],
     }, 'Import nền tảng Entity', `${uniquePlatforms.length} nền tảng từ ${sourceLabel}`)
-    setEntityImportStatus(`Đã import ${uniquePlatforms.length}/${importedPlatforms.length} nền tảng từ ${sourceLabel}.`)
+    setEntityImportStatus(`Đã import ${uniquePlatforms.length}/${importedPlatforms.length} nền tảng từ ${sourceLabel}${repairedNames.size ? `, sửa domain cho ${repairedNames.size} nền tảng đã có` : ''}.`)
   }
 
   const importEntityPlatformsFromSheet = async (event: FormEvent<HTMLFormElement>) => {
@@ -4461,18 +4578,22 @@ function App() {
     if (!activeProject || !activeEntity) return
     const form = new FormData(event.currentTarget)
     const loginWithGoogle = form.get('loginWithGoogle') === 'on'
+    const useDefaultEntityAccount = form.get('useDefaultEntityAccount') === 'on'
     const loginAccount = String(form.get('loginAccount')).trim()
     const loginPassword = String(form.get('loginPassword')).trim()
-    const accountUsed = String(form.get('accountUsed')).trim() || loginAccount
-    updateEntityLinkCredential({ loginWithGoogle, loginAccount, loginPassword })
+    const loginEmail = String(form.get('loginEmail')).trim()
+    const accountUsed = String(form.get('accountUsed')).trim() || loginAccount || loginEmail
+    updateEntityLinkCredential({ loginWithGoogle, useDefaultEntityAccount, loginAccount, loginPassword, loginEmail, accountUsed })
     const link: SeoEntityLink = {
       id: uid('el'),
       projectId: activeProject.id,
       entityId: activeEntity.id,
       platformId: String(form.get('platformId')),
       loginWithGoogle,
+      useDefaultEntityAccount,
       loginAccount,
       loginPassword,
+      loginEmail,
       accountUsed,
       liveUrl: String(form.get('liveUrl')).trim(),
       targetUrl: String(form.get('targetUrl')).trim(),
@@ -4490,7 +4611,7 @@ function App() {
     }
     saveData({ ...data, seoEntityLinks: [link, ...(data.seoEntityLinks ?? [])] }, 'Thêm link Entity', activeEntity.name)
     event.currentTarget.reset()
-    updateEntityLinkCredential({ loginWithGoogle, loginAccount, loginPassword })
+    updateEntityLinkCredential({ loginWithGoogle, useDefaultEntityAccount, loginAccount, loginPassword, loginEmail, accountUsed })
   }
 
   const buildEntityLinkFromPlatform = (platform: SeoEntityPlatform): SeoEntityLink | null => {
@@ -4501,8 +4622,10 @@ function App() {
       entityId: activeEntity.id,
       platformId: platform.id,
       loginWithGoogle: false,
+      useDefaultEntityAccount: false,
       loginAccount: '',
       loginPassword: '',
+      loginEmail: '',
       accountUsed: '',
       liveUrl: '',
       targetUrl: activeEntity.website || activeProject.website,
@@ -5187,7 +5310,7 @@ function App() {
           contentBase64: await readFileAsBase64(pickedFile),
         }),
       })
-      const payload = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }))
+      const payload = await readApiJson(response)
       if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
       setEntityGuideUploadStatus(`Đã upload ${payload.fileName}. Điền tên file này vào cột "Tên File HTML" hoặc ô "Tên file HTML" của Nền tảng Entity.`)
       event.currentTarget.reset()
@@ -5731,6 +5854,8 @@ function App() {
                     onApprove={approveTask}
                     onRevision={requestTaskRevision}
                     onReassign={reassignTask}
+                    onDeleteTask={deleteTask}
+                    canDeleteTask={isAdmin}
                     canEdit
                   />
                 </Panel>
@@ -6330,6 +6455,8 @@ function App() {
                 onAcceptTask={acceptTask}
                 onRejectTask={rejectTask}
                 onSubmitTask={submitTaskForReview}
+                onDeleteTask={deleteTask}
+                canDeleteTask={isAdmin}
                 currentUserId={currentUserIdValue}
                 allowAssigneeWorkflow={!canEditTasks}
                 compact
@@ -6661,6 +6788,8 @@ function App() {
                 onApprove={approveTask}
                 onRevision={requestTaskRevision}
                 onReassign={reassignTask}
+                onDeleteTask={deleteTask}
+                canDeleteTask={isAdmin}
                 canEdit={canEdit('progress')}
               />
             </Panel>
@@ -9221,6 +9350,23 @@ function EntityModule({
   }
 
   const activeEntityId = activeEntity?.id ?? ''
+  const entityDefaultCredential = {
+    loginAccount: activeEntity?.defaultAccountId ?? '',
+    loginPassword: activeEntity?.defaultAccountPassword ?? '',
+    loginEmail: activeEntity?.defaultAccountEmail ?? '',
+    accountUsed: activeEntity?.defaultAccountId ?? activeEntity?.defaultAccountEmail ?? '',
+  }
+  const hasEntityDefaultCredential = Boolean(
+    entityDefaultCredential.loginAccount ||
+    entityDefaultCredential.loginPassword ||
+    entityDefaultCredential.loginEmail,
+  )
+  const applyEntityDefaultCredential = (checked: boolean) => {
+    onCredentialChange({
+      useDefaultEntityAccount: checked,
+      ...(checked ? entityDefaultCredential : {}),
+    })
+  }
 
   return (
     <section className="view-stack">
@@ -9308,6 +9454,20 @@ function EntityModule({
                 <option key={status}>{status}</option>
               ))}
             </select>
+            <fieldset className="entity-account-fieldset">
+              <legend>Thông tin tài khoản Google</legend>
+              <input name="googleAccountEmail" placeholder="Email Google" type="email" defaultValue={activeEntity?.googleAccountEmail ?? ''} disabled={!canEdit} />
+              <input name="googleAccountPassword" placeholder="Mật khẩu Google" type="password" defaultValue={activeEntity?.googleAccountPassword ?? ''} disabled={!canEdit} />
+              <input name="googleAccountPhone" placeholder="Số điện thoại" defaultValue={activeEntity?.googleAccountPhone ?? ''} disabled={!canEdit} />
+              <input name="googleBackupAccount" placeholder="Tài khoản backup" defaultValue={activeEntity?.googleBackupAccount ?? ''} disabled={!canEdit} />
+              <input name="googleTwoFactorCode" placeholder="Mã 2FA" defaultValue={activeEntity?.googleTwoFactorCode ?? ''} disabled={!canEdit} />
+            </fieldset>
+            <fieldset className="entity-account-fieldset">
+              <legend>Tài khoản mặc định</legend>
+              <input name="defaultAccountId" placeholder="Tài khoản (ID)" defaultValue={activeEntity?.defaultAccountId ?? ''} disabled={!canEdit} />
+              <input name="defaultAccountPassword" placeholder="Mật khẩu" type="password" defaultValue={activeEntity?.defaultAccountPassword ?? ''} disabled={!canEdit} />
+              <input name="defaultAccountEmail" placeholder="Email" type="email" defaultValue={activeEntity?.defaultAccountEmail ?? ''} disabled={!canEdit} />
+            </fieldset>
             <textarea name="shortDescription" placeholder="Mô tả ngắn" defaultValue={activeEntity?.shortDescription ?? ''} disabled={!canEdit} />
             <textarea name="longDescription" placeholder="Mô tả dài" defaultValue={activeEntity?.longDescription ?? ''} disabled={!canEdit} />
             <button type="submit" disabled={!canEdit}>{activeEntity ? 'Cập nhật hồ sơ Entity' : 'Tạo hồ sơ Entity'}</button>
@@ -9404,32 +9564,60 @@ function EntityModule({
               <form className="entity-link-form" onSubmit={onAddLink}>
                 <select name="platformId" required disabled={!canEdit}>{entityPlatforms.map((platform) => <option value={platform.id} key={platform.id}>{platform.name}</option>)}</select>
                 <select name="assigneeId" disabled={!canEdit}>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
-                <label className="entity-google-login">
+                <fieldset className="entity-link-account-box">
+                  <legend>Tài khoản đăng nhập</legend>
+                  <label className="entity-google-login">
+                    <input
+                      name="useDefaultEntityAccount"
+                      type="checkbox"
+                      checked={rememberedCredential.useDefaultEntityAccount}
+                      onChange={(event) => applyEntityDefaultCredential(event.target.checked)}
+                      disabled={!canEdit || !hasEntityDefaultCredential}
+                    />
+                    Dùng tài khoản mặc định của Entity
+                  </label>
+                  <label className="entity-google-login">
+                    <input
+                      name="loginWithGoogle"
+                      type="checkbox"
+                      checked={rememberedCredential.loginWithGoogle}
+                      onChange={(event) => onCredentialChange({ loginWithGoogle: event.target.checked })}
+                      disabled={!canEdit}
+                    />
+                    Đăng nhập bằng tài khoản Google
+                  </label>
+                  {!hasEntityDefaultCredential && <small>Hồ sơ Entity chưa có tài khoản mặc định để tự điền.</small>}
                   <input
-                    name="loginWithGoogle"
-                    type="checkbox"
-                    checked={rememberedCredential.loginWithGoogle}
-                    onChange={(event) => onCredentialChange({ loginWithGoogle: event.target.checked })}
+                    name="loginAccount"
+                    placeholder="Tài khoản đăng nhập / ID"
+                    value={rememberedCredential.loginAccount}
+                    onChange={(event) => onCredentialChange({ loginAccount: event.target.value, useDefaultEntityAccount: false })}
                     disabled={!canEdit}
                   />
-                  Đăng nhập bằng tài khoản Google
-                </label>
-                <input
-                  name="loginAccount"
-                  placeholder="Tài khoản đăng nhập"
-                  value={rememberedCredential.loginAccount}
-                  onChange={(event) => onCredentialChange({ loginAccount: event.target.value })}
-                  disabled={!canEdit}
-                />
-                <input
-                  name="loginPassword"
-                  placeholder="Mật khẩu"
-                  type="password"
-                  value={rememberedCredential.loginPassword}
-                  onChange={(event) => onCredentialChange({ loginPassword: event.target.value })}
-                  disabled={!canEdit}
-                />
-                <input name="accountUsed" placeholder="Tài khoản sử dụng" disabled={!canEdit} />
+                  <input
+                    name="loginEmail"
+                    placeholder="Email đăng nhập"
+                    type="email"
+                    value={rememberedCredential.loginEmail}
+                    onChange={(event) => onCredentialChange({ loginEmail: event.target.value, useDefaultEntityAccount: false })}
+                    disabled={!canEdit}
+                  />
+                  <input
+                    name="loginPassword"
+                    placeholder="Mật khẩu"
+                    type="password"
+                    value={rememberedCredential.loginPassword}
+                    onChange={(event) => onCredentialChange({ loginPassword: event.target.value, useDefaultEntityAccount: false })}
+                    disabled={!canEdit}
+                  />
+                  <input
+                    name="accountUsed"
+                    placeholder="Tài khoản sử dụng"
+                    value={rememberedCredential.accountUsed}
+                    onChange={(event) => onCredentialChange({ accountUsed: event.target.value, useDefaultEntityAccount: false })}
+                    disabled={!canEdit}
+                  />
+                </fieldset>
                 <input name="liveUrl" placeholder="URL live" disabled={!canEdit} />
                 <input name="targetUrl" placeholder="URL đích" defaultValue={activeEntity.website} disabled={!canEdit} />
                 <input name="anchorText" placeholder="Anchor text" defaultValue={activeEntity.name} disabled={!canEdit} />
@@ -10003,7 +10191,9 @@ function EntityLinkTable({
               {!compact && (
                 <td>
                   {link.loginWithGoogle ? <span className="pill income">Google</span> : <span className="pill">Thường</span>}
+                  {link.useDefaultEntityAccount && <span className="pill">Mặc định</span>}
                   <small className="entity-link-note">{link.loginAccount || link.accountUsed || 'Chưa lưu tài khoản'}</small>
+                  {link.loginEmail && <small className="entity-link-note">{link.loginEmail}</small>}
                 </td>
               )}
               <td>
@@ -10925,9 +11115,11 @@ function TaskTable({
   onAcceptTask,
   onRejectTask,
   onSubmitTask,
+  onDeleteTask,
   currentUserId,
   allowAssigneeWorkflow,
   canEdit,
+  canDeleteTask,
   compact,
 }: {
   tasks: Task[]
@@ -10941,9 +11133,11 @@ function TaskTable({
   onAcceptTask?: (taskId: string) => void
   onRejectTask?: (taskId: string) => void
   onSubmitTask?: (taskId: string) => void
+  onDeleteTask?: (taskId: string) => void
   currentUserId?: string
   allowAssigneeWorkflow?: boolean
   canEdit: boolean
+  canDeleteTask?: boolean
   compact?: boolean
 }) {
   if (tasks.length === 0) {
@@ -10973,7 +11167,7 @@ function TaskTable({
         <tbody>
           {tasks.map((task) => {
             const canUseAssigneeWorkflow = Boolean(allowAssigneeWorkflow && currentUserId && task.assigneeId === currentUserId)
-            const canShowTaskActions = canEdit || canUseAssigneeWorkflow
+            const canShowTaskActions = canEdit || canUseAssigneeWorkflow || canDeleteTask
             const status = taskStatusOf(task)
             const deadlineBadge = taskDeadlineBadge(task)
             const showAdminReviewActions = canEdit && status === 'Chờ duyệt'
@@ -11062,7 +11256,12 @@ function TaskTable({
                         Gửi hoàn thành
                       </button>
                     )}
-                    {!showAdminReviewActions && !(canUseAssigneeWorkflow && ['Chờ nhận', 'Đang làm', 'Cần chỉnh sửa'].includes(status)) && <span className="task-action-empty">—</span>}
+                    {canDeleteTask && (
+                      <button className="danger-button task-action-button" type="button" onClick={() => onDeleteTask?.(task.id)}>
+                        Xóa
+                      </button>
+                    )}
+                    {!showAdminReviewActions && !(canUseAssigneeWorkflow && ['Chờ nhận', 'Đang làm', 'Cần chỉnh sửa'].includes(status)) && !canDeleteTask && <span className="task-action-empty">—</span>}
                   </div>
                 </td>
               )}
