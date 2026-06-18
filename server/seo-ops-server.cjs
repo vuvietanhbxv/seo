@@ -20,6 +20,9 @@ const dbBackupDir = path.join(dbDir, 'backups')
 const toolOutputDir = process.env.SEO_OPS_TOOL_OUTPUT_DIR
   ? path.resolve(process.env.SEO_OPS_TOOL_OUTPUT_DIR)
   : path.join(dbDir, 'tools')
+const entityGuideDir = process.env.SEO_OPS_ENTITY_GUIDE_DIR
+  ? path.resolve(process.env.SEO_OPS_ENTITY_GUIDE_DIR)
+  : path.join(dbDir, 'entity-guides')
 const toolConfigPath = path.join(dbDir, 'seo-ops-tool-config.json')
 const toolVertexCredentialsPath = path.join(dbDir, 'seo-ops-vertex-credentials.json')
 const googleOAuthPath = path.join(dbDir, 'seo-ops-google-oauth.json')
@@ -1441,6 +1444,46 @@ function serveToolOutput(scopedPathname, res) {
   fs.createReadStream(resolvedPath).pipe(res)
 }
 
+function safeEntityGuideFileName(value) {
+  const baseName = path.basename(String(value || '').trim())
+  if (!baseName || !/\.html?$/i.test(baseName)) {
+    throw new Error('Tên file hướng dẫn Entity phải là file .html hoặc .htm.')
+  }
+  const safeName = baseName.replace(/[^A-Za-z0-9._ -]/g, '-').replace(/\s+/g, '-')
+  if (!safeName || safeName === '.' || safeName === '..') {
+    throw new Error('Tên file hướng dẫn Entity không hợp lệ.')
+  }
+  return safeName
+}
+
+function entityGuidePublicUrl(fileName) {
+  const prefix = basePath || ''
+  return `${prefix}/entity-guides/${encodeURIComponent(fileName)}`
+}
+
+function serveEntityGuide(scopedPathname, res) {
+  let fileName = ''
+  try {
+    fileName = safeEntityGuideFileName(decodeURIComponent(scopedPathname.replace(/^\/entity-guides\/?/, '')))
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('Not found')
+    return
+  }
+  const resolvedPath = path.resolve(path.join(entityGuideDir, fileName))
+  if (!isInsideDirectory(entityGuideDir, resolvedPath) || !fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('Not found')
+    return
+  }
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  fs.createReadStream(resolvedPath).pipe(res)
+}
+
 const mcp = createMcpHandler({ readDb, writeDb, token: mcpToken, connectorKey: mcpConnectorKey })
 
 function serveStatic(req, res) {
@@ -1476,7 +1519,7 @@ const server = http.createServer(async (req, res) => {
 
     if (scopedPathname === '/api/health') {
       const articleConfig = publicArticleComposerConfig()
-      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, entityGuideDir, toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
       return
     }
 
@@ -1485,8 +1528,51 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    if (scopedPathname.startsWith('/entity-guides/')) {
+      serveEntityGuide(scopedPathname, res)
+      return
+    }
+
     if (scopedPathname === '/mcp' || scopedPathname === '/api/mcp') {
       await mcp.handle(req, res, readBody, sendJson)
+      return
+    }
+
+    if (scopedPathname === '/api/entity-guides/upload') {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { ok: false, message: 'Unauthorized' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      const payload = JSON.parse(await readBody(req))
+      let fileName = ''
+      try {
+        fileName = safeEntityGuideFileName(payload.fileName)
+      } catch (error) {
+        sendJson(res, 400, { ok: false, message: error.message || 'Tên file không hợp lệ.' })
+        return
+      }
+      const contentBase64 = String(payload.contentBase64 || '')
+      if (!contentBase64) {
+        sendJson(res, 400, { ok: false, message: 'Thiếu nội dung file HTML.' })
+        return
+      }
+      const bytes = Buffer.from(contentBase64, 'base64')
+      if (!bytes.length || bytes.length > 2 * 1024 * 1024) {
+        sendJson(res, 400, { ok: false, message: 'File HTML hướng dẫn Entity tối đa 2MB.' })
+        return
+      }
+      fs.mkdirSync(entityGuideDir, { recursive: true })
+      const targetPath = path.resolve(path.join(entityGuideDir, fileName))
+      if (!isInsideDirectory(entityGuideDir, targetPath)) {
+        sendJson(res, 400, { ok: false, message: 'Tên file không hợp lệ.' })
+        return
+      }
+      fs.writeFileSync(targetPath, bytes)
+      sendJson(res, 200, { ok: true, fileName, url: entityGuidePublicUrl(fileName), savedAt: new Date().toISOString() })
       return
     }
 

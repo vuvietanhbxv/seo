@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import type { CSSProperties, ChangeEvent, FormEvent } from 'react'
 import * as XLSX from 'xlsx'
 import './App.css'
 
@@ -381,10 +381,15 @@ type SeoEntityPlatform = {
   id: string
   name: string
   domain: string
+  description: string
   group: EntityPlatformGroup
   defaultLinkType: EntityLinkType
+  backlinkType: string
+  category: string
+  niche: string
   domainAuthority: number
   status: EntityPlatformStatus
+  guideFileName: string
   guideUrl: string
 }
 
@@ -792,6 +797,9 @@ type AppData = {
 
 const storageKey = 'seo-demo-data-v5'
 const entityCredentialKey = 'seo-demo-entity-link-credentials'
+const appZoomKey = 'seo-ops-ui-zoom'
+const defaultAppZoom = 0.8
+const clampAppZoom = (value: number) => Math.min(1.2, Math.max(0.7, Number(value.toFixed(2))))
 const appVersion = '1.0.0'
 const appTimeZone = 'Asia/Bangkok'
 const permissions = ['Dự án', 'Ghi chú', 'Tài chính', 'Nhân sự', 'Tiến độ', 'Hệ thống']
@@ -1250,20 +1258,30 @@ const initialData: AppData = {
       id: 'ep-facebook',
       name: 'Facebook',
       domain: 'facebook.com',
+      description: '',
       group: 'Social Bookmark / Bookmark',
       defaultLinkType: 'Nofollow',
+      backlinkType: '',
+      category: '',
+      niche: '',
       domainAuthority: 96,
       status: 'Dùng được',
+      guideFileName: '',
       guideUrl: '',
     },
     {
       id: 'ep-medium',
       name: 'Medium',
       domain: 'medium.com',
+      description: '',
       group: 'Web 2.0 Article Submission',
       defaultLinkType: 'Nofollow',
+      backlinkType: '',
+      category: '',
+      niche: '',
       domainAuthority: 95,
       status: 'Dùng được',
+      guideFileName: '',
       guideUrl: '',
     },
   ],
@@ -1465,6 +1483,11 @@ const internalGuideCodeFromId = (id: string) => {
 const internalGuideCodeOf = (note: InternalNote) =>
   note.guideCode || (note.noteType === 'Hướng dẫn thao tác' ? internalGuideCodeFromId(note.id) : '')
 const guideReferenceIsUrl = (value: string) => /^https?:\/\//i.test(value.trim())
+const entityGuideFileNameOf = (value: string) => value.trim().split(/[\\/]/).pop()?.trim() ?? ''
+const guideReferenceIsEntityHtmlFile = (value: string) => {
+  const fileName = entityGuideFileNameOf(value)
+  return Boolean(fileName) && /\.html?$/i.test(fileName) && !guideReferenceIsUrl(value)
+}
 const field = (value: string | number | undefined, fallback = 'Chưa cập nhật') =>
   value === undefined || value === '' || value === 0 ? fallback : String(value)
 const appNow = () => new Date()
@@ -1641,10 +1664,23 @@ const pickEnum = <T extends string>(value: string, options: T[], fallback: T) =>
   options.find((option) => normalizeImportHeader(option) === normalizeImportHeader(value)) ?? fallback
 const legacyEntityPlatformGroups: Record<string, EntityPlatformGroup> = {
   social: 'Social Bookmark / Bookmark',
+  socialbookmark: 'Social Bookmark / Bookmark',
+  bookmark: 'Social Bookmark / Bookmark',
   profile: 'Profile Link',
+  profilelink: 'Profile Link',
   directory: 'Business Listing',
   forum: 'Forum Post',
+  forumpost: 'Forum Post',
   blog: 'Article Submission',
+  article: 'Article Submission',
+  articlesubmission: 'Article Submission',
+  guestpost: 'Article Submission',
+  web20: 'Web 2.0',
+  web2: 'Web 2.0',
+  urlshortener: 'URL Shortener',
+  businesslisting: 'Business Listing',
+  comment: 'Comment',
+  imagesubmission: 'Image Submission',
   map: 'Business Listing',
   review: 'Business Listing',
 }
@@ -1655,6 +1691,13 @@ const entityPlatformGroupOf = (value: unknown): EntityPlatformGroup => {
     ?? 'Other'
 }
 const entityDomainAuthorityOf = (value: unknown) => Math.min(100, Math.max(0, Number(value) || 0))
+const extractDomainFromText = (value: string) => {
+  const fromParentheses = value.match(/\(([a-z0-9.-]+\.[a-z]{2,})(?:\/[^)]*)?\)/i)?.[1]
+  if (fromParentheses) return fromParentheses.trim()
+  const fromUrl = value.match(/https?:\/\/(?:www\.)?([^/\s)]+)/i)?.[1]
+  if (fromUrl) return fromUrl.trim()
+  return ''
+}
 const parseCsvRows = (text: string) => {
   const delimiter = text.includes('\t') ? '\t' : ','
   const lines = text.split(/\r?\n/).filter((line) => line.trim())
@@ -1696,17 +1739,25 @@ const googleSheetExportUrl = (url: string) => {
   return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv&gid=${gid}`
 }
 const mapPlatformImportRow = (row: Record<string, unknown>): SeoEntityPlatform | null => {
-  const name = readImportValue(row, ['Tên nền tảng', 'Ten nen tang', 'name', 'platform'])
-  const domain = readImportValue(row, ['Domain', 'Tên miền', 'ten mien'])
+  const name = readImportValue(row, ['Tên nền tảng', 'Tên Website', 'Ten nen tang', 'Ten Website', 'tn website', 'tnwebsite', 'name', 'platform', 'website'])
+  const description = readImportValue(row, ['Mô tả', 'Mo ta', 'mt', 'description', 'desc'])
+  const domain = readImportValue(row, ['Domain', 'Tên miền', 'ten mien', 'domain']) || extractDomainFromText(description)
   if (!name || !domain) return null
+  const importGroupHint = readImportValue(row, ['Nhóm', 'Nhóm nền tảng', 'group', 'nhom']) || readImportValue(row, ['Loại Backlink', 'Loai Backlink', 'loi backlink', 'loibacklink', 'Backlink Type', 'type'])
+  const guideFileName = readImportValue(row, ['Tên File HTML', 'Ten File HTML', 'tn file html', 'tnfilehtml', 'File HTML', 'HTML File', 'guideFileName'])
   return {
     id: uid('ep'),
     name,
     domain,
-    group: entityPlatformGroupOf(readImportValue(row, ['Nhóm', 'Nhóm nền tảng', 'group', 'nhom'])),
-    defaultLinkType: pickEnum(readImportValue(row, ['Loại link mặc định', 'defaultLinkType', 'linkType']), entityLinkTypes, 'Nofollow'),
-    domainAuthority: entityDomainAuthorityOf(readImportValue(row, ['Điểm DA', 'DA', 'Domain Authority', 'domainAuthority'])),
+    description,
+    group: entityPlatformGroupOf(importGroupHint),
+    defaultLinkType: pickEnum(readImportValue(row, ['Loại link mặc định', 'Link Type', 'defaultLinkType', 'linkType']), entityLinkTypes, 'Nofollow'),
+    backlinkType: '',
+    category: '',
+    niche: '',
+    domainAuthority: entityDomainAuthorityOf(readImportValue(row, ['Điểm DA', 'DA Score', 'DA', 'Domain Authority', 'domainAuthority'])),
     status: pickEnum(readImportValue(row, ['Trạng thái', 'status']), entityPlatformStatuses, 'Dùng được'),
+    guideFileName,
     guideUrl: readImportValue(row, ['Hướng dẫn', 'Link hướng dẫn', 'guideUrl', 'guide']),
   }
 }
@@ -1932,6 +1983,14 @@ const readHtmlFileAsDataUrl = async (file: File) => {
     binary += String.fromCharCode(...bytes.slice(index, index + 0x8000))
   }
   return `data:text/html;charset=utf-8;base64,${window.btoa(binary)}`
+}
+const readFileAsBase64 = async (file: File) => {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.slice(index, index + 0x8000))
+  }
+  return window.btoa(binary)
 }
 const isHtmlFile = (file: File) =>
   file.type === 'text/html' || /\.(html?|xhtml)$/i.test(file.name)
@@ -2212,10 +2271,15 @@ const normalizeData = (data: AppData): AppData => ({
       id: platform.id,
       name: platform.name ?? '',
       domain: platform.domain ?? '',
+      description: platform.description ?? '',
       group: entityPlatformGroupOf(platform.group),
       defaultLinkType: pickEnum(String(platform.defaultLinkType ?? ''), entityLinkTypes, 'Nofollow'),
+      backlinkType: platform.backlinkType ?? '',
+      category: platform.category ?? '',
+      niche: platform.niche ?? '',
       domainAuthority: entityDomainAuthorityOf(platform.domainAuthority ?? legacyPlatform.qualityScore),
       status: pickEnum(String(platform.status ?? ''), entityPlatformStatuses, 'Dùng được'),
+      guideFileName: platform.guideFileName ?? '',
       guideUrl: platform.guideUrl ?? (legacyPlatform.notes?.startsWith('http') ? legacyPlatform.notes : ''),
     }
   }),
@@ -2303,6 +2367,7 @@ const normalizeData = (data: AppData): AppData => ({
 
 const appBaseUrl = import.meta.env.BASE_URL || '/'
 const appUrl = (path: string) => `${appBaseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
+const entityGuideFileUrl = (fileName: string) => appUrl(`entity-guides/${encodeURIComponent(entityGuideFileNameOf(fileName))}`)
 const apiDataUrl = appUrl('api/data')
 const googleOAuthMessageFromUrl = () => {
   const params = new URLSearchParams(window.location.search)
@@ -2421,6 +2486,10 @@ function App() {
   const [articleToolSingleImageLoading, setArticleToolSingleImageLoading] = useState(false)
   const [financeFilter, setFinanceFilter] = useState<FinanceFilter>('all')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [appZoom, setAppZoom] = useState(() => {
+    const savedZoom = Number(localStorage.getItem(appZoomKey))
+    return savedZoom >= 0.7 && savedZoom <= 1.2 ? savedZoom : defaultAppZoom
+  })
   const [entityTab, setEntityTab] = useState<EntityTab>('overview')
   const [selectedEntityId, setSelectedEntityId] = useState('')
   const [entityImportStatus, setEntityImportStatus] = useState('')
@@ -2435,11 +2504,16 @@ function App() {
   const [knowledgeStatusFilter, setKnowledgeStatusFilter] = useState('all')
   const [knowledgePriorityFilter, setKnowledgePriorityFilter] = useState('all')
   const [knowledgeTagFilter, setKnowledgeTagFilter] = useState('all')
+  const [entityGuideUploadStatus, setEntityGuideUploadStatus] = useState('')
   const [editingInternalNoteId, setEditingInternalNoteId] = useState<string | null>(null)
   const [entityLinkCredential, setEntityLinkCredential] = useState<EntityLinkCredential>(() => {
     const raw = localStorage.getItem(entityCredentialKey)
     return raw ? JSON.parse(raw) : { loginWithGoogle: false, loginAccount: '', loginPassword: '' }
   })
+
+  useEffect(() => {
+    localStorage.setItem(appZoomKey, appZoom.toFixed(2))
+  }, [appZoom])
 
   useEffect(() => {
     if (!new URLSearchParams(window.location.search).has('google_oauth')) return
@@ -2874,6 +2948,10 @@ function App() {
     if (!normalizedReference) return
     if (guideReferenceIsUrl(normalizedReference)) {
       window.open(normalizedReference, '_blank', 'noopener,noreferrer')
+      return
+    }
+    if (guideReferenceIsEntityHtmlFile(normalizedReference)) {
+      window.open(entityGuideFileUrl(normalizedReference), '_blank', 'noopener,noreferrer')
       return
     }
     const guide = internalNotes.find((note) =>
@@ -4288,10 +4366,15 @@ function App() {
       id: editingEntityPlatform?.id ?? uid('ep'),
       name: String(form.get('name')).trim(),
       domain: String(form.get('domain')).trim(),
+      description: String(form.get('description')).trim(),
       group: String(form.get('group')) as EntityPlatformGroup,
       defaultLinkType: String(form.get('defaultLinkType')) as EntityLinkType,
+      backlinkType: '',
+      category: '',
+      niche: '',
       domainAuthority: entityDomainAuthorityOf(form.get('domainAuthority')),
       status: String(form.get('status')) as EntityPlatformStatus,
+      guideFileName: entityGuideFileNameOf(String(form.get('guideFileName')).trim()),
       guideUrl: String(form.get('guideUrl')).trim(),
     }
     saveData({
@@ -4427,7 +4510,7 @@ function App() {
       targetUrl: activeEntity.website || activeProject.website,
       anchorText: activeEntity.name,
       displayName: activeEntity.name,
-      usedDescription: activeEntity.shortDescription || activeEntity.longDescription,
+      usedDescription: platform.description || activeEntity.shortDescription || activeEntity.longDescription,
       assigneeId: '',
       deployedDate: '',
       deploymentStatus: 'Chưa làm',
@@ -5042,6 +5125,42 @@ function App() {
     }
   }
 
+  const uploadEntityGuideHtml = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isAdmin) return
+    const form = new FormData(event.currentTarget)
+    const pickedFile = form.get('entityGuideHtmlFile') as File | null
+    if (!pickedFile || pickedFile.size === 0) {
+      setEntityGuideUploadStatus('Vui lòng chọn file HTML hướng dẫn Entity.')
+      return
+    }
+    if (!isHtmlFile(pickedFile)) {
+      setEntityGuideUploadStatus('Chỉ cho phép upload file .html/.htm.')
+      return
+    }
+    if (pickedFile.size > htmlGuideMaxBytes) {
+      setEntityGuideUploadStatus(`File HTML tối đa ${Math.round(htmlGuideMaxBytes / 1024 / 1024)}MB.`)
+      return
+    }
+    setEntityGuideUploadStatus('Đang upload hướng dẫn Entity...')
+    try {
+      const response = await fetch(appUrl('api/entity-guides/upload'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: pickedFile.name,
+          contentBase64: await readFileAsBase64(pickedFile),
+        }),
+      })
+      const payload = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }))
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setEntityGuideUploadStatus(`Đã upload ${payload.fileName}. Điền tên file này vào cột "Tên File HTML" hoặc ô "Tên file HTML" của Nền tảng Entity.`)
+      event.currentTarget.reset()
+    } catch (error) {
+      setEntityGuideUploadStatus(`Không upload được hướng dẫn Entity. ${error instanceof Error ? error.message : ''}`.trim())
+    }
+  }
+
   const archiveInternalNote = (noteId: string) => {
     const note = internalNotes.find((item) => item.id === noteId)
     if (!note) return
@@ -5393,8 +5512,14 @@ function App() {
     return <LoginPage error={loginError} users={data.users} onRefresh={reloadData} onSubmit={login} />
   }
 
+  const appShellStyle = {
+    '--app-zoom': appZoom.toFixed(2),
+    '--app-zoom-inverse': (1 / appZoom).toFixed(4),
+  } as CSSProperties
+  const changeAppZoom = (nextZoom: number) => setAppZoom(clampAppZoom(nextZoom))
+
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={appShellStyle}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">S</span>
@@ -5460,6 +5585,7 @@ function App() {
             <h1>{viewTitle(view)}</h1>
           </div>
           <div className="topbar-actions">
+            <ZoomControl zoom={appZoom} onChange={changeAppZoom} />
             <NotificationBell
               notifications={currentNotifications}
               unreadCount={unreadNotifications.length}
@@ -5512,15 +5638,15 @@ function App() {
             ) : (
               <>
                 <div className="metric-grid task-overview-metrics">
-                  <Metric title="Tổng dự án" value={activeProjects.length} note={`${projectProgress.filter((p) => p.status === 'Đang SEO').length} đang SEO`} />
-                  <Metric title="Tổng chi phí" value={currency.format(expense)} note="Không tính doanh thu" />
-                  <Metric title="Task hoàn thành" value={pct(completionRate)} note={`${completedTasks}/${activeTasks.length} công việc`} />
-                  <Metric title="Task quá hạn" value={overdueTasks.length} note={`${cancelledDeadlineTasks.length} đã hủy · ${dueSoonTasks.length} sắp hạn`} />
-                  <Metric title="Position TB" value={avgPosition.toFixed(1)} note={`${activeKeywords.length} keyword đang theo dõi`} />
+                  <Metric title="Tổng dự án" value={activeProjects.length} note={`${projectProgress.filter((p) => p.status === 'Đang SEO').length} đang SEO`} icon="projects" tone="blue" />
+                  <Metric title="Tổng chi phí" value={currency.format(expense)} note="Không tính doanh thu" icon="finance" tone="teal" />
+                  <Metric title="Task hoàn thành" value={pct(completionRate)} note={`${completedTasks}/${activeTasks.length} công việc`} icon="completed" tone="green" />
+                  <Metric title="Task quá hạn" value={overdueTasks.length} note={`${cancelledDeadlineTasks.length} đã hủy · ${dueSoonTasks.length} sắp hạn`} icon="overdue" tone="amber" />
+                  <Metric title="Position TB" value={avgPosition.toFixed(1)} note={`${activeKeywords.length} keyword đang theo dõi`} icon="position" tone="violet" />
                 </div>
 
                 {(overdueTasks.length > 0 || cancelledDeadlineTasks.length > 0) && (
-                  <Panel title="Cảnh báo task quá hạn" action={`${overdueTasks.length} cần xử lý · ${cancelledDeadlineTasks.length} đã hủy`}>
+                  <Panel title="Cảnh báo task quá hạn" action={`${overdueTasks.length} cần xử lý · ${cancelledDeadlineTasks.length} đã hủy`} className="deadline-alert-panel">
                     <div className="deadline-alert-list">
                       {[...overdueTasks, ...cancelledDeadlineTasks].slice(0, 10).map((task) => {
                         const badge = taskDeadlineBadge(task)
@@ -6198,6 +6324,7 @@ function App() {
             currentUser={currentUser}
             canEdit={canEdit('knowledge')}
             canUploadHtmlGuide={isAdmin}
+            entityGuideUploadStatus={entityGuideUploadStatus}
             onTab={setKnowledgeTab}
             onSearch={setKnowledgeSearch}
             onProjectFilter={setKnowledgeProjectFilter}
@@ -6214,6 +6341,7 @@ function App() {
             onPermanentDelete={permanentlyDeleteInternalNote}
             onApprove={approveInternalNote}
             onUploadHtmlGuide={uploadHtmlGuideNote}
+            onUploadEntityGuide={uploadEntityGuideHtml}
             onAddFile={addInternalNoteFile}
             onAddComment={addInternalNoteComment}
           />
@@ -6666,6 +6794,23 @@ function LoginPage({
   )
 }
 
+function ZoomControl({ zoom, onChange }: { zoom: number; onChange: (zoom: number) => void }) {
+  const zoomPercent = Math.round(zoom * 100)
+  return (
+    <div className="zoom-control" aria-label="Thu phóng giao diện">
+      <button type="button" onClick={() => onChange(zoom - 0.1)} disabled={zoom <= 0.7} title="Thu nhỏ giao diện">
+        -
+      </button>
+      <button type="button" className="zoom-value" onClick={() => onChange(defaultAppZoom)} title="Đưa về mặc định 80%">
+        {zoomPercent}%
+      </button>
+      <button type="button" onClick={() => onChange(zoom + 0.1)} disabled={zoom >= 1.2} title="Phóng to giao diện">
+        +
+      </button>
+    </div>
+  )
+}
+
 function NotificationBell({
   notifications,
   unreadCount,
@@ -6771,19 +6916,53 @@ function MiniIcon({ name }: { name: string }) {
   )
 }
 
-function Metric({ title, value, note }: { title: string; value: string | number; note: string }) {
+type MetricIconName = 'projects' | 'finance' | 'completed' | 'overdue' | 'position'
+type MetricTone = 'blue' | 'teal' | 'green' | 'amber' | 'violet'
+
+function MetricIcon({ name }: { name: MetricIconName }) {
   return (
-    <article className="metric-card">
-      <span>{title}</span>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      {name === 'projects' && <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h4.2l2 2H18a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 19H6.5A2.5 2.5 0 0 1 4 16.5v-11Zm2.5-.5a.5.5 0 0 0-.5.5v2h12.5a.5.5 0 0 0-.5-.5h-6.1l-2-2H6.5ZM6 9.5v7a.5.5 0 0 0 .5.5H18a.5.5 0 0 0 .5-.5v-7H6Z" />}
+      {name === 'finance' && <path d="M5 18.5h14v-2H5v2Zm1.5-4h3v-7h-3v7Zm4.5 0h3v-10h-3v10Zm4.5 0h3v-5h-3v5ZM4 21a1 1 0 0 1 0-2h16a1 1 0 1 1 0 2H4Z" />}
+      {name === 'completed' && <path d="M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18Zm-1-6.2 6-6-1.4-1.4-4.6 4.6-2.1-2.1-1.4 1.4 3.5 3.5Z" />}
+      {name === 'overdue' && <path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Zm1 4h-2v6.2l4.6 2.7 1-1.7-3.6-2.1V7Zm-1 11.2a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4Z" />}
+      {name === 'position' && <path d="M4.5 18.5h15v2h-15v-2Zm1-2.5 4.3-4.3 3 3L19 8.5V13h2V5h-8v2h4.5l-4.7 4.7-3-3L4 14.5 5.5 16Z" />}
+    </svg>
+  )
+}
+
+function Metric({
+  title,
+  value,
+  note,
+  icon,
+  tone = 'blue',
+}: {
+  title: string
+  value: string | number
+  note: string
+  icon?: MetricIconName
+  tone?: MetricTone
+}) {
+  return (
+    <article className={`metric-card ${icon ? 'metric-card-with-icon' : ''} metric-tone-${tone}`}>
+      <div className="metric-card-head">
+        <span className="metric-title">{title}</span>
+        {icon && (
+          <span className="metric-icon">
+            <MetricIcon name={icon} />
+          </span>
+        )}
+      </div>
       <strong>{value}</strong>
       <p>{note}</p>
     </article>
   )
 }
 
-function Panel({ title, action, children }: { title: string; action?: string; children: React.ReactNode }) {
+function Panel({ title, action, children, className }: { title: string; action?: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className="panel">
+    <section className={className ? `panel ${className}` : 'panel'}>
       <div className="panel-head">
         <h2>{title}</h2>
         {action && <span>{action}</span>}
@@ -7531,6 +7710,7 @@ function KnowledgeModule({
   currentUser,
   canEdit,
   canUploadHtmlGuide,
+  entityGuideUploadStatus,
   onTab,
   onSearch,
   onProjectFilter,
@@ -7547,6 +7727,7 @@ function KnowledgeModule({
   onPermanentDelete,
   onApprove,
   onUploadHtmlGuide,
+  onUploadEntityGuide,
   onAddFile,
   onAddComment,
 }: {
@@ -7570,6 +7751,7 @@ function KnowledgeModule({
   currentUser?: User
   canEdit: boolean
   canUploadHtmlGuide: boolean
+  entityGuideUploadStatus: string
   onTab: (tab: KnowledgeTab) => void
   onSearch: (value: string) => void
   onProjectFilter: (value: string) => void
@@ -7586,6 +7768,7 @@ function KnowledgeModule({
   onPermanentDelete: (noteId: string) => void
   onApprove: (noteId: string) => void
   onUploadHtmlGuide: (event: FormEvent<HTMLFormElement>) => void
+  onUploadEntityGuide: (event: FormEvent<HTMLFormElement>) => void
   onAddFile: (event: FormEvent<HTMLFormElement>) => void
   onAddComment: (event: FormEvent<HTMLFormElement>) => void
 }) {
@@ -7656,22 +7839,34 @@ function KnowledgeModule({
         </div>
       </Panel>
 
-      {canUploadHtmlGuide && tab !== 'files' && (
-        <Panel title="Upload nhanh hướng dẫn HTML" action="Chỉ admin">
-          <form className="knowledge-html-upload-form" onSubmit={onUploadHtmlGuide}>
-            <input name="title" placeholder="Tiêu đề ghi chú, bỏ trống sẽ dùng tên file" />
-            <select name="projectId" defaultValue={defaultProjectId}>
-              <option value="">Không gắn dự án</option>
-              {projects.map((project) => (
-                <option value={project.id} key={project.id}>{project.name}</option>
-              ))}
-            </select>
-            <input name="tags" placeholder="Tag: hướng-dẫn, sop, dev..." defaultValue="hướng-dẫn, html" />
-            <input name="reason" placeholder="Mục đích tài liệu" />
-            <input name="htmlFile" type="file" accept=".html,.htm,text/html" required />
-            <button type="submit">Upload HTML</button>
-          </form>
-        </Panel>
+      {canUploadHtmlGuide && tab === 'files' && (
+        <div className="knowledge-upload-grid">
+          <Panel title="Upload hướng dẫn Entity HTML" action="Lưu ngoài code">
+            <form className="knowledge-entity-guide-upload-form" onSubmit={onUploadEntityGuide}>
+              <input name="entityGuideHtmlFile" type="file" accept=".html,.htm,text/html" required />
+              <button type="submit">Upload hướng dẫn Entity</button>
+            </form>
+            <p className="knowledge-html-hint">
+              File lưu tại thư mục entity-guides trong storage server. Điền đúng tên file vào Nền tảng Entity để nút Hướng dẫn mở file trong tab mới.
+            </p>
+            {entityGuideUploadStatus && <p className="entity-import-status">{entityGuideUploadStatus}</p>}
+          </Panel>
+          <Panel title="Upload nhanh hướng dẫn HTML" action="Tạo ghi chú nội bộ">
+            <form className="knowledge-html-upload-form" onSubmit={onUploadHtmlGuide}>
+              <input name="title" placeholder="Tiêu đề ghi chú, bỏ trống sẽ dùng tên file" />
+              <select name="projectId" defaultValue={defaultProjectId}>
+                <option value="">Không gắn dự án</option>
+                {projects.map((project) => (
+                  <option value={project.id} key={project.id}>{project.name}</option>
+                ))}
+              </select>
+              <input name="tags" placeholder="Tag: hướng-dẫn, sop, dev..." defaultValue="hướng-dẫn, html" />
+              <input name="reason" placeholder="Mục đích tài liệu" />
+              <input name="htmlFile" type="file" accept=".html,.htm,text/html" required />
+              <button type="submit">Upload HTML</button>
+            </form>
+          </Panel>
+        </div>
       )}
 
       {tab !== 'files' && (
@@ -9098,7 +9293,7 @@ function EntityModule({
               </label>
             </div>
             <p className="entity-import-hint">
-              Hỗ trợ cột: Tên nền tảng, Domain, Nhóm, Loại link mặc định, Điểm DA, Trạng thái, Hướng dẫn.
+              Hỗ trợ chuẩn CSV: STT, Tên Website, Mô tả, DA Score, Link Type, Tên File HTML. Nếu có cột Nhóm hệ thống cũng tự nhận; Domain có thể lấy tự động từ phần mô tả trong ngoặc.
             </p>
             {importStatus && <p className="entity-import-status">{importStatus}</p>}
           </Panel>
@@ -9111,6 +9306,10 @@ function EntityModule({
               <label className="entity-platform-field">
                 <span>Domain</span>
                 <input name="domain" placeholder="medium.com" defaultValue={editingPlatform?.domain ?? ''} required disabled={!canEdit} />
+              </label>
+              <label className="entity-platform-field entity-platform-description-field">
+                <span>Mô tả</span>
+                <textarea name="description" placeholder="Mô tả ngắn cách tạo link / profile trên nền tảng" defaultValue={editingPlatform?.description ?? ''} disabled={!canEdit} />
               </label>
               <label className="entity-platform-field">
                 <span>Nhóm <EntityPlatformGroupHelp /></span>
@@ -9129,8 +9328,12 @@ function EntityModule({
                 <select name="status" defaultValue={editingPlatform?.status ?? 'Dùng được'} disabled={!canEdit}>{entityPlatformStatuses.map((item) => <option key={item}>{item}</option>)}</select>
               </label>
               <label className="entity-platform-field entity-platform-guide-field">
-                <span>Hướng dẫn</span>
-                <input name="guideUrl" placeholder="Mã HD-XXXXXXXX hoặc link bài hướng dẫn" defaultValue={editingPlatform?.guideUrl ?? ''} disabled={!canEdit} />
+                <span>Tên file HTML</span>
+                <input name="guideFileName" placeholder="apple-com-sub-domain-guide.html" defaultValue={editingPlatform?.guideFileName ?? ''} disabled={!canEdit} />
+              </label>
+              <label className="entity-platform-field entity-platform-guide-field">
+                <span>Hướng dẫn khác</span>
+                <input name="guideUrl" placeholder="Mã HD-XXXXXXXX hoặc link bài hướng dẫn ngoài" defaultValue={editingPlatform?.guideUrl ?? ''} disabled={!canEdit} />
               </label>
               <div className="entity-platform-form-actions">
                 {editingPlatform && (
@@ -9312,6 +9515,9 @@ function EntityPlatformGroupHelp() {
   )
 }
 
+type EntityPlatformSortOption = 'default' | 'da-desc' | 'da-asc' | 'name-asc' | 'name-desc'
+type EntityPlatformGuideFilter = 'all' | 'with-guide' | 'without-guide'
+
 function EntityPlatformTable({
   platforms,
   canEdit,
@@ -9327,70 +9533,229 @@ function EntityPlatformTable({
   onCreateLink: (platformId: string) => void
   onOpenGuide: (reference: string) => void
 }) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<EntityPlatformSortOption>('default')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [groupFilter, setGroupFilter] = useState<EntityPlatformGroup | 'all'>('all')
+  const [linkTypeFilter, setLinkTypeFilter] = useState<EntityLinkType | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<EntityPlatformStatus | 'all'>('all')
+  const [guideFilter, setGuideFilter] = useState<EntityPlatformGuideFilter>('all')
+  const [minDa, setMinDa] = useState('')
+  const [maxDa, setMaxDa] = useState('')
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const minimumDa = minDa === '' ? null : Number(minDa)
+  const maximumDa = maxDa === '' ? null : Number(maxDa)
+  const hasAdvancedFilter =
+    groupFilter !== 'all' ||
+    linkTypeFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    guideFilter !== 'all' ||
+    minDa !== '' ||
+    maxDa !== ''
+  const filteredPlatforms = platforms
+    .filter((platform) => {
+      const searchable = [
+        platform.name,
+        platform.domain,
+        platform.description,
+        platform.group,
+        platform.defaultLinkType,
+        platform.status,
+        platform.guideFileName,
+        platform.guideUrl,
+      ]
+        .join(' ')
+        .toLowerCase()
+      const matchesSearch = !normalizedQuery || searchable.includes(normalizedQuery)
+      const matchesGroup = groupFilter === 'all' || platform.group === groupFilter
+      const matchesLinkType = linkTypeFilter === 'all' || platform.defaultLinkType === linkTypeFilter
+      const matchesStatus = statusFilter === 'all' || platform.status === statusFilter
+      const hasGuide = Boolean(platform.guideFileName || platform.guideUrl)
+      const matchesGuide =
+        guideFilter === 'all' ||
+        (guideFilter === 'with-guide' && hasGuide) ||
+        (guideFilter === 'without-guide' && !hasGuide)
+      const da = Number(platform.domainAuthority ?? 0)
+      const matchesMinDa = minimumDa === null || Number.isNaN(minimumDa) || da >= minimumDa
+      const matchesMaxDa = maximumDa === null || Number.isNaN(maximumDa) || da <= maximumDa
+      return matchesSearch && matchesGroup && matchesLinkType && matchesStatus && matchesGuide && matchesMinDa && matchesMaxDa
+    })
+    .sort((a, b) => {
+      if (sortBy === 'da-desc') return Number(b.domainAuthority ?? 0) - Number(a.domainAuthority ?? 0)
+      if (sortBy === 'da-asc') return Number(a.domainAuthority ?? 0) - Number(b.domainAuthority ?? 0)
+      if (sortBy === 'name-asc') return a.name.localeCompare(b.name, 'vi')
+      if (sortBy === 'name-desc') return b.name.localeCompare(a.name, 'vi')
+      return 0
+    })
+  const resetFilters = () => {
+    setSearchQuery('')
+    setSortBy('default')
+    setGroupFilter('all')
+    setLinkTypeFilter('all')
+    setStatusFilter('all')
+    setGuideFilter('all')
+    setMinDa('')
+    setMaxDa('')
+  }
+
   return (
     <Panel title="Kho nền tảng Entity" action={`${platforms.length} nền tảng`}>
-      <div className="table-wrap">
-        <table className="entity-table">
-          <thead>
-            <tr>
-              <th>Nền tảng</th>
-              <th>Domain</th>
-              <Th label="Nhóm" tip={entityPlatformGroupTooltipText} />
-              <th>Link</th>
-              <th>Điểm DA</th>
-              <th>Trạng thái</th>
-              <th>Hướng dẫn</th>
-            </tr>
-          </thead>
-          <tbody>
-            {platforms.map((platform) => (
-              <tr key={platform.id}>
-                <td>
-                  <div className="entity-platform-name-cell">
-                    <strong>{platform.name}</strong>
-                    {canEdit && (
-                      <span className="entity-platform-row-actions">
-                        <button
-                          className="entity-platform-action-button entity-platform-edit-button"
-                          type="button"
-                          onClick={() => onEdit(platform.id)}
-                          title={`Sửa nền tảng ${platform.name}`}
-                          aria-label={`Sửa nền tảng ${platform.name}`}
-                        >
-                          ✎
-                        </button>
-                        <button
-                          className="entity-platform-action-button entity-platform-push-button"
-                          type="button"
-                          onClick={() => onCreateLink(platform.id)}
-                          disabled={!canCreateLink}
-                          title={canCreateLink ? `Đẩy ${platform.name} sang Link Entity` : 'Tạo hồ sơ Entity trước khi thêm Link Entity'}
-                          aria-label={`Đẩy ${platform.name} sang Link Entity`}
-                        >
-                          +
-                        </button>
-                      </span>
-                    )}
+      <div className="entity-platform-browser">
+        <label className="entity-platform-search-box">
+          <span className="entity-platform-search-icon">⌕</span>
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Tìm theo tên, domain, nhóm, trạng thái hoặc mã hướng dẫn..."
+          />
+        </label>
+
+        <div className="entity-platform-toolbar">
+          <label className="entity-platform-sort-group">
+            <span>Sort By:</span>
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as EntityPlatformSortOption)}>
+              <option value="default">Thứ tự hiện tại</option>
+              <option value="da-desc">DA cao đến thấp</option>
+              <option value="da-asc">DA thấp đến cao</option>
+              <option value="name-asc">Tên A đến Z</option>
+              <option value="name-desc">Tên Z đến A</option>
+            </select>
+          </label>
+          <button className={`entity-platform-filter-toggle ${filtersOpen ? 'is-active' : ''}`} type="button" onClick={() => setFiltersOpen((current) => !current)}>
+            Advanced Filters
+          </button>
+          <span className="entity-platform-results-info">
+            Hiển thị {filteredPlatforms.length} / {platforms.length} nền tảng
+          </span>
+        </div>
+
+        {filtersOpen && (
+          <div className="entity-platform-filter-panel">
+            <div className="entity-platform-filter-head">
+              <strong>Bộ lọc nâng cao</strong>
+              {hasAdvancedFilter && (
+                <button type="button" onClick={resetFilters}>
+                  Xóa lọc
+                </button>
+              )}
+            </div>
+            <div className="entity-platform-filter-grid">
+              <label title={entityPlatformGroupTooltipText}>
+                <span>Nhóm <EntityPlatformGroupHelp /></span>
+                <select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value as EntityPlatformGroup | 'all')}>
+                  <option value="all">Tất cả nhóm</option>
+                  {entityPlatformGroups.map((group) => (
+                    <option value={group} key={group}>{group}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Loại link</span>
+                <select value={linkTypeFilter} onChange={(event) => setLinkTypeFilter(event.target.value as EntityLinkType | 'all')}>
+                  <option value="all">Tất cả loại link</option>
+                  {entityLinkTypes.map((type) => (
+                    <option value={type} key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Trạng thái</span>
+                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as EntityPlatformStatus | 'all')}>
+                  <option value="all">Tất cả trạng thái</option>
+                  {entityPlatformStatuses.map((status) => (
+                    <option value={status} key={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Hướng dẫn</span>
+                <select value={guideFilter} onChange={(event) => setGuideFilter(event.target.value as EntityPlatformGuideFilter)}>
+                  <option value="all">Tất cả</option>
+                  <option value="with-guide">Có hướng dẫn</option>
+                  <option value="without-guide">Chưa có hướng dẫn</option>
+                </select>
+              </label>
+              <label>
+                <span>DA từ</span>
+                <input value={minDa} onChange={(event) => setMinDa(event.target.value)} type="number" min="0" max="100" placeholder="0" />
+              </label>
+              <label>
+                <span>DA đến</span>
+                <input value={maxDa} onChange={(event) => setMaxDa(event.target.value)} type="number" min="0" max="100" placeholder="100" />
+              </label>
+            </div>
+          </div>
+        )}
+
+        {filteredPlatforms.length === 0 ? (
+          <EmptyState title="Không có nền tảng phù hợp" text="Thử đổi từ khóa tìm kiếm hoặc bỏ bớt bộ lọc nâng cao." />
+        ) : (
+          <div className="entity-platform-card-list">
+            {filteredPlatforms.map((platform) => {
+              const domainUrl = /^https?:\/\//i.test(platform.domain) ? platform.domain : `https://${platform.domain}`
+              const guideReference = platform.guideFileName || platform.guideUrl
+              return (
+                <article className="entity-platform-card" key={platform.id}>
+                  <div className="entity-platform-card-left">
+                    <div className="entity-platform-card-icon" aria-hidden="true">
+                      {platform.name.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="entity-platform-card-info">
+                      <div className="entity-platform-card-title-row">
+                        <h3>{platform.name}</h3>
+                        <span className="entity-platform-free-badge">Free</span>
+                        {canEdit && (
+                          <span className="entity-platform-row-actions">
+                            <button
+                              className="entity-platform-action-button entity-platform-edit-button"
+                              type="button"
+                              onClick={() => onEdit(platform.id)}
+                              title={`Sửa nền tảng ${platform.name}`}
+                              aria-label={`Sửa nền tảng ${platform.name}`}
+                            >
+                              ✎
+                            </button>
+                            <button
+                              className="entity-platform-action-button entity-platform-push-button"
+                              type="button"
+                              onClick={() => onCreateLink(platform.id)}
+                              disabled={!canCreateLink}
+                              title={canCreateLink ? `Đẩy ${platform.name} sang Link Entity` : 'Tạo hồ sơ Entity trước khi thêm Link Entity'}
+                              aria-label={`Đẩy ${platform.name} sang Link Entity`}
+                            >
+                              +
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      <p>
+                        {platform.description || `Tạo Entity trên ${platform.name} (${platform.domain}) với loại link ${platform.defaultLinkType.toLowerCase()}.`}
+                      </p>
+                      <div className="entity-platform-card-tags">
+                        <span className="entity-platform-tag entity-platform-tag-da">DA {platform.domainAuthority}</span>
+                        <span className={`entity-platform-tag entity-platform-tag-link entity-link-type-${platform.defaultLinkType.toLowerCase()}`}>{platform.defaultLinkType}</span>
+                        <span className="entity-platform-tag entity-platform-tag-type">{platform.group}</span>
+                        <span className="entity-platform-tag entity-platform-tag-status">{platform.status}</span>
+                      </div>
+                    </div>
                   </div>
-                </td>
-                <td>{platform.domain}</td>
-                <td>{platform.group}</td>
-                <td><span className={`entity-link-type entity-link-type-${platform.defaultLinkType.toLowerCase()}`}>{platform.defaultLinkType}</span></td>
-                <td><strong>{platform.domainAuthority}/100</strong></td>
-                <td>{platform.status}</td>
-                <td>
-                  {platform.guideUrl ? (
-                    <button className="entity-guide-link" type="button" onClick={() => onOpenGuide(platform.guideUrl)}>
-                      {guideReferenceIsUrl(platform.guideUrl) ? 'Mở link hướng dẫn' : `Mở ${platform.guideUrl}`}
-                    </button>
-                  ) : (
-                    <span className="muted-text">Chưa có</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <div className="entity-platform-card-actions">
+                    {guideReference ? (
+                      <button className="entity-platform-view-button" type="button" onClick={() => onOpenGuide(guideReference)}>
+                        {guideReferenceIsEntityHtmlFile(guideReference) ? 'Mở file HTML' : guideReferenceIsUrl(guideReference) ? 'Xem hướng dẫn' : `Mở ${guideReference}`}
+                      </button>
+                    ) : (
+                      <span className="entity-platform-guide-empty">Chưa có HD</span>
+                    )}
+                    <a className="entity-platform-visit-button" href={domainUrl} target="_blank" rel="noreferrer" title={`Truy cập ${platform.domain}`}>
+                      ↗
+                    </a>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
       </div>
     </Panel>
   )
