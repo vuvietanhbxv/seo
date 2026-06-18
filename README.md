@@ -78,9 +78,12 @@ Truoc lan pull/deploy ban code nay tren Plesk:
 
 ```text
 SEO_OPS_DB_DIR=/mnt/data_web/cuahangphaohoa.shop/seo-ops-storage
+SEO_OPS_ENTITY_GUIDE_DIR=/mnt/data_web/cuahangphaohoa.shop/seo-ops-storage/Entity Guide
 ```
 
-3. Restart app va truy cap `/api/health`. Kiem tra `dbPath` la duong dan storage rieng va `databaseProtected` la `true`.
+Neu khong khai bao `SEO_OPS_ENTITY_GUIDE_DIR`, app se mac dinh dung thu muc `Entity Guide` nam trong `SEO_OPS_DB_DIR` va van doc fallback thu muc cu `entity-guides`.
+
+3. Restart app va truy cap `/api/health`. Kiem tra `dbPath` la duong dan storage rieng, `entityGuideDir` tro toi thu muc `Entity Guide`, va `databaseProtected` la `true`.
 4. Chi sau khi xac nhan xong moi Git pull/deploy code moi.
 
 O che do `production`, server se tu choi khoi dong neu `SEO_OPS_DB_DIR` thieu hoac van tro vao ben trong thu muc ung dung. Quy tac nay ngan deploy code ghi de du lieu that.

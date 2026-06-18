@@ -47,7 +47,11 @@ const isInsideDirectory = (parentDir: string, targetPath: string) => {
 const entityGuideDevApi = (): Plugin => ({
   name: 'seo-ops-entity-guide-dev-api',
   configureServer(server) {
-    const entityGuideDir = path.join(process.cwd(), 'db', 'entity-guides')
+    const entityGuideDir = process.env.SEO_OPS_ENTITY_GUIDE_DIR
+      ? path.resolve(process.env.SEO_OPS_ENTITY_GUIDE_DIR)
+      : path.join(process.cwd(), 'db', 'Entity Guide')
+    const legacyEntityGuideDir = path.join(process.cwd(), 'db', 'entity-guides')
+    const entityGuideSearchDirs = [...new Set([entityGuideDir, legacyEntityGuideDir].map((item) => path.resolve(item)))]
 
     server.middlewares.use(async (req, res, next) => {
       const url = new URL(req.url || '/', 'http://localhost')
@@ -55,8 +59,17 @@ const entityGuideDevApi = (): Plugin => ({
       if (url.pathname.startsWith('/entity-guides/')) {
         try {
           const fileName = safeEntityGuideFileName(decodeURIComponent(url.pathname.replace(/^\/entity-guides\/?/, '')))
-          const targetPath = path.resolve(path.join(entityGuideDir, fileName))
-          if (!isInsideDirectory(entityGuideDir, targetPath) || !fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+          const targetPath = entityGuideSearchDirs
+            .map((guideDir) => ({
+              guideDir,
+              filePath: path.resolve(path.join(guideDir, fileName)),
+            }))
+            .find(({ guideDir, filePath }) =>
+              isInsideDirectory(guideDir, filePath) &&
+              fs.existsSync(filePath) &&
+              fs.statSync(filePath).isFile(),
+            )?.filePath
+          if (!targetPath) {
             res.statusCode = 404
             res.setHeader('Content-Type', 'text/plain; charset=utf-8')
             res.end('Not found')

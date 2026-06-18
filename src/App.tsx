@@ -4290,6 +4290,9 @@ function App() {
       tasks: data.tasks.map((item) =>
         item.id === taskId ? { ...item, status: 'Hoàn thành' as TaskStatus, approvedAt: appNowIso(), revisionNote: '' } : item,
       ),
+      seoEntityLinks: (data.seoEntityLinks ?? []).map((link) =>
+        link.taskId === taskId ? { ...link, deploymentStatus: 'Đã live' as EntityDeploymentStatus } : link,
+      ),
     }
     saveData(
       notifyTaskAssignee(nextData, task, 'Task đã được xác nhận hoàn thành'),
@@ -4365,6 +4368,9 @@ function App() {
               completedAt: status === 'Chờ duyệt' ? appNowIso() : task.completedAt,
             }
           : task,
+      ),
+      seoEntityLinks: (data.seoEntityLinks ?? []).map((link) =>
+        link.taskId === taskId && status === 'Hoàn thành' ? { ...link, deploymentStatus: 'Đã live' as EntityDeploymentStatus } : link,
       ),
     }
     saveData(
@@ -4577,25 +4583,33 @@ function App() {
     event.preventDefault()
     if (!activeProject || !activeEntity) return
     const form = new FormData(event.currentTarget)
+    const pendingLinkId = String(form.get('pendingLinkId'))
+    const pendingLink = activeEntityLinks.find((link) => link.id === pendingLinkId)
+    if (!pendingLink) {
+      window.alert('Chọn một link chờ đã được đẩy từ Nền tảng Entity trước khi lưu.')
+      return
+    }
     const loginWithGoogle = form.get('loginWithGoogle') === 'on'
     const useDefaultEntityAccount = form.get('useDefaultEntityAccount') === 'on'
     const loginAccount = String(form.get('loginAccount')).trim()
     const loginPassword = String(form.get('loginPassword')).trim()
     const loginEmail = String(form.get('loginEmail')).trim()
     const accountUsed = String(form.get('accountUsed')).trim() || loginAccount || loginEmail
+    const liveUrl = String(form.get('liveUrl')).trim()
+    if (!liveUrl) {
+      window.alert('Nhập URL live để hoàn tất Link Entity. Link chưa có URL live sẽ vẫn nằm trong danh sách chờ.')
+      return
+    }
     updateEntityLinkCredential({ loginWithGoogle, useDefaultEntityAccount, loginAccount, loginPassword, loginEmail, accountUsed })
     const link: SeoEntityLink = {
-      id: uid('el'),
-      projectId: activeProject.id,
-      entityId: activeEntity.id,
-      platformId: String(form.get('platformId')),
+      ...pendingLink,
       loginWithGoogle,
       useDefaultEntityAccount,
       loginAccount,
       loginPassword,
       loginEmail,
       accountUsed,
-      liveUrl: String(form.get('liveUrl')).trim(),
+      liveUrl,
       targetUrl: String(form.get('targetUrl')).trim(),
       anchorText: String(form.get('anchorText')).trim(),
       displayName: String(form.get('displayName')).trim(),
@@ -4603,13 +4617,13 @@ function App() {
       assigneeId: String(form.get('assigneeId')),
       deployedDate: String(form.get('deployedDate')),
       deploymentStatus: String(form.get('deploymentStatus')) as EntityDeploymentStatus,
-      linkStatus: 'Chưa check',
-      indexStatus: 'Chưa check',
-      napStatus: 'Chưa check',
-      taskId: '',
       notes: String(form.get('notes')).trim(),
     }
-    saveData({ ...data, seoEntityLinks: [link, ...(data.seoEntityLinks ?? [])] }, 'Thêm link Entity', activeEntity.name)
+    saveData({
+      ...data,
+      seoEntityLinks: (data.seoEntityLinks ?? []).map((item) => (item.id === pendingLink.id ? link : item)),
+    }, 'Cập nhật link chờ Entity', activeEntity.name)
+    setSelectedEntityLinkIds((current) => new Set([...current].filter((linkId) => linkId !== pendingLink.id)))
     event.currentTarget.reset()
     updateEntityLinkCredential({ loginWithGoogle, useDefaultEntityAccount, loginAccount, loginPassword, loginEmail, accountUsed })
   }
@@ -6339,6 +6353,7 @@ function App() {
             projectEntities={projectEntities}
             entityPlatforms={entityPlatforms}
             activeEntityLinks={activeEntityLinks}
+            tasks={data.tasks}
             activeEntityChecklist={activeEntityChecklist}
             activeEntitySchema={activeEntitySchema}
             entityTab={entityTab}
@@ -8013,7 +8028,7 @@ function KnowledgeModule({
               <button type="submit">Upload hướng dẫn Entity</button>
             </form>
             <p className="knowledge-html-hint">
-              File lưu tại thư mục entity-guides trong storage server. Điền đúng tên file vào Nền tảng Entity để nút Hướng dẫn mở file trong tab mới.
+              File lưu tại thư mục Entity Guide trong storage server. Điền đúng tên file vào Nền tảng Entity để nút Hướng dẫn mở file trong tab mới.
             </p>
             {entityGuideUploadStatus && <p className="entity-import-status">{entityGuideUploadStatus}</p>}
           </Panel>
@@ -9258,6 +9273,7 @@ function EntityModule({
   projectEntities,
   entityPlatforms,
   activeEntityLinks,
+  tasks,
   activeEntityChecklist,
   activeEntitySchema,
   entityTab,
@@ -9302,6 +9318,7 @@ function EntityModule({
   projectEntities: SeoEntity[]
   entityPlatforms: SeoEntityPlatform[]
   activeEntityLinks: SeoEntityLink[]
+  tasks: Task[]
   activeEntityChecklist: SeoEntityChecklistItem[]
   activeEntitySchema?: SeoEntitySchema
   entityTab: EntityTab
@@ -9350,6 +9367,20 @@ function EntityModule({
   }
 
   const activeEntityId = activeEntity?.id ?? ''
+  const pendingEntityLinks = activeEntityLinks.filter((link) => !link.liveUrl.trim())
+  const firstPendingEntityLink = pendingEntityLinks[0]
+  const setEntityLinkFormDefaults = (form: HTMLFormElement | null, link?: SeoEntityLink) => {
+    if (!form || !link) return
+    const setField = (name: string, value: string) => {
+      const field = form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null
+      if (field) field.value = value
+    }
+    setField('targetUrl', link.targetUrl || activeEntity?.website || activeProject.website)
+    setField('anchorText', link.anchorText || activeEntity?.name || '')
+    setField('displayName', link.displayName || activeEntity?.name || '')
+    setField('usedDescription', link.usedDescription || activeEntity?.shortDescription || '')
+    setField('assigneeId', link.assigneeId)
+  }
   const entityDefaultCredential = {
     loginAccount: activeEntity?.defaultAccountId ?? '',
     loginPassword: activeEntity?.defaultAccountPassword ?? '',
@@ -9457,15 +9488,15 @@ function EntityModule({
             <fieldset className="entity-account-fieldset">
               <legend>Thông tin tài khoản Google</legend>
               <input name="googleAccountEmail" placeholder="Email Google" type="email" defaultValue={activeEntity?.googleAccountEmail ?? ''} disabled={!canEdit} />
-              <input name="googleAccountPassword" placeholder="Mật khẩu Google" type="password" defaultValue={activeEntity?.googleAccountPassword ?? ''} disabled={!canEdit} />
+              <input name="googleAccountPassword" placeholder="Mật khẩu Google" type="text" autoComplete="off" defaultValue={activeEntity?.googleAccountPassword ?? ''} disabled={!canEdit} />
               <input name="googleAccountPhone" placeholder="Số điện thoại" defaultValue={activeEntity?.googleAccountPhone ?? ''} disabled={!canEdit} />
               <input name="googleBackupAccount" placeholder="Tài khoản backup" defaultValue={activeEntity?.googleBackupAccount ?? ''} disabled={!canEdit} />
-              <input name="googleTwoFactorCode" placeholder="Mã 2FA" defaultValue={activeEntity?.googleTwoFactorCode ?? ''} disabled={!canEdit} />
+              <input name="googleTwoFactorCode" placeholder="Mã 2FA" type="text" autoComplete="off" defaultValue={activeEntity?.googleTwoFactorCode ?? ''} disabled={!canEdit} />
             </fieldset>
             <fieldset className="entity-account-fieldset">
               <legend>Tài khoản mặc định</legend>
               <input name="defaultAccountId" placeholder="Tài khoản (ID)" defaultValue={activeEntity?.defaultAccountId ?? ''} disabled={!canEdit} />
-              <input name="defaultAccountPassword" placeholder="Mật khẩu" type="password" defaultValue={activeEntity?.defaultAccountPassword ?? ''} disabled={!canEdit} />
+              <input name="defaultAccountPassword" placeholder="Mật khẩu" type="text" autoComplete="off" defaultValue={activeEntity?.defaultAccountPassword ?? ''} disabled={!canEdit} />
               <input name="defaultAccountEmail" placeholder="Email" type="email" defaultValue={activeEntity?.defaultAccountEmail ?? ''} disabled={!canEdit} />
             </fieldset>
             <textarea name="shortDescription" placeholder="Mô tả ngắn" defaultValue={activeEntity?.shortDescription ?? ''} disabled={!canEdit} />
@@ -9561,8 +9592,26 @@ function EntityModule({
         <>
           <Panel title="Thêm Link Entity" action={activeEntity?.name ?? 'Chưa chọn Entity'}>
             {activeEntity ? (
-              <form className="entity-link-form" onSubmit={onAddLink}>
-                <select name="platformId" required disabled={!canEdit}>{entityPlatforms.map((platform) => <option value={platform.id} key={platform.id}>{platform.name}</option>)}</select>
+              pendingEntityLinks.length > 0 ? (
+              <form className="entity-link-form" onSubmit={onAddLink} key={firstPendingEntityLink?.id ?? 'pending-link-form'}>
+                <select
+                  name="pendingLinkId"
+                  required
+                  disabled={!canEdit}
+                  onChange={(event) => {
+                    const nextLink = pendingEntityLinks.find((link) => link.id === event.target.value)
+                    setEntityLinkFormDefaults(event.currentTarget.form, nextLink)
+                  }}
+                >
+                  {pendingEntityLinks.map((link) => {
+                    const platform = entityPlatforms.find((item) => item.id === link.platformId)
+                    return (
+                      <option value={link.id} key={link.id}>
+                        {platform?.name ?? 'Nền tảng đã xóa'} - {link.targetUrl || activeEntity.website || activeProject.website}
+                      </option>
+                    )
+                  })}
+                </select>
                 <select name="assigneeId" disabled={!canEdit}>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select>
                 <fieldset className="entity-link-account-box">
                   <legend>Tài khoản đăng nhập</legend>
@@ -9605,7 +9654,8 @@ function EntityModule({
                   <input
                     name="loginPassword"
                     placeholder="Mật khẩu"
-                    type="password"
+                    type="text"
+                    autoComplete="off"
                     value={rememberedCredential.loginPassword}
                     onChange={(event) => onCredentialChange({ loginPassword: event.target.value, useDefaultEntityAccount: false })}
                     disabled={!canEdit}
@@ -9619,15 +9669,18 @@ function EntityModule({
                   />
                 </fieldset>
                 <input name="liveUrl" placeholder="URL live" disabled={!canEdit} />
-                <input name="targetUrl" placeholder="URL đích" defaultValue={activeEntity.website} disabled={!canEdit} />
-                <input name="anchorText" placeholder="Anchor text" defaultValue={activeEntity.name} disabled={!canEdit} />
-                <input name="displayName" placeholder="Tên hiển thị" defaultValue={activeEntity.name} disabled={!canEdit} />
+                <input name="targetUrl" placeholder="URL đích" defaultValue={firstPendingEntityLink?.targetUrl || activeEntity.website} disabled={!canEdit} />
+                <input name="anchorText" placeholder="Anchor text" defaultValue={firstPendingEntityLink?.anchorText || activeEntity.name} disabled={!canEdit} />
+                <input name="displayName" placeholder="Tên hiển thị" defaultValue={firstPendingEntityLink?.displayName || activeEntity.name} disabled={!canEdit} />
                 <input name="deployedDate" type="date" aria-label="Ngày triển khai" disabled={!canEdit} />
-                <select name="deploymentStatus" disabled={!canEdit}>{entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}</select>
-                <textarea name="usedDescription" placeholder="Mô tả đã dùng" defaultValue={activeEntity.shortDescription} disabled={!canEdit} />
+                <select name="deploymentStatus" defaultValue="Đã live" disabled={!canEdit}>{entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}</select>
+                <textarea name="usedDescription" placeholder="Mô tả đã dùng" defaultValue={firstPendingEntityLink?.usedDescription || activeEntity.shortDescription} disabled={!canEdit} />
                 <textarea name="notes" placeholder="Ghi chú nội bộ" disabled={!canEdit} />
-                <button type="submit" disabled={!canEdit}>Lưu Link Entity</button>
+                <button type="submit" disabled={!canEdit}>Lưu link chờ</button>
               </form>
+              ) : (
+                <EmptyState title="Chưa có link chờ" text="Vào tab Nền tảng Entity, bấm nút + hoặc chọn hàng loạt để đẩy nền tảng sang Link Entity trước." />
+              )
             ) : (
               <EmptyState title="Chưa có hồ sơ Entity" text="Tạo hồ sơ Entity trước khi thêm link triển khai." />
             )}
@@ -9652,6 +9705,7 @@ function EntityModule({
           </Panel>
           <EntityLinkTable
             links={activeEntityLinks}
+            tasks={tasks}
             platforms={entityPlatforms}
             users={users}
             canEdit={canEdit}
@@ -9700,6 +9754,7 @@ function EntityModule({
         <Panel title="Check Entity" action="Live / Index / NAP">
           <EntityLinkTable
             links={activeEntityLinks}
+            tasks={tasks}
             platforms={entityPlatforms}
             users={users}
             canEdit={canEdit}
@@ -10128,6 +10183,7 @@ function EntityPlatformTable({
 
 function EntityLinkTable({
   links,
+  tasks,
   platforms,
   users,
   canEdit,
@@ -10138,6 +10194,7 @@ function EntityLinkTable({
   onCheck,
 }: {
   links: SeoEntityLink[]
+  tasks: Task[]
   platforms: SeoEntityPlatform[]
   users: User[]
   canEdit: boolean
@@ -10169,7 +10226,10 @@ function EntityLinkTable({
           </tr>
         </thead>
         <tbody>
-          {links.map((link) => (
+          {links.map((link) => {
+            const linkedTask = link.taskId ? tasks.find((task) => task.id === link.taskId) : undefined
+            const approvedByTask = linkedTask ? taskStatusOf(linkedTask) === 'Hoàn thành' : false
+            return (
             <tr key={link.id}>
               {!compact && (
                 <td>
@@ -10197,9 +10257,13 @@ function EntityLinkTable({
                 </td>
               )}
               <td>
-                <select value={link.deploymentStatus} onChange={(event) => onUpdate(link.id, { deploymentStatus: event.target.value as EntityDeploymentStatus })} disabled={!canEdit}>
-                  {entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}
-                </select>
+                {approvedByTask ? (
+                  <span className="entity-link-approved-status">Đã duyệt</span>
+                ) : (
+                  <select value={link.deploymentStatus} onChange={(event) => onUpdate(link.id, { deploymentStatus: event.target.value as EntityDeploymentStatus })} disabled={!canEdit}>
+                    {entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                )}
               </td>
               <td>
                 <select value={link.linkStatus} onChange={(event) => onUpdate(link.id, { linkStatus: event.target.value as EntityLiveStatus })} disabled={!canEdit}>
@@ -10222,7 +10286,8 @@ function EntityLinkTable({
                 </button>
               </td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>

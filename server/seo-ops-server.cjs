@@ -22,7 +22,9 @@ const toolOutputDir = process.env.SEO_OPS_TOOL_OUTPUT_DIR
   : path.join(dbDir, 'tools')
 const entityGuideDir = process.env.SEO_OPS_ENTITY_GUIDE_DIR
   ? path.resolve(process.env.SEO_OPS_ENTITY_GUIDE_DIR)
-  : path.join(dbDir, 'entity-guides')
+  : path.join(dbDir, 'Entity Guide')
+const legacyEntityGuideDir = path.join(dbDir, 'entity-guides')
+const entityGuideSearchDirs = [...new Set([entityGuideDir, legacyEntityGuideDir].map((item) => path.resolve(item)))]
 const toolConfigPath = path.join(dbDir, 'seo-ops-tool-config.json')
 const toolVertexCredentialsPath = path.join(dbDir, 'seo-ops-vertex-credentials.json')
 const googleOAuthPath = path.join(dbDir, 'seo-ops-google-oauth.json')
@@ -1470,8 +1472,17 @@ function serveEntityGuide(scopedPathname, res) {
     res.end('Not found')
     return
   }
-  const resolvedPath = path.resolve(path.join(entityGuideDir, fileName))
-  if (!isInsideDirectory(entityGuideDir, resolvedPath) || !fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+  const resolvedPath = entityGuideSearchDirs
+    .map((guideDir) => ({
+      guideDir,
+      filePath: path.resolve(path.join(guideDir, fileName)),
+    }))
+    .find(({ guideDir, filePath }) =>
+      isInsideDirectory(guideDir, filePath) &&
+      fs.existsSync(filePath) &&
+      fs.statSync(filePath).isFile(),
+    )?.filePath
+  if (!resolvedPath) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
     res.end('Not found')
     return
@@ -1519,7 +1530,7 @@ const server = http.createServer(async (req, res) => {
 
     if (scopedPathname === '/api/health') {
       const articleConfig = publicArticleComposerConfig()
-      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, entityGuideDir, toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
+      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, entityGuideDir, entityGuideSearchDirs, toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
       return
     }
 
