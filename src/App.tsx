@@ -806,6 +806,7 @@ type AppData = {
   analyticsReports?: AnalyticsPoint[]
   notifications?: NotificationItem[]
   activityLogs?: ActivityLog[]
+  entityGuideDriveFolderUrl?: string
 }
 
 const storageKey = 'seo-demo-data-v5'
@@ -1034,6 +1035,7 @@ const emptyGoogleOAuthStatus: GoogleOAuthStatus = {
 const initialData: AppData = {
   taskSalarySettings: defaultTaskSalarySettings,
   payrollSettlements: [],
+  entityGuideDriveFolderUrl: '',
   users: [
     {
       id: 'u1',
@@ -1505,6 +1507,15 @@ const internalGuideCodeOf = (note: InternalNote) =>
   note.guideCode || (note.noteType === 'Hướng dẫn thao tác' ? internalGuideCodeFromId(note.id) : '')
 const guideReferenceIsUrl = (value: string) => /^https?:\/\//i.test(value.trim())
 const entityGuideFileNameOf = (value: string) => value.trim().split(/[\\/]/).pop()?.trim() ?? ''
+const guideReferenceIsGoogleDriveUrl = (value: string) => {
+  try {
+    const url = new URL(value.trim())
+    return ['drive.google.com', 'docs.google.com'].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))
+  } catch {
+    return false
+  }
+}
+const guideReferenceIsGoogleDriveFolderUrl = (value: string) => guideReferenceIsGoogleDriveUrl(value) && /\/folders\//i.test(value)
 const guideReferenceIsEntityHtmlFile = (value: string) => {
   const fileName = entityGuideFileNameOf(value)
   return Boolean(fileName) && /\.html?$/i.test(fileName) && !guideReferenceIsUrl(value)
@@ -2022,30 +2033,8 @@ const readHtmlFileAsDataUrl = async (file: File) => {
   }
   return `data:text/html;charset=utf-8;base64,${window.btoa(binary)}`
 }
-const readFileAsBase64 = async (file: File) => {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  let binary = ''
-  for (let index = 0; index < bytes.length; index += 0x8000) {
-    binary += String.fromCharCode(...bytes.slice(index, index + 0x8000))
-  }
-  return window.btoa(binary)
-}
 const isHtmlFile = (file: File) =>
   file.type === 'text/html' || /\.(html?|xhtml)$/i.test(file.name)
-const readApiJson = async (response: Response) => {
-  const contentType = response.headers.get('content-type') || ''
-  if (!contentType.toLowerCase().includes('application/json')) {
-    const text = await response.text().catch(() => '')
-    const isHtml = /^\s*(<!doctype html|<html[\s>])/i.test(text)
-    return {
-      ok: false,
-      message: isHtml
-        ? 'Endpoint upload trả về HTML thay vì JSON. Khi test local hãy restart Vite dev server để middleware upload mới hoạt động.'
-        : `Response không phải JSON (${contentType || 'không rõ content-type'}). HTTP ${response.status}`,
-    }
-  }
-  return response.json().catch(() => ({ ok: false, message: `JSON không hợp lệ. HTTP ${response.status}` }))
-}
 const isHtmlGuideFile = (file: InternalNoteFile) =>
   file.fileType === htmlGuideFileType && file.fileUrl.startsWith('data:text/html')
 const htmlGuideFileOf = (note: InternalNote, files: InternalNoteFile[]) =>
@@ -2428,11 +2417,17 @@ const normalizeData = (data: AppData): AppData => ({
   analyticsReports: data.analyticsReports ?? [],
   notifications: data.notifications ?? [],
   activityLogs: data.activityLogs ?? [],
+  entityGuideDriveFolderUrl: data.entityGuideDriveFolderUrl ?? '',
 })
 
 const appBaseUrl = import.meta.env.BASE_URL || '/'
 const appUrl = (path: string) => `${appBaseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
-const entityGuideFileUrl = (fileName: string) => appUrl(`entity-guides/${encodeURIComponent(entityGuideFileNameOf(fileName))}`)
+const entityGuideFileUrl = (fileName: string, driveFolderUrl = '') => {
+  const guideUrl = appUrl(`entity-guides/${encodeURIComponent(entityGuideFileNameOf(fileName))}`)
+  return driveFolderUrl.trim() ? `${guideUrl}?driveFolder=${encodeURIComponent(driveFolderUrl.trim())}` : guideUrl
+}
+const entityGuideDriveFileUrl = (driveFileUrl: string) =>
+  appUrl(`entity-guides/google-drive-guide.html?driveFile=${encodeURIComponent(driveFileUrl.trim())}`)
 const apiDataUrl = appUrl('api/data')
 const googleOAuthMessageFromUrl = () => {
   const params = new URLSearchParams(window.location.search)
@@ -3016,15 +3011,24 @@ function App() {
     setHashView(nextView)
   }
 
-  const openKnowledgeGuide = (reference: string) => {
+  const openKnowledgeGuide = (reference: string, driveFolderUrl = '') => {
     const normalizedReference = reference.trim()
     if (!normalizedReference) return
     if (guideReferenceIsUrl(normalizedReference)) {
+      if (guideReferenceIsGoogleDriveFolderUrl(normalizedReference)) {
+        window.alert('Đây là link thư mục Google Drive. Hãy điền tên file HTML vào ô "Tên file HTML", còn link thư mục Drive lưu ở cấu hình hoặc ô Hướng dẫn khác.')
+        return
+      }
+      if (guideReferenceIsGoogleDriveUrl(normalizedReference)) {
+        window.open(entityGuideDriveFileUrl(normalizedReference), '_blank', 'noopener,noreferrer')
+        return
+      }
       window.open(normalizedReference, '_blank', 'noopener,noreferrer')
       return
     }
     if (guideReferenceIsEntityHtmlFile(normalizedReference)) {
-      window.open(entityGuideFileUrl(normalizedReference), '_blank', 'noopener,noreferrer')
+      const driveFolder = driveFolderUrl.trim() || data.entityGuideDriveFolderUrl || ''
+      window.open(entityGuideFileUrl(normalizedReference, driveFolder), '_blank', 'noopener,noreferrer')
       return
     }
     const guide = internalNotes.find((note) =>
@@ -5297,40 +5301,18 @@ function App() {
     }
   }
 
-  const uploadEntityGuideHtml = async (event: FormEvent<HTMLFormElement>) => {
+  const saveEntityGuideDriveSettings = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!isAdmin) return
     const form = new FormData(event.currentTarget)
-    const pickedFile = form.get('entityGuideHtmlFile') as File | null
-    if (!pickedFile || pickedFile.size === 0) {
-      setEntityGuideUploadStatus('Vui lòng chọn file HTML hướng dẫn Entity.')
-      return
-    }
-    if (!isHtmlFile(pickedFile)) {
-      setEntityGuideUploadStatus('Chỉ cho phép upload file .html/.htm.')
-      return
-    }
-    if (pickedFile.size > htmlGuideMaxBytes) {
-      setEntityGuideUploadStatus(`File HTML tối đa ${Math.round(htmlGuideMaxBytes / 1024 / 1024)}MB.`)
-      return
-    }
-    setEntityGuideUploadStatus('Đang upload hướng dẫn Entity...')
-    try {
-      const response = await fetch(appUrl('api/entity-guides/upload'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: pickedFile.name,
-          contentBase64: await readFileAsBase64(pickedFile),
-        }),
-      })
-      const payload = await readApiJson(response)
-      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
-      setEntityGuideUploadStatus(`Đã upload ${payload.fileName}. Điền tên file này vào cột "Tên File HTML" hoặc ô "Tên file HTML" của Nền tảng Entity.`)
-      event.currentTarget.reset()
-    } catch (error) {
-      setEntityGuideUploadStatus(`Không upload được hướng dẫn Entity. ${error instanceof Error ? error.message : ''}`.trim())
-    }
+    const driveFolderUrl = String(form.get('driveFolderUrl')).trim()
+    saveData({
+      ...data,
+      entityGuideDriveFolderUrl: driveFolderUrl,
+    }, 'Cập nhật Google Drive hướng dẫn Entity', driveFolderUrl || 'Đã xóa cấu hình Drive')
+    setEntityGuideUploadStatus(driveFolderUrl
+      ? 'Đã lưu link Google Drive. Điền đúng tên file HTML trong Nền tảng Entity để mở hướng dẫn.'
+      : 'Đã xóa link Google Drive hướng dẫn Entity.')
   }
 
   const archiveInternalNote = (noteId: string) => {
@@ -6504,6 +6486,7 @@ function App() {
             canEdit={canEdit('knowledge')}
             canUploadHtmlGuide={isAdmin}
             entityGuideUploadStatus={entityGuideUploadStatus}
+            entityGuideDriveFolderUrl={data.entityGuideDriveFolderUrl ?? ''}
             onTab={setKnowledgeTab}
             onSearch={setKnowledgeSearch}
             onProjectFilter={setKnowledgeProjectFilter}
@@ -6520,7 +6503,7 @@ function App() {
             onPermanentDelete={permanentlyDeleteInternalNote}
             onApprove={approveInternalNote}
             onUploadHtmlGuide={uploadHtmlGuideNote}
-            onUploadEntityGuide={uploadEntityGuideHtml}
+            onSaveEntityGuideDrive={saveEntityGuideDriveSettings}
             onAddFile={addInternalNoteFile}
             onAddComment={addInternalNoteComment}
           />
@@ -7892,6 +7875,7 @@ function KnowledgeModule({
   canEdit,
   canUploadHtmlGuide,
   entityGuideUploadStatus,
+  entityGuideDriveFolderUrl,
   onTab,
   onSearch,
   onProjectFilter,
@@ -7908,7 +7892,7 @@ function KnowledgeModule({
   onPermanentDelete,
   onApprove,
   onUploadHtmlGuide,
-  onUploadEntityGuide,
+  onSaveEntityGuideDrive,
   onAddFile,
   onAddComment,
 }: {
@@ -7933,6 +7917,7 @@ function KnowledgeModule({
   canEdit: boolean
   canUploadHtmlGuide: boolean
   entityGuideUploadStatus: string
+  entityGuideDriveFolderUrl: string
   onTab: (tab: KnowledgeTab) => void
   onSearch: (value: string) => void
   onProjectFilter: (value: string) => void
@@ -7949,7 +7934,7 @@ function KnowledgeModule({
   onPermanentDelete: (noteId: string) => void
   onApprove: (noteId: string) => void
   onUploadHtmlGuide: (event: FormEvent<HTMLFormElement>) => void
-  onUploadEntityGuide: (event: FormEvent<HTMLFormElement>) => void
+  onSaveEntityGuideDrive: (event: FormEvent<HTMLFormElement>) => void
   onAddFile: (event: FormEvent<HTMLFormElement>) => void
   onAddComment: (event: FormEvent<HTMLFormElement>) => void
 }) {
@@ -8022,13 +8007,20 @@ function KnowledgeModule({
 
       {canUploadHtmlGuide && tab === 'files' && (
         <div className="knowledge-upload-grid">
-          <Panel title="Upload hướng dẫn Entity HTML" action="Lưu ngoài code">
-            <form className="knowledge-entity-guide-upload-form" onSubmit={onUploadEntityGuide}>
-              <input name="entityGuideHtmlFile" type="file" accept=".html,.htm,text/html" required />
-              <button type="submit">Upload hướng dẫn Entity</button>
+          <Panel title="Google Drive hướng dẫn Entity" action="Không cần upload lên hosting">
+            <form className="knowledge-entity-guide-upload-form" onSubmit={onSaveEntityGuideDrive}>
+              <input
+                name="driveFolderUrl"
+                placeholder="Dán link thư mục Google Drive public chứa file .html"
+                defaultValue={entityGuideDriveFolderUrl}
+              />
+              <button type="submit">Lưu link Drive</button>
             </form>
             <p className="knowledge-html-hint">
-              File lưu tại thư mục Entity Guide trong storage server. Điền đúng tên file vào Nền tảng Entity để nút Hướng dẫn mở file trong tab mới.
+              Lưu file HTML trong Google Drive, đặt quyền "Anyone with the link". Điền đúng tên file vào Nền tảng Entity; SEO Ops sẽ mở file qua Google Drive khi bấm Hướng dẫn.
+            </p>
+            <p className="knowledge-html-hint">
+              Nếu muốn dùng riêng từng nền tảng, dán link thư mục Drive hoặc link file Drive vào ô Hướng dẫn khác của nền tảng đó.
             </p>
             {entityGuideUploadStatus && <p className="entity-import-status">{entityGuideUploadStatus}</p>}
           </Panel>
@@ -9356,7 +9348,7 @@ function EntityModule({
   onToggleChecklist: (itemId: string) => void
   onGenerateSchema: () => void
   onExportReport: (reportType: 'internal' | 'client' | 'score') => void
-  onOpenGuide: (reference: string) => void
+  onOpenGuide: (reference: string, driveFolderUrl?: string) => void
 }) {
   if (!activeProject) {
     return (
@@ -9564,8 +9556,8 @@ function EntityModule({
                 <input name="guideFileName" placeholder="apple-com-sub-domain-guide.html" defaultValue={editingPlatform?.guideFileName ?? ''} disabled={!canEdit} />
               </label>
               <label className="entity-platform-field entity-platform-guide-field">
-                <span>Hướng dẫn khác</span>
-                <input name="guideUrl" placeholder="Mã HD-XXXXXXXX hoặc link bài hướng dẫn ngoài" defaultValue={editingPlatform?.guideUrl ?? ''} disabled={!canEdit} />
+                <span>Hướng dẫn khác / Drive</span>
+                <input name="guideUrl" placeholder="Mã HD-XXXXXXXX, link file Drive hoặc link folder Drive riêng" defaultValue={editingPlatform?.guideUrl ?? ''} disabled={!canEdit} />
               </label>
               <div className="entity-platform-form-actions">
                 {editingPlatform && (
@@ -9821,7 +9813,7 @@ function EntityPlatformTable({
   onCreateLink: (platformId: string) => void
   onCreateLinks: (platformIds: string[]) => boolean
   onDeletePlatforms: (platformIds: string[]) => boolean
-  onOpenGuide: (reference: string) => void
+  onOpenGuide: (reference: string, driveFolderUrl?: string) => void
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<EntityPlatformSortOption>('default')
@@ -10145,7 +10137,7 @@ function EntityPlatformTable({
                   </div>
                   <div className="entity-platform-card-actions">
                     {guideReference ? (
-                      <button className="entity-platform-view-button" type="button" onClick={() => onOpenGuide(guideReference)}>
+                      <button className="entity-platform-view-button" type="button" onClick={() => onOpenGuide(guideReference, platform.guideFileName && guideReferenceIsGoogleDriveFolderUrl(platform.guideUrl) ? platform.guideUrl : '')}>
                         {guideReferenceIsEntityHtmlFile(guideReference) ? 'Mở file HTML' : guideReferenceIsUrl(guideReference) ? 'Xem hướng dẫn' : `Mở ${guideReference}`}
                       </button>
                     ) : (
