@@ -1389,11 +1389,102 @@ textarea:focus {
   font-weight: 900;
 }
 
+.entity-profile-text-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.entity-profile-text-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.entity-profile-text-field textarea {
+  min-height: 112px;
+}
+
 .entity-link-account-box small {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cfe0f4;
+  border-radius: 8px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  background: #eff6ff;
+  color: var(--accent);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.entity-link-sync-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px dashed #bfdbfe;
+  border-radius: 8px;
+  min-height: 42px;
+  padding: 6px 8px 6px 11px;
+  background: #f8fbff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.entity-sync-button,
+.entity-platform-guide-icon {
+  flex: 0 0 auto;
+  min-width: 30px;
+  min-height: 30px;
+}
+
+.entity-link-platform-cell {
+  display: grid;
+  gap: 5px;
+  min-width: 160px;
+}
+
+.entity-link-platform-cell span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.entity-link-platform-cell a {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.entity-link-platform-cell a:hover {
+  text-decoration: underline;
 }
 
 .entity-link-approved-status {
@@ -4602,6 +4693,7 @@ tr:last-child td {
   .keyword-form,
   .entity-platform-form,
   .entity-link-form,
+  .entity-profile-text-grid,
   .backlink-source-form,
   .backlink-form,
   .backlink-plan-form,
@@ -4657,6 +4749,7 @@ tr:last-child td {
   .employee-paybox,
   .entity-toolbar,
   .entity-profile-form,
+  .entity-profile-text-grid,
   .entity-platform-form,
   .entity-link-form,
   .backlink-source-form,

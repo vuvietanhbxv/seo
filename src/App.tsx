@@ -367,7 +367,11 @@ type SeoEntity = {
   logoUrl: string
   coverUrl: string
   shortDescription: string
+  shortDescriptionHtml?: string
   longDescription: string
+  longDescriptionHtml?: string
+  anchorText?: string
+  anchorTextHtml?: string
   industry: string
   countryLanguage: string
   phone: string
@@ -820,6 +824,7 @@ const storageKey = 'seo-demo-data-v5'
 const entityCredentialKey = 'seo-demo-entity-link-credentials'
 const appZoomKey = 'seo-ops-ui-zoom'
 const defaultAppZoom = 0.8
+const activeProjectStorageKey = (userId: string) => `seo-ops-active-project-${userId}`
 const clampAppZoom = (value: number) => Math.min(1.2, Math.max(0.7, Number(value.toFixed(2))))
 const appVersion = '1.0.0'
 const appTimeZone = 'Asia/Bangkok'
@@ -1518,6 +1523,8 @@ const guideReferenceIsEntityHtmlFile = (value: string) => {
   const fileName = entityGuideFileNameOf(value)
   return Boolean(fileName) && /\.html?$/i.test(fileName) && !guideReferenceIsUrl(value)
 }
+const entityPlatformGuideReferenceOf = (platform?: SeoEntityPlatform) =>
+  platform ? entityGuideFileNameOf(platform.guideFileName) || platform.guideUrl.trim() : ''
 const entityGuideFileKey = (value: string) => entityGuideFileNameOf(value).toLowerCase()
 const mergeEntityGuideScanHistory = (current: EntityGuideScanRecord[], updates: EntityGuideScanRecord[]) => {
   const records = new Map<string, EntityGuideScanRecord>()
@@ -2335,6 +2342,10 @@ const normalizeData = (data: AppData): AppData => ({
   })),
   seoEntities: (data.seoEntities ?? []).map((entity) => ({
     ...entity,
+    shortDescriptionHtml: entity.shortDescriptionHtml ?? '',
+    longDescriptionHtml: entity.longDescriptionHtml ?? '',
+    anchorText: entity.anchorText ?? '',
+    anchorTextHtml: entity.anchorTextHtml ?? '',
     googleAccountEmail: entity.googleAccountEmail ?? '',
     googleAccountPassword: entity.googleAccountPassword ?? '',
     googleAccountPhone: entity.googleAccountPhone ?? '',
@@ -2460,6 +2471,15 @@ const appBaseUrl = import.meta.env.BASE_URL || '/'
 const appUrl = (path: string) => `${appBaseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
 const entityGuideFileUrl = (fileName: string) => appUrl(`entity-guides/${encodeURIComponent(entityGuideFileNameOf(fileName))}`)
 const apiDataUrl = appUrl('api/data')
+const entityTargetUrlOf = (entity?: SeoEntity, project?: Project) => entity?.website?.trim() || project?.website || ''
+const entityAnchorTextOf = (entity?: SeoEntity) => entity?.anchorText?.trim() || entity?.name || ''
+const entityDisplayNameOf = (entity?: SeoEntity) => entity?.officialName?.trim() || entity?.name || ''
+const entityUsedDescriptionOf = (entity?: SeoEntity) => entity?.shortDescription?.trim() || ''
+const platformDomainUrl = (domain: string) => {
+  const cleanDomain = domain.trim()
+  if (!cleanDomain) return ''
+  return /^https?:\/\//i.test(cleanDomain) ? cleanDomain : `https://${cleanDomain}`
+}
 const googleOAuthMessageFromUrl = () => {
   const params = new URLSearchParams(window.location.search)
   const status = params.get('google_oauth')
@@ -2773,6 +2793,20 @@ function App() {
   }, [view, currentUserIdValue, loadArticleToolConfig, loadArticleToolHistory])
   const visibleProjects = hasProjectViewPermission ? activeProjects : activeProjects.filter((project) => assignedProjectIds.has(project.id))
   const activeProject = visibleProjects.find((project) => project.id === activeProjectId) ?? visibleProjects[0] ?? selectedProject
+  const visibleProjectIdsSignature = visibleProjects.map((project) => project.id).join('|')
+  useEffect(() => {
+    if (!currentUserIdValue || visibleProjects.length === 0) return
+    const savedProjectId = localStorage.getItem(activeProjectStorageKey(currentUserIdValue))
+    if (savedProjectId && visibleProjects.some((project) => project.id === savedProjectId)) {
+      if (savedProjectId !== activeProjectId) setActiveProjectId(savedProjectId)
+      return
+    }
+    if (!visibleProjects.some((project) => project.id === activeProjectId)) {
+      const fallbackProjectId = visibleProjects[0].id
+      setActiveProjectId(fallbackProjectId)
+      localStorage.setItem(activeProjectStorageKey(currentUserIdValue), fallbackProjectId)
+    }
+  }, [activeProjectId, currentUserIdValue, visibleProjectIdsSignature])
   const editingProject = editingProjectId ? data.projects.find((project) => project.id === editingProjectId) : undefined
   const canEditAssignedArticle = (keyword: Keyword) => assignedArticleKeywordIds.has(keyword.id)
   const projectTasks = data.tasks.filter((task) =>
@@ -2988,6 +3022,7 @@ function App() {
   }
   const selectActiveProject = (projectId: string) => {
     setActiveProjectId(projectId)
+    if (currentUserIdValue) localStorage.setItem(activeProjectStorageKey(currentUserIdValue), projectId)
     setEditingProjectId(null)
     setExpandedKeywordIds(new Set())
     setSelectedKeywordIds(new Set())
@@ -4457,7 +4492,11 @@ function App() {
       logoUrl: String(form.get('logoUrl')).trim(),
       coverUrl: String(form.get('coverUrl')).trim(),
       shortDescription: String(form.get('shortDescription')).trim(),
+      shortDescriptionHtml: String(form.get('shortDescriptionHtml')).trim(),
       longDescription: String(form.get('longDescription')).trim(),
+      longDescriptionHtml: String(form.get('longDescriptionHtml')).trim(),
+      anchorText: String(form.get('anchorText')).trim(),
+      anchorTextHtml: String(form.get('anchorTextHtml')).trim(),
       industry: String(form.get('industry')).trim(),
       countryLanguage: String(form.get('countryLanguage')).trim(),
       phone: String(form.get('phone')).trim(),
@@ -4481,6 +4520,7 @@ function App() {
       seoEntityChecklist: isUpdate ? data.seoEntityChecklist : [...buildEntityChecklist(activeProject.id, entityId), ...(data.seoEntityChecklist ?? [])],
     }
     saveData(nextData, isUpdate ? 'Cập nhật hồ sơ Entity' : 'Tạo hồ sơ Entity', entity.name)
+    if (isUpdate) window.alert('Đã cập nhật hồ sơ Entity.')
     setSelectedEntityId(entityId)
   }
 
@@ -4648,12 +4688,12 @@ function App() {
       loginEmail,
       accountUsed,
       liveUrl,
-      targetUrl: String(form.get('targetUrl')).trim(),
-      anchorText: String(form.get('anchorText')).trim(),
-      displayName: String(form.get('displayName')).trim(),
-      usedDescription: String(form.get('usedDescription')).trim(),
+      targetUrl: String(form.get('targetUrl')).trim() || entityTargetUrlOf(activeEntity, activeProject),
+      anchorText: String(form.get('anchorText')).trim() || entityAnchorTextOf(activeEntity),
+      displayName: String(form.get('displayName')).trim() || entityDisplayNameOf(activeEntity),
+      usedDescription: String(form.get('usedDescription')).trim() || entityUsedDescriptionOf(activeEntity),
       assigneeId: String(form.get('assigneeId')),
-      deployedDate: String(form.get('deployedDate')),
+      deployedDate: appNowIso(),
       deploymentStatus: String(form.get('deploymentStatus')) as EntityDeploymentStatus,
       notes: String(form.get('notes')).trim(),
     }
@@ -4680,10 +4720,10 @@ function App() {
       loginEmail: '',
       accountUsed: '',
       liveUrl: '',
-      targetUrl: activeEntity.website || activeProject.website,
-      anchorText: activeEntity.name,
-      displayName: activeEntity.name,
-      usedDescription: platform.description || activeEntity.shortDescription || activeEntity.longDescription,
+      targetUrl: entityTargetUrlOf(activeEntity, activeProject),
+      anchorText: entityAnchorTextOf(activeEntity),
+      displayName: entityDisplayNameOf(activeEntity),
+      usedDescription: entityUsedDescriptionOf(activeEntity),
       assigneeId: '',
       deployedDate: '',
       deploymentStatus: 'Chưa làm',
@@ -9464,17 +9504,24 @@ function EntityModule({
   const activeEntityId = activeEntity?.id ?? ''
   const pendingEntityLinks = activeEntityLinks.filter((link) => !link.liveUrl.trim())
   const firstPendingEntityLink = pendingEntityLinks[0]
+  const setEntityLinkFormField = (form: HTMLFormElement | null, name: string, value: string) => {
+    const field = form?.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null
+    if (field) field.value = value
+  }
   const setEntityLinkFormDefaults = (form: HTMLFormElement | null, link?: SeoEntityLink) => {
     if (!form || !link) return
-    const setField = (name: string, value: string) => {
-      const field = form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null
-      if (field) field.value = value
-    }
-    setField('targetUrl', link.targetUrl || activeEntity?.website || activeProject.website)
-    setField('anchorText', link.anchorText || activeEntity?.name || '')
-    setField('displayName', link.displayName || activeEntity?.name || '')
-    setField('usedDescription', link.usedDescription || activeEntity?.shortDescription || '')
-    setField('assigneeId', link.assigneeId)
+    setEntityLinkFormField(form, 'targetUrl', entityTargetUrlOf(activeEntity, activeProject))
+    setEntityLinkFormField(form, 'anchorText', entityAnchorTextOf(activeEntity))
+    setEntityLinkFormField(form, 'displayName', entityDisplayNameOf(activeEntity))
+    setEntityLinkFormField(form, 'usedDescription', entityUsedDescriptionOf(activeEntity))
+    setEntityLinkFormField(form, 'assigneeId', link.assigneeId)
+  }
+  const syncEntityLinkProfileDefaults = (form: HTMLFormElement | null) => {
+    if (!form || !activeEntity) return
+    setEntityLinkFormField(form, 'targetUrl', entityTargetUrlOf(activeEntity, activeProject))
+    setEntityLinkFormField(form, 'anchorText', entityAnchorTextOf(activeEntity))
+    setEntityLinkFormField(form, 'displayName', entityDisplayNameOf(activeEntity))
+    setEntityLinkFormField(form, 'usedDescription', entityUsedDescriptionOf(activeEntity))
   }
   const entityDefaultCredential = {
     loginAccount: activeEntity?.defaultAccountId ?? '',
@@ -9594,8 +9641,36 @@ function EntityModule({
               <input name="defaultAccountPassword" placeholder="Mật khẩu" type="text" autoComplete="off" defaultValue={activeEntity?.defaultAccountPassword ?? ''} disabled={!canEdit} />
               <input name="defaultAccountEmail" placeholder="Email" type="email" defaultValue={activeEntity?.defaultAccountEmail ?? ''} disabled={!canEdit} />
             </fieldset>
-            <textarea name="shortDescription" placeholder="Mô tả ngắn" defaultValue={activeEntity?.shortDescription ?? ''} disabled={!canEdit} />
-            <textarea name="longDescription" placeholder="Mô tả dài" defaultValue={activeEntity?.longDescription ?? ''} disabled={!canEdit} />
+            <div className="entity-profile-text-grid">
+              <label className="entity-profile-text-field">
+                <span>Mô tả ngắn - Text raw</span>
+                <textarea name="shortDescription" placeholder="Mô tả ngắn dạng text" defaultValue={activeEntity?.shortDescription ?? ''} disabled={!canEdit} />
+              </label>
+              <label className="entity-profile-text-field">
+                <span>Mô tả ngắn - HTML raw</span>
+                <textarea name="shortDescriptionHtml" placeholder="<p>Mô tả ngắn dạng HTML</p>" defaultValue={activeEntity?.shortDescriptionHtml ?? ''} disabled={!canEdit} />
+              </label>
+            </div>
+            <div className="entity-profile-text-grid">
+              <label className="entity-profile-text-field">
+                <span>Mô tả dài - Text raw</span>
+                <textarea name="longDescription" placeholder="Mô tả dài dạng text" defaultValue={activeEntity?.longDescription ?? ''} disabled={!canEdit} />
+              </label>
+              <label className="entity-profile-text-field">
+                <span>Mô tả dài - HTML raw</span>
+                <textarea name="longDescriptionHtml" placeholder="<section>Mô tả dài dạng HTML</section>" defaultValue={activeEntity?.longDescriptionHtml ?? ''} disabled={!canEdit} />
+              </label>
+            </div>
+            <div className="entity-profile-text-grid">
+              <label className="entity-profile-text-field">
+                <span>Anchor Text - Text raw</span>
+                <textarea name="anchorText" placeholder="Anchor text dùng khi triển khai Entity" defaultValue={activeEntity?.anchorText ?? ''} disabled={!canEdit} />
+              </label>
+              <label className="entity-profile-text-field">
+                <span>Anchor Text - HTML raw</span>
+                <textarea name="anchorTextHtml" placeholder="<strong>Anchor text</strong>" defaultValue={activeEntity?.anchorTextHtml ?? ''} disabled={!canEdit} />
+              </label>
+            </div>
             <button type="submit" disabled={!canEdit}>{activeEntity ? 'Cập nhật hồ sơ Entity' : 'Tạo hồ sơ Entity'}</button>
             {activeEntity && (
               <button className="danger-button" type="button" onClick={() => onDeleteEntity(activeEntity.id)} disabled={!canEdit}>
@@ -9704,7 +9779,7 @@ function EntityModule({
                     const platform = entityPlatforms.find((item) => item.id === link.platformId)
                     return (
                       <option value={link.id} key={link.id}>
-                        {platform?.name ?? 'Nền tảng đã xóa'} - {link.targetUrl || activeEntity.website || activeProject.website}
+                        {platform?.name ?? 'Nền tảng đã xóa'} - {platform?.domain || link.targetUrl || entityTargetUrlOf(activeEntity, activeProject)}
                       </option>
                     )
                   })}
@@ -9766,12 +9841,23 @@ function EntityModule({
                   />
                 </fieldset>
                 <input name="liveUrl" placeholder="URL live" disabled={!canEdit} />
-                <input name="targetUrl" placeholder="URL đích" defaultValue={firstPendingEntityLink?.targetUrl || activeEntity.website} disabled={!canEdit} />
-                <input name="anchorText" placeholder="Anchor text" defaultValue={firstPendingEntityLink?.anchorText || activeEntity.name} disabled={!canEdit} />
-                <input name="displayName" placeholder="Tên hiển thị" defaultValue={firstPendingEntityLink?.displayName || activeEntity.name} disabled={!canEdit} />
-                <input name="deployedDate" type="date" aria-label="Ngày triển khai" disabled={!canEdit} />
+                <div className="entity-link-sync-row">
+                  <span>Tự điền từ hồ sơ Entity</span>
+                  <button
+                    className="icon-button entity-sync-button"
+                    type="button"
+                    title="Đồng bộ dữ liệu từ hồ sơ Entity"
+                    onClick={(event) => syncEntityLinkProfileDefaults(event.currentTarget.form)}
+                    disabled={!canEdit}
+                  >
+                    ↻
+                  </button>
+                </div>
+                <input name="targetUrl" placeholder="URL đích / Link website" defaultValue={entityTargetUrlOf(activeEntity, activeProject)} disabled={!canEdit} />
+                <input name="anchorText" placeholder="Anchor Text" defaultValue={entityAnchorTextOf(activeEntity)} disabled={!canEdit} />
+                <input name="displayName" placeholder="Tên hiển thị / Tên chuẩn" defaultValue={entityDisplayNameOf(activeEntity)} disabled={!canEdit} />
                 <select name="deploymentStatus" defaultValue="Đã live" disabled={!canEdit}>{entityDeploymentStatuses.map((status) => <option key={status}>{status}</option>)}</select>
-                <textarea name="usedDescription" placeholder="Mô tả đã dùng" defaultValue={firstPendingEntityLink?.usedDescription || activeEntity.shortDescription} disabled={!canEdit} />
+                <textarea name="usedDescription" placeholder="Mô tả đã dùng" defaultValue={entityUsedDescriptionOf(activeEntity)} disabled={!canEdit} />
                 <textarea name="notes" placeholder="Ghi chú nội bộ" disabled={!canEdit} />
                 <button type="submit" disabled={!canEdit}>Lưu link chờ</button>
               </form>
@@ -9810,6 +9896,7 @@ function EntityModule({
             onToggleSelect={onToggleLinkSelect}
             onUpdate={onUpdateLink}
             onCheck={onCheckLink}
+            onOpenGuide={onOpenGuide}
           />
         </>
       )}
@@ -9859,6 +9946,7 @@ function EntityModule({
             onToggleSelect={onToggleLinkSelect}
             onUpdate={onUpdateLink}
             onCheck={onCheckLink}
+            onOpenGuide={onOpenGuide}
             compact
           />
         </Panel>
@@ -10323,6 +10411,7 @@ function EntityLinkTable({
   onToggleSelect,
   onUpdate,
   onCheck,
+  onOpenGuide,
 }: {
   links: SeoEntityLink[]
   tasks: Task[]
@@ -10334,6 +10423,7 @@ function EntityLinkTable({
   onToggleSelect: (linkId: string) => void
   onUpdate: (linkId: string, updates: Partial<SeoEntityLink>) => void
   onCheck: (linkId: string) => void
+  onOpenGuide: (reference: string) => void
 }) {
   if (links.length === 0) {
     return <EmptyState title="Chưa có Link Entity" text="Thêm link entity đã triển khai để theo dõi trạng thái live, index và NAP." />
@@ -10360,6 +10450,9 @@ function EntityLinkTable({
           {links.map((link) => {
             const linkedTask = link.taskId ? tasks.find((task) => task.id === link.taskId) : undefined
             const approvedByTask = linkedTask ? taskStatusOf(linkedTask) === 'Hoàn thành' : false
+            const platform = platforms.find((item) => item.id === link.platformId)
+            const platformUrl = platform ? platformDomainUrl(platform.domain) : ''
+            const guideReference = entityPlatformGuideReferenceOf(platform)
             return (
             <tr key={link.id}>
               {!compact && (
@@ -10373,7 +10466,24 @@ function EntityLinkTable({
                   />
                 </td>
               )}
-              <td>{platforms.find((platform) => platform.id === link.platformId)?.name ?? 'Nền tảng đã xóa'}</td>
+              <td>
+                <div className="entity-link-platform-cell">
+                  <span>
+                    <strong>{platform?.name ?? 'Nền tảng đã xóa'}</strong>
+                    {guideReference && (
+                      <button
+                        className="icon-button entity-platform-guide-icon"
+                        type="button"
+                        title="Mở hướng dẫn nền tảng"
+                        onClick={() => onOpenGuide(guideReference)}
+                      >
+                        ?
+                      </button>
+                    )}
+                  </span>
+                  {platformUrl && <a href={platformUrl} target="_blank" rel="noreferrer">{platform?.domain}</a>}
+                </div>
+              </td>
               <td>
                 {link.liveUrl ? <a href={link.liveUrl} target="_blank" rel="noreferrer">{link.liveUrl}</a> : 'Chưa cập nhật'}
                 {link.lastCheckedAt && <small className="entity-link-note">Check: {formatDateTime(link.lastCheckedAt)}</small>}
