@@ -4,6 +4,8 @@ import * as XLSX from 'xlsx'
 import './App.css'
 
 type View = 'overview' | 'projects' | 'entities' | 'backlinks' | 'keywords' | 'articles' | 'tasks' | 'knowledge' | 'social' | 'tools' | 'tool-article-writer' | 'tool-article-settings' | 'finance' | 'people' | 'progress' | 'system'
+type AppTheme = 'dark' | 'light'
+type NavGroupId = 'project' | 'tools' | 'system'
 type ProjectStatus = 'Đang SEO' | 'Tạm dừng' | 'Hoàn thành'
 type TaskStatus = 'Cần làm' | 'Chờ nhận' | 'Đang làm' | 'Cần chỉnh sửa' | 'Chờ duyệt' | 'Từ chối' | 'Hoàn thành' | 'Đã hủy'
 type TransactionType = 'Thu' | 'Chi'
@@ -823,10 +825,12 @@ type AppData = {
 const storageKey = 'seo-demo-data-v5'
 const entityCredentialKey = 'seo-demo-entity-link-credentials'
 const appZoomKey = 'seo-ops-ui-zoom'
+const appThemeKey = 'seo-ops-ui-theme'
 const defaultAppZoom = 0.8
+const defaultAppTheme: AppTheme = 'dark'
 const activeProjectStorageKey = (userId: string) => `seo-ops-active-project-${userId}`
 const clampAppZoom = (value: number) => Math.min(1.2, Math.max(0.7, Number(value.toFixed(2))))
-const appVersion = '1.0.0'
+const appVersion = '2.0.0'
 const appTimeZone = 'Asia/Bangkok'
 const permissions = ['Dự án', 'Ghi chú', 'Tài chính', 'Nhân sự', 'Tiến độ', 'Hệ thống']
 const toolPermissionName = 'Công cụ'
@@ -2254,6 +2258,18 @@ const getViewFromHash = (): View => {
     ? (view as View)
     : 'overview'
 }
+const navGroupChildViews: Record<NavGroupId, View[]> = {
+  project: ['keywords', 'articles', 'entities', 'backlinks', 'tasks'],
+  tools: ['tool-article-writer', 'tool-article-settings'],
+  system: ['system'],
+}
+const initialExpandedNavGroups = (view: View) => {
+  const expanded = new Set<NavGroupId>()
+  Object.entries(navGroupChildViews).forEach(([group, childViews]) => {
+    if (childViews.includes(view)) expanded.add(group as NavGroupId)
+  })
+  return expanded
+}
 const setHashView = (view: View) => {
   window.history.replaceState(null, '', `#${view}`)
 }
@@ -2567,6 +2583,7 @@ function App() {
   const projectFormRef = useRef<HTMLFormElement | null>(null)
   const wordpressFormRef = useRef<HTMLFormElement | null>(null)
   const [view, setView] = useState<View>(getViewFromHash)
+  const [expandedNavGroups, setExpandedNavGroups] = useState<Set<NavGroupId>>(() => initialExpandedNavGroups(getViewFromHash()))
   const [activeProjectId, setActiveProjectId] = useState(data.projects[0]?.id ?? '')
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem('seo-demo-current-user') || '')
@@ -2612,6 +2629,10 @@ function App() {
     const savedZoom = Number(localStorage.getItem(appZoomKey))
     return savedZoom >= 0.7 && savedZoom <= 1.2 ? savedZoom : defaultAppZoom
   })
+  const [appTheme, setAppTheme] = useState<AppTheme>(() => {
+    const savedTheme = localStorage.getItem(appThemeKey)
+    return savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : defaultAppTheme
+  })
   const [entityTab, setEntityTab] = useState<EntityTab>('overview')
   const [selectedEntityId, setSelectedEntityId] = useState('')
   const [entityImportStatus, setEntityImportStatus] = useState('')
@@ -2644,6 +2665,23 @@ function App() {
   useEffect(() => {
     localStorage.setItem(appZoomKey, appZoom.toFixed(2))
   }, [appZoom])
+
+  useEffect(() => {
+    localStorage.setItem(appThemeKey, appTheme)
+  }, [appTheme])
+
+  useEffect(() => {
+    const groupsToOpen = Object.entries(navGroupChildViews)
+      .filter(([, childViews]) => childViews.includes(view))
+      .map(([group]) => group as NavGroupId)
+    if (groupsToOpen.length === 0) return
+    setExpandedNavGroups((current) => {
+      if (groupsToOpen.every((group) => current.has(group))) return current
+      const next = new Set(current)
+      groupsToOpen.forEach((group) => next.add(group))
+      return next
+    })
+  }, [view])
 
   useEffect(() => {
     if (!new URLSearchParams(window.location.search).has('google_oauth')) return
@@ -3086,6 +3124,19 @@ function App() {
     if (!canView(nextView)) return
     setView(nextView)
     setHashView(nextView)
+  }
+  const isNavGroupExpanded = (group: NavGroupId) => expandedNavGroups.has(group)
+  const toggleNavGroup = (group: NavGroupId, parentView?: View) => {
+    setExpandedNavGroups((current) => {
+      const next = new Set(current)
+      if (next.has(group)) {
+        next.delete(group)
+      } else {
+        next.add(group)
+      }
+      return next
+    })
+    if (parentView && canView(parentView)) goTo(parentView)
   }
 
   const openKnowledgeGuide = (reference: string) => {
@@ -5859,7 +5910,11 @@ function App() {
   if (loadingRemoteData) return <LoadingPage />
 
   if (!currentUser) {
-    return <LoginPage error={loginError} users={data.users} onRefresh={reloadData} onSubmit={login} />
+    return (
+      <div className="auth-theme-shell" data-theme={appTheme}>
+        <LoginPage error={loginError} users={data.users} onRefresh={reloadData} onSubmit={login} />
+      </div>
+    )
   }
 
   const appShellStyle = {
@@ -5869,7 +5924,7 @@ function App() {
   const changeAppZoom = (nextZoom: number) => setAppZoom(clampAppZoom(nextZoom))
 
   return (
-    <div className="app-shell" style={appShellStyle}>
+    <div className="app-shell" data-theme={appTheme} style={appShellStyle}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">S</span>
@@ -5883,14 +5938,22 @@ function App() {
           <NavButton view="overview" current={view} label="Tổng quan" onClick={goTo} />
           {(hasProjectViewPermission || canViewAssignedView('keywords') || canViewAssignedView('articles') || canViewAssignedView('tasks')) && (
             <>
-              {canView('projects') && <NavButton view="projects" current={view} label="Dự án SEO" onClick={goTo} />}
-              <div className="nav-children" aria-label="Module con của Dự án SEO">
-                {canView('keywords') && <NavButton view="keywords" current={view} label="Quản lý Keyword" onClick={goTo} child />}
-                {canView('articles') && <NavButton view="articles" current={view} label="Bài viết" onClick={goTo} child />}
-                {canView('entities') && <NavButton view="entities" current={view} label="SEO Entity" onClick={goTo} child />}
-                {canView('backlinks') && <NavButton view="backlinks" current={view} label="Backlink" onClick={goTo} child />}
-                {canView('tasks') && <NavButton view="tasks" current={view} label="Task công việc" onClick={goTo} child />}
-              </div>
+              <NavGroupButton
+                icon="projects"
+                active={view === 'projects' || navGroupChildViews.project.includes(view)}
+                expanded={isNavGroupExpanded('project')}
+                label="Dự án SEO"
+                onClick={() => toggleNavGroup('project', canView('projects') ? 'projects' : undefined)}
+              />
+              {isNavGroupExpanded('project') && (
+                <div className="nav-children" aria-label="Module con của Dự án SEO">
+                  {canView('keywords') && <NavButton view="keywords" current={view} label="Quản lý Keyword" onClick={goTo} child />}
+                  {canView('articles') && <NavButton view="articles" current={view} label="Bài viết" onClick={goTo} child />}
+                  {canView('entities') && <NavButton view="entities" current={view} label="SEO Entity" onClick={goTo} child />}
+                  {canView('backlinks') && <NavButton view="backlinks" current={view} label="Backlink" onClick={goTo} child />}
+                  {canView('tasks') && <NavButton view="tasks" current={view} label="Task công việc" onClick={goTo} child />}
+                </div>
+              )}
             </>
           )}
           {canAccessPermission(socialPermissionName, 'view') && <NavButton view="social" current={view} label="Social Planner" onClick={goTo} />}
@@ -5898,21 +5961,37 @@ function App() {
           {canAccessPermission('Ghi chú', 'view') && <NavButton view="knowledge" current={view} label="Ghi chú & Tài liệu nội bộ" onClick={goTo} />}
           {canAccessPermission(toolPermissionName, 'view') && (
             <>
-              <NavButton view="tools" current={view} label="Công cụ" onClick={goTo} />
-              <div className="nav-children" aria-label="Module con của Công cụ">
-                <NavButton view="tool-article-writer" current={view} label="Viết bài" onClick={goTo} child />
-                <NavButton view="tool-article-settings" current={view} label="Cấu hình & Log" onClick={goTo} child />
-              </div>
+              <NavGroupButton
+                icon="tools"
+                active={view === 'tools' || navGroupChildViews.tools.includes(view)}
+                expanded={isNavGroupExpanded('tools')}
+                label="Công cụ"
+                onClick={() => toggleNavGroup('tools', 'tools')}
+              />
+              {isNavGroupExpanded('tools') && (
+                <div className="nav-children" aria-label="Module con của Công cụ">
+                  <NavButton view="tool-article-writer" current={view} label="Viết bài" onClick={goTo} child />
+                  <NavButton view="tool-article-settings" current={view} label="Cấu hình & Log" onClick={goTo} child />
+                </div>
+              )}
             </>
           )}
           {canAccessPermission('Nhân sự', 'view') && <NavButton view="people" current={view} label="Nhân sự" onClick={goTo} />}
           {canAccessPermission('Tiến độ', 'view') && <NavButton view="progress" current={view} label="Tiến độ" onClick={goTo} />}
           {canAccessPermission('Hệ thống', 'view') && (
             <>
-              <div className="nav-section-label">Hệ thống</div>
-              <div className="nav-children" aria-label="Module con của Hệ thống">
-                <NavButton view="system" current={view} label="Quản lý" onClick={goTo} child />
-              </div>
+              <NavGroupButton
+                icon="system"
+                active={view === 'system'}
+                expanded={isNavGroupExpanded('system')}
+                label="Hệ thống"
+                onClick={() => toggleNavGroup('system')}
+              />
+              {isNavGroupExpanded('system') && (
+                <div className="nav-children" aria-label="Module con của Hệ thống">
+                  <NavButton view="system" current={view} label="Quản lý" onClick={goTo} child />
+                </div>
+              )}
             </>
           )}
         </nav>
@@ -5936,6 +6015,7 @@ function App() {
           </div>
           <div className="topbar-actions">
             <ZoomControl zoom={appZoom} onChange={changeAppZoom} />
+            <ThemeControl theme={appTheme} onChange={setAppTheme} />
             <NotificationBell
               notifications={currentNotifications}
               unreadCount={unreadNotifications.length}
@@ -7173,6 +7253,22 @@ function ZoomControl({ zoom, onChange }: { zoom: number; onChange: (zoom: number
   )
 }
 
+function ThemeControl({ theme, onChange }: { theme: AppTheme; onChange: (theme: AppTheme) => void }) {
+  const isDark = theme === 'dark'
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={() => onChange(isDark ? 'light' : 'dark')}
+      title={isDark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+      aria-label="Chọn giao diện"
+    >
+      <span aria-hidden="true">{isDark ? '☾' : '☀'}</span>
+      <strong>{isDark ? 'Dark' : 'Light'}</strong>
+    </button>
+  )
+}
+
 function NotificationBell({
   notifications,
   unreadCount,
@@ -7231,6 +7327,33 @@ function BellIcon() {
     <svg className="bell-icon" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 22a2.5 2.5 0 0 0 2.35-1.65h-4.7A2.5 2.5 0 0 0 12 22Zm7-6.5V11a7 7 0 0 0-5-6.7V3a2 2 0 0 0-4 0v1.3A7 7 0 0 0 5 11v4.5L3.4 17.1A1 1 0 0 0 4.1 18.8h15.8a1 1 0 0 0 .7-1.7L19 15.5ZM7 16.8V11a5 5 0 0 1 10 0v5.8H7Z" />
     </svg>
+  )
+}
+
+function NavGroupButton({
+  icon,
+  active,
+  expanded,
+  label,
+  onClick,
+}: {
+  icon: View
+  active: boolean
+  expanded: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      className={`nav-item nav-group-trigger ${active ? 'active' : ''} ${expanded ? 'is-open' : ''}`}
+      type="button"
+      aria-expanded={expanded}
+      onClick={onClick}
+    >
+      <MiniIcon name={icon} />
+      <span>{label}</span>
+      <span className="nav-chevron" aria-hidden="true">›</span>
+    </button>
   )
 }
 
