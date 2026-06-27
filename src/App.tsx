@@ -14,7 +14,7 @@ type SearchIntent = 'Informational' | 'Commercial' | 'Transactional' | 'Navigati
 type KeywordType = 'A' | 'B' | 'C'
 type KeywordIndexStatus = 'Chua check' | 'Noindex' | 'Index'
 type SalaryType = 'Lương theo giờ' | 'Lương theo tháng' | 'Lương theo task'
-type TaskSalaryModule = 'Bài viết' | 'Backlink' | 'SEO Entity'
+type TaskSalaryModule = 'Bài viết' | 'Backlink' | 'SEO Entity' | 'Phát triển & Bảo trì'
 type TaskSalarySettings = Record<TaskSalaryModule, number>
 type ExpenseScope = 'Chi chung dự án' | 'Chi riêng dự án'
 type AnalyticsGranularity = 'day' | 'week' | 'month' | 'year'
@@ -93,6 +93,10 @@ type QuickKeywordIssue = {
   line: number
   text: string
 }
+type QuickTaskIssue = {
+  line: number
+  text: string
+}
 
 type AnalyticsSettings = {
   propertyId: string
@@ -146,6 +150,7 @@ type ArticleToolResult = {
   topic: string
   presentationStyle: ArticlePresentationStyle
   imageProvider?: ArticleImageProvider
+  agent?: ArticleAgentSnapshot
   html: string
   previewHtml: string
   htmlPath: string
@@ -163,6 +168,7 @@ type ArticleToolHistoryItem = {
   topic: string
   presentationStyle: ArticlePresentationStyle
   imageProvider?: ArticleImageProvider
+  agent?: ArticleAgentSnapshot
   htmlUrl: string
   sourceUrl: string
   outputDir: string
@@ -197,6 +203,78 @@ type ArticleToolLog = {
 type ArticleImageProvider = 'google-ai' | 'vertex-ai'
 type ArticleToolTestProvider = 'claude' | 'gemini' | 'vertex'
 type ArticlePresentationStyle = 'professional' | 'raw' | 'wordpress'
+type ArticleAgentInputMode = 'keyword' | 'competitor'
+type ArticleAgentLanguage = 'vi' | 'en'
+type ArticleAgentPersona = 'Anh' | 'Em' | 'Tôi' | 'Chúng tôi' | 'Tên cty...'
+type ArticleAgentTone = 'Chuyên nghiệp' | 'Kể chuyện' | 'Bút ký' | 'Quảng cáo' | 'Chuyên gia' | 'Tư vấn' | 'Thương mại'
+type ArticleAgentContentType = 'Blog Post' | 'Trang dịch vụ' | 'Landing Page' | 'Hướng dẫn từng bước' | 'Review' | 'So sánh' | 'Danh sách Top-X'
+type ArticleAgentTargetLength = 'auto' | '800' | '1500' | '2500' | '4000'
+type ArticleAgentWritingMode = 'Mặc định' | 'Kể chuyện' | 'Bút ký' | 'Quảng cáo' | 'Chuyên gia' | 'Tư vấn' | 'Thương mại'
+type ArticleAgentSourceRegion = 'VN' | 'US' | 'Global'
+type ArticleAgentStepId = 'keyword' | 'serp' | 'outline' | 'draft' | 'optimize'
+type ArticleAgentStepStatus = 'pending' | 'running' | 'completed' | 'blocked'
+
+type ArticleAgentBusinessInfo = {
+  entityId: string
+  website: string
+  brandName: string
+  phone: string
+  email: string
+  address: string
+  serviceArea: string
+  workingHours: string
+  websiteLinks: string
+  zalo: string
+  socialLinks: string
+  productDescription: string
+  advantages: string
+  websiteContext: string
+}
+
+type ArticleAgentBrief = {
+  enabled: boolean
+  niche: string
+  brandVoice: string
+  includeFaq: boolean
+  includeComparisonTable: boolean
+  includeHowTo: boolean
+  extraRequirements: string
+  sourceRegion: ArticleAgentSourceRegion
+}
+
+type ArticleAgentSettings = {
+  inputMode: ArticleAgentInputMode
+  keyword: string
+  title: string
+  language: ArticleAgentLanguage
+  persona: ArticleAgentPersona
+  tone: ArticleAgentTone
+  contentType: ArticleAgentContentType
+  targetLength: ArticleAgentTargetLength
+  writingMode: ArticleAgentWritingMode
+  reviewOutline: boolean
+  generateImages: boolean
+  internalLinks: boolean
+  brief: ArticleAgentBrief
+  business: ArticleAgentBusinessInfo
+}
+
+type ArticleAgentStep = {
+  id: ArticleAgentStepId
+  label: string
+  status: ArticleAgentStepStatus
+  note: string
+}
+
+type ArticleAgentSnapshot = {
+  version: 1
+  mode: 'agent'
+  currentStep: ArticleAgentStepId
+  settings: ArticleAgentSettings
+  steps: ArticleAgentStep[]
+  createdAt: string
+  updatedAt?: string
+}
 
 type ArticleToolConfigStatus = {
   articleComposerConfigured: boolean
@@ -324,6 +402,8 @@ type Task = {
   estimatedHours?: number
   taskSalary?: number
   salaryModule?: TaskSalaryModule
+  note?: string
+  guide?: string
   payrollSettlementId?: string
   payrollSettledAt?: string
   deadlineReminderAt?: string
@@ -852,13 +932,49 @@ const articleTypes: ArticleType[] = [
   'Transactional Content',
   'Category Hub',
 ]
+const articleAgentStepTemplates: { id: ArticleAgentStepId; label: string }[] = [
+  { id: 'keyword', label: 'Từ khóa' },
+  { id: 'serp', label: 'SERP' },
+  { id: 'outline', label: 'Dàn ý' },
+  { id: 'draft', label: 'Viết bài' },
+  { id: 'optimize', label: 'Tối ưu' },
+]
+const articleAgentPersonas: ArticleAgentPersona[] = ['Anh', 'Em', 'Tôi', 'Chúng tôi', 'Tên cty...']
+const articleAgentTones: ArticleAgentTone[] = ['Chuyên nghiệp', 'Kể chuyện', 'Bút ký', 'Quảng cáo', 'Chuyên gia', 'Tư vấn', 'Thương mại']
+const articleAgentContentTypes: ArticleAgentContentType[] = ['Blog Post', 'Trang dịch vụ', 'Landing Page', 'Hướng dẫn từng bước', 'Review', 'So sánh', 'Danh sách Top-X']
+const articleAgentTargetLengths: { value: ArticleAgentTargetLength; label: string; words: number }[] = [
+  { value: 'auto', label: 'Tự động', words: 1800 },
+  { value: '800', label: '~800 từ', words: 800 },
+  { value: '1500', label: '~1500 từ', words: 1500 },
+  { value: '2500', label: '~2500 từ', words: 2500 },
+  { value: '4000', label: '~4000 từ+', words: 4000 },
+]
+const articleAgentWritingModes: ArticleAgentWritingMode[] = ['Mặc định', 'Kể chuyện', 'Bút ký', 'Quảng cáo', 'Chuyên gia', 'Tư vấn', 'Thương mại']
+const emptyArticleAgentBusinessInfo: ArticleAgentBusinessInfo = {
+  entityId: '',
+  website: '',
+  brandName: '',
+  phone: '',
+  email: '',
+  address: '',
+  serviceArea: '',
+  workingHours: '',
+  websiteLinks: '',
+  zalo: '',
+  socialLinks: '',
+  productDescription: '',
+  advantages: '',
+  websiteContext: '',
+}
 const salaryTypes: SalaryType[] = ['Lương theo giờ', 'Lương theo tháng', 'Lương theo task']
-const taskSalaryModules: TaskSalaryModule[] = ['Bài viết', 'Backlink', 'SEO Entity']
+const taskSalaryModules: TaskSalaryModule[] = ['Bài viết', 'Backlink', 'SEO Entity', 'Phát triển & Bảo trì']
 const defaultTaskSalarySettings: TaskSalarySettings = {
   'Bài viết': 0,
   Backlink: 0,
   'SEO Entity': 0,
+  'Phát triển & Bảo trì': 0,
 }
+const quickTaskSyntax = 'Tên công việc | Nhân sự | Hạn YYYY-MM-DD HH:mm | Danh mục | Lương | Ghi chú | Hướng dẫn'
 const editableTaskStatuses: TaskStatus[] = ['Chờ nhận', 'Đang làm', 'Cần chỉnh sửa', 'Chờ duyệt', 'Từ chối', 'Hoàn thành', 'Đã hủy']
 const entityTabs: { id: EntityTab; label: string }[] = [
   { id: 'overview', label: 'Tổng quan Entity' },
@@ -1514,6 +1630,18 @@ const currency = new Intl.NumberFormat('vi-VN', {
 
 const pct = (value: number) => `${Math.round(value)}%`
 const uid = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+const lookupText = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+const taskSalaryModuleFromInput = (value: string) => taskSalaryModules.find((module) => lookupText(module) === lookupText(value))
+const parseTaskSalaryInput = (value: string) => {
+  const digits = value.replace(/[^\d]/g, '')
+  return digits ? Number(digits) : 0
+}
 const internalGuideCodeFromId = (id: string) => {
   const compactId = id.replace(/[^a-z0-9]/gi, '').toUpperCase()
   return `HD-${compactId.slice(-8).padStart(8, '0')}`
@@ -1563,6 +1691,14 @@ const defaultTaskDeadlineInput = (assignedAt = appNow()) => {
   const parts = appDateParts(defaultDeadline)
   return `${parts.year}-${parts.month}-${parts.day}T20:00`
 }
+const normalizeTaskDeadlineInput = (value: string, assignedAt = appNow()) => {
+  const trimmed = value.trim()
+  if (!trimmed) return defaultTaskDeadlineInput(assignedAt)
+  const normalized = trimmed.replace(/\s+/, 'T')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return `${normalized}T20:00`
+  return normalized
+}
+const taskDeadlineInputIsValid = (value: string) => !Number.isNaN(new Date(value).getTime())
 const currentPayrollPeriod = () => {
   const parts = appDateParts(appNow())
   return `${parts.year}-${parts.month}`
@@ -1654,6 +1790,26 @@ const formatDateTime = (value?: string) => {
     year: 'numeric',
     hour12: false,
   }).format(date)
+}
+const articleAgentLengthWords = (value: ArticleAgentTargetLength) =>
+  articleAgentTargetLengths.find((item) => item.value === value)?.words ?? 1800
+const createArticleAgentSnapshot = (settings: ArticleAgentSettings): ArticleAgentSnapshot => ({
+  version: 1,
+  mode: 'agent',
+  currentStep: 'keyword',
+  settings,
+  steps: articleAgentStepTemplates.map((step) => ({
+    ...step,
+    status: step.id === 'keyword' ? 'completed' : 'pending',
+    note: step.id === 'keyword' ? 'Đã nhận cấu hình đầu vào.' : 'Sẽ chạy ở pipeline Agent.',
+  })),
+  createdAt: appNowIso(),
+})
+const articleAgentStepStatusLabel: Record<ArticleAgentStepStatus, string> = {
+  pending: 'Chờ',
+  running: 'Đang chạy',
+  completed: 'Xong',
+  blocked: 'Lỗi',
 }
 const permissionKey = (permission: string, action: PermissionAction) => `${permission}:${action}`
 const normalizePermissions = (userPermissions: string[] = []) => {
@@ -2344,6 +2500,8 @@ const normalizeData = (data: AppData): AppData => ({
     estimatedHours: task.estimatedHours ?? 0,
     taskSalary: Number(task.taskSalary) || 0,
     salaryModule: validTaskSalaryModule(task.salaryModule) ? task.salaryModule : undefined,
+    note: task.note ?? '',
+    guide: task.guide ?? '',
     payrollSettlementId: task.payrollSettlementId ?? '',
     payrollSettledAt: task.payrollSettledAt ?? '',
     deadlineReminderAt: task.deadlineReminderAt ?? '',
@@ -2490,6 +2648,41 @@ const entityTargetUrlOf = (entity?: SeoEntity, project?: Project) => entity?.web
 const entityAnchorTextOf = (entity?: SeoEntity) => entity?.anchorText?.trim() || entity?.name || ''
 const entityDisplayNameOf = (entity?: SeoEntity) => entity?.officialName?.trim() || entity?.name || ''
 const entityUsedDescriptionOf = (entity?: SeoEntity) => entity?.shortDescription?.trim() || ''
+const articleAgentPlainText = (value?: string) =>
+  String(value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+const articleAgentBusinessFromEntity = (entity?: SeoEntity, links: SeoEntityLink[] = []): ArticleAgentBusinessInfo => {
+  if (!entity) return emptyArticleAgentBusinessInfo
+  const liveLinks = links
+    .filter((link) => link.liveUrl.trim())
+    .map((link) => link.liveUrl.trim())
+  const description = entity.shortDescription.trim()
+    || articleAgentPlainText(entity.shortDescriptionHtml)
+    || entity.longDescription.trim()
+    || articleAgentPlainText(entity.longDescriptionHtml)
+  const context = [
+    entity.industry ? `Ngành: ${entity.industry}` : '',
+    entity.countryLanguage ? `Thị trường: ${entity.countryLanguage}` : '',
+    entity.longDescription.trim() || articleAgentPlainText(entity.longDescriptionHtml),
+  ].filter(Boolean).join('\n')
+  return {
+    ...emptyArticleAgentBusinessInfo,
+    entityId: entity.id,
+    website: entity.website.trim(),
+    brandName: entity.officialName.trim() || entity.name,
+    phone: entity.phone.trim(),
+    email: entity.email.trim(),
+    address: entity.address.trim(),
+    serviceArea: entity.countryLanguage.trim(),
+    websiteLinks: [entity.website.trim(), entity.mapsUrl.trim()].filter(Boolean).join('\n'),
+    socialLinks: liveLinks.join('\n'),
+    productDescription: description,
+    advantages: entity.anchorText?.trim() || articleAgentPlainText(entity.anchorTextHtml),
+    websiteContext: context,
+  }
+}
 const platformDomainUrl = (domain: string) => {
   const cleanDomain = domain.trim()
   if (!cleanDomain) return ''
@@ -2596,6 +2789,9 @@ function App() {
   const [quickKeywordOpen, setQuickKeywordOpen] = useState(false)
   const [quickKeywordStatus, setQuickKeywordStatus] = useState('')
   const [quickKeywordIssues, setQuickKeywordIssues] = useState<QuickKeywordIssue[]>([])
+  const [quickTaskOpen, setQuickTaskOpen] = useState(false)
+  const [quickTaskStatus, setQuickTaskStatus] = useState('')
+  const [quickTaskIssues, setQuickTaskIssues] = useState<QuickTaskIssue[]>([])
   const [expandedKeywordIds, setExpandedKeywordIds] = useState<Set<string>>(() => new Set())
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(() => new Set())
   const [analyticsGranularity, setAnalyticsGranularity] = useState<AnalyticsGranularity>('day')
@@ -4150,6 +4346,7 @@ function App() {
     const assignedAt = appNowIso()
     const deadlineAt = String(form.get('deadlineAt')) || defaultTaskDeadlineInput(new Date(assignedAt))
     const salaryModule = String(form.get('salaryModule'))
+    const validSalaryModule = validTaskSalaryModule(salaryModule) ? salaryModule : undefined
     const task: Task = {
       id: uid('t'),
       projectId: activeProject.id,
@@ -4160,11 +4357,91 @@ function App() {
       assignedAt,
       estimatedHours: Number(form.get('estimatedHours')) || 0,
       taskSalary: Number(form.get('taskSalary')) || 0,
-      salaryModule: validTaskSalaryModule(salaryModule) ? salaryModule : undefined,
+      salaryModule: validSalaryModule,
+      note: String(form.get('note') ?? '').trim(),
+      guide: String(form.get('guide') ?? '').trim(),
       status: 'Chờ nhận',
     }
     saveData(notifyTaskAssignee({ ...data, tasks: [task, ...data.tasks] }, task), 'Thêm task', task.title)
     event.currentTarget.reset()
+  }
+
+  const importQuickTasks = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!canEditTasks) return
+    if (!activeProject) return
+
+    const lines = String(new FormData(event.currentTarget).get('quickTasks') ?? '').split(/\r?\n/)
+    const assignedAt = appNowIso()
+    const imported: Task[] = []
+    const issues: QuickTaskIssue[] = []
+
+    lines.forEach((rawLine, index) => {
+      const value = rawLine.trim()
+      if (!value) return
+
+      const parts = value.split('|').map((part) => part.trim())
+      const [title, assigneeReference, deadlineValue, salaryModuleValue = '', taskSalaryValue = '', note = ''] = parts
+      const guide = parts.slice(6).join(' | ').trim()
+      if (!title || !assigneeReference || !deadlineValue) {
+        issues.push({ line: index + 1, text: `Sai cú pháp. Dùng: ${quickTaskSyntax}` })
+        return
+      }
+
+      const assignee = data.users.find((user) =>
+        [user.id, user.name, user.email].some((candidate) => lookupText(candidate) === lookupText(assigneeReference)),
+      )
+      if (!assignee) {
+        issues.push({ line: index + 1, text: `Không tìm thấy nhân sự "${assigneeReference}". Dùng đúng tên, email hoặc id nhân sự.` })
+        return
+      }
+
+      const deadlineAt = normalizeTaskDeadlineInput(deadlineValue, new Date(assignedAt))
+      if (!taskDeadlineInputIsValid(deadlineAt)) {
+        issues.push({ line: index + 1, text: 'Deadline không hợp lệ. Dùng YYYY-MM-DD HH:mm hoặc YYYY-MM-DDTHH:mm.' })
+        return
+      }
+
+      const salaryModule = salaryModuleValue ? taskSalaryModuleFromInput(salaryModuleValue) : undefined
+      if (salaryModuleValue && !salaryModule) {
+        issues.push({ line: index + 1, text: `Danh mục "${salaryModuleValue}" không hợp lệ. Dùng: ${taskSalaryModules.join(', ')}.` })
+        return
+      }
+
+      const taskSalary = taskSalaryValue ? parseTaskSalaryInput(taskSalaryValue) : salaryModule ? taskSalarySettings[salaryModule] : 0
+      imported.push({
+        id: uid('t'),
+        projectId: activeProject.id,
+        title,
+        assigneeId: assignee.id,
+        dueDate: taskDueDateFromDeadline(deadlineAt),
+        deadlineAt,
+        assignedAt,
+        estimatedHours: 0,
+        taskSalary,
+        salaryModule,
+        note,
+        guide,
+        status: 'Chờ nhận',
+      })
+    })
+
+    setQuickTaskIssues(issues)
+    if (imported.length === 0) {
+      setQuickTaskStatus('Không có công việc hợp lệ để nhập.')
+      return
+    }
+
+    let nextData: AppData = { ...data, tasks: [...imported, ...data.tasks] }
+    imported.forEach((task) => {
+      nextData = notifyTaskAssignee(nextData, task)
+    })
+    saveData(nextData, 'Nhập nhanh task', `${imported.length} công việc`)
+    setQuickTaskStatus(`Đã nhập ${imported.length} công việc.${issues.length ? ` Có ${issues.length} dòng lỗi được bỏ qua.` : ''}`)
+    if (issues.length === 0) {
+      setQuickTaskOpen(false)
+      event.currentTarget.reset()
+    }
   }
 
   const saveExpense = (event: FormEvent<HTMLFormElement>) => {
@@ -4245,7 +4522,7 @@ function App() {
     saveData({
       ...data,
       taskSalarySettings: nextSettings,
-    }, 'Cập nhật lương theo task', 'Bài viết / Backlink / SEO Entity')
+    }, 'Cập nhật lương theo task', taskSalaryModules.join(' / '))
   }
 
   const settlePayroll = (userId: string, period: string) => {
@@ -5737,15 +6014,61 @@ function App() {
     }
     const formElement = event.currentTarget
     const form = new FormData(formElement)
-    const keyword = String(form.get('keyword') || '').trim()
+    const formText = (name: string) => String(form.get(name) || '').trim()
+    const formChecked = (name: string) => form.get(name) === 'on'
+    const keyword = formText('keyword')
     if (!keyword) {
       setArticleToolStatus('Vui lòng nhập từ khóa hoặc chủ đề cần soạn bài.')
       return
     }
+    const targetLength = (formText('targetLength') || 'auto') as ArticleAgentTargetLength
+    const agentSettings: ArticleAgentSettings = {
+      inputMode: (formText('inputMode') || 'keyword') as ArticleAgentInputMode,
+      keyword,
+      title: formText('title'),
+      language: (formText('language') || 'vi') as ArticleAgentLanguage,
+      persona: (formText('persona') || 'Chúng tôi') as ArticleAgentPersona,
+      tone: (formText('tone') || 'Chuyên nghiệp') as ArticleAgentTone,
+      contentType: (formText('contentType') || 'Blog Post') as ArticleAgentContentType,
+      targetLength,
+      writingMode: (formText('writingMode') || 'Mặc định') as ArticleAgentWritingMode,
+      reviewOutline: formChecked('reviewOutline'),
+      generateImages: formChecked('generateImages'),
+      internalLinks: formChecked('internalLinks'),
+      brief: {
+        enabled: formChecked('briefEnabled'),
+        niche: formText('briefNiche'),
+        brandVoice: formText('briefBrandVoice'),
+        includeFaq: formChecked('briefFaq'),
+        includeComparisonTable: formChecked('briefComparisonTable'),
+        includeHowTo: formChecked('briefHowTo'),
+        extraRequirements: formText('briefExtraRequirements'),
+        sourceRegion: (formText('sourceRegion') || 'VN') as ArticleAgentSourceRegion,
+      },
+      business: {
+        ...emptyArticleAgentBusinessInfo,
+        entityId: formText('businessEntityId'),
+        website: formText('businessWebsite'),
+        brandName: formText('businessBrandName'),
+        phone: formText('businessPhone'),
+        email: formText('businessEmail'),
+        address: formText('businessAddress'),
+        serviceArea: formText('businessServiceArea'),
+        workingHours: formText('businessWorkingHours'),
+        websiteLinks: formText('businessWebsiteLinks'),
+        zalo: formText('businessZalo'),
+        socialLinks: formText('businessSocialLinks'),
+        productDescription: formText('businessProductDescription'),
+        advantages: formText('businessAdvantages'),
+        websiteContext: formText('businessWebsiteContext'),
+      },
+    }
+    const agent = createArticleAgentSnapshot(agentSettings)
     const imageProviderOverride: ArticleImageProvider = form.get('useVertexImageProvider') === 'on' ? 'vertex-ai' : 'google-ai'
     const imageProviderLabel = imageProviderOverride === 'vertex-ai' ? 'Vertex AI' : 'Imagen'
+    const imageWorkLabel = agentSettings.generateImages ? ` và ${imageProviderLabel} để tạo ảnh` : ''
     setArticleToolLoading(true)
-    setArticleToolStatus(`Đang gọi Claude để viết bài và ${imageProviderLabel} để tạo ảnh. Quá trình này có thể mất vài phút.`)
+    setArticleToolStatus(`Đang chạy Article Agent Phase 1 với Claude${imageWorkLabel}. Quá trình này có thể mất vài phút.`)
     setArticleToolResult(null)
     try {
       const response = await fetch(appUrl('api/tools/article-compose'), {
@@ -5753,11 +6076,13 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           keyword,
-          targetAudience: String(form.get('targetAudience') || '').trim(),
-          tone: String(form.get('tone') || '').trim(),
-          wordCount: Number(form.get('wordCount') || 1800),
-          presentationStyle: String(form.get('presentationStyle') || 'professional'),
+          targetAudience: agentSettings.business.productDescription || agentSettings.brief.niche || 'khách hàng đang tìm thông tin qua Google',
+          tone: `${agentSettings.tone}; xưng hô: ${agentSettings.persona}; dạng viết: ${agentSettings.writingMode}`,
+          wordCount: articleAgentLengthWords(targetLength),
+          presentationStyle: String(form.get('presentationStyle') || 'wordpress'),
           imageProviderOverride,
+          generateImages: agentSettings.generateImages,
+          agent,
         }),
       })
       const payload = await response.json().catch(() => ({ ok: false, message: 'Backend trả về phản hồi không hợp lệ.' }))
@@ -6695,25 +7020,35 @@ function App() {
             </div>
             <Panel title="Thêm công việc" action={canEditTasks ? 'Theo dự án đang chọn' : 'Chỉ xem'}>
               {canEditTasks ? (
-                <form className="form-grid" onSubmit={addTask}>
-                  <input name="title" placeholder="Tên công việc" required />
-                  <select name="assigneeId" required>
-                    {data.users.map((user) => (
-                      <option value={user.id} key={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select name="salaryModule" aria-label="Nhóm lương task">
-                    <option value="">Công việc khác</option>
-                    {taskSalaryModules.map((module) => (
-                      <option value={module} key={module}>{module}</option>
-                    ))}
-                  </select>
-                  <input name="deadlineAt" aria-label="Thời gian yêu cầu hoàn thành" type="datetime-local" defaultValue={defaultTaskDeadlineInput()} required />
-                  <input name="taskSalary" placeholder="Lương task" type="number" min="0" step="1000" />
-                  <button type="submit">Phân công việc</button>
-                </form>
+                <>
+                  <div className="task-quick-toolbar">
+                    <button className="secondary-button" type="button" onClick={() => { setQuickTaskOpen(true); setQuickTaskStatus(''); setQuickTaskIssues([]) }}>
+                      Nhập nhanh công việc
+                    </button>
+                    {quickTaskStatus && <span>{quickTaskStatus}</span>}
+                  </div>
+                  <form className="form-grid" onSubmit={addTask}>
+                    <input name="title" placeholder="Tên công việc" required />
+                    <select name="assigneeId" aria-label="Nhân sự phụ trách" required>
+                      {data.users.map((user) => (
+                        <option value={user.id} key={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select name="salaryModule" aria-label="Danh mục công việc">
+                      <option value="">Công việc khác</option>
+                      {taskSalaryModules.map((module) => (
+                        <option value={module} key={module}>{module}</option>
+                      ))}
+                    </select>
+                    <input name="deadlineAt" aria-label="Thời gian yêu cầu hoàn thành" type="datetime-local" defaultValue={defaultTaskDeadlineInput()} required />
+                    <input name="taskSalary" placeholder="Lương task" type="number" min="0" step="1000" />
+                    <textarea className="task-extra-field" name="note" placeholder="Ghi chú" rows={3} />
+                    <textarea className="task-extra-field" name="guide" placeholder="Hướng dẫn hoặc link tài liệu" rows={3} />
+                    <button type="submit">Phân công việc</button>
+                  </form>
+                </>
               ) : (
                 <EmptyState title="Bạn chỉ có quyền xem" text="Tài khoản hiện tại chưa được cấp quyền phân công hoặc chỉnh sửa task." />
               )}
@@ -6816,6 +7151,8 @@ function App() {
             result={articleToolResult}
             config={articleToolConfig}
             regeneratingImageIndex={articleToolRegeneratingIndex}
+            entities={projectEntities}
+            entityLinks={projectEntityLinks}
             history={articleToolHistory}
             historyStatus={articleToolHistoryStatus}
             historyLoading={articleToolHistoryLoading}
@@ -7003,7 +7340,7 @@ function App() {
                 </div>
               </Panel>
             </div>
-            <Panel title="Tùy chỉnh lương theo task" action="Bài viết / Backlink / SEO Entity">
+            <Panel title="Tùy chỉnh lương theo task" action={taskSalaryModules.join(' / ')}>
               {canEdit('people') ? (
                 <form className="form-grid" onSubmit={saveTaskSalarySettings}>
                   {taskSalaryModules.map((module) => (
@@ -7122,6 +7459,13 @@ function App() {
             issues={quickKeywordIssues}
             onClose={() => setQuickKeywordOpen(false)}
             onSubmit={importQuickKeywords}
+          />
+        )}
+        {quickTaskOpen && (
+          <QuickTaskModal
+            issues={quickTaskIssues}
+            onClose={() => setQuickTaskOpen(false)}
+            onSubmit={importQuickTasks}
           />
         )}
     </div>
@@ -8762,6 +9106,317 @@ function KnowledgeFilesPanel({
   )
 }
 
+function ArticleAgentStepRail({ steps }: { steps?: ArticleAgentStep[] }) {
+  const renderedSteps: ArticleAgentStep[] = steps?.length
+    ? steps
+    : articleAgentStepTemplates.map((step) => ({
+      ...step,
+      status: step.id === 'keyword' ? 'completed' : 'pending',
+      note: step.id === 'keyword' ? 'Đã nhận đầu vào.' : 'Chờ chạy.',
+    }))
+
+  return (
+    <ol className="article-agent-steps" aria-label="Quy trình Article Agent">
+      {renderedSteps.map((step, index) => (
+        <li className={`article-agent-step ${step.status}`} key={step.id}>
+          <span>{index + 1}</span>
+          <strong>{step.label}</strong>
+          <small>{articleAgentStepStatusLabel[step.status]}</small>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function ArticleAgentResultStrip({ agent }: { agent?: ArticleAgentSnapshot }) {
+  if (!agent) return null
+  return (
+    <div className="article-agent-result-strip">
+      <ArticleAgentStepRail steps={agent.steps} />
+      <div className="article-agent-result-meta">
+        <span>{agent.settings.contentType}</span>
+        <span>{agent.settings.targetLength === 'auto' ? 'Độ dài tự động' : `${articleAgentLengthWords(agent.settings.targetLength).toLocaleString('vi-VN')} từ`}</span>
+        <span>{agent.settings.brief.sourceRegion}</span>
+        {agent.settings.generateImages ? <span>Có ảnh AI</span> : <span>Không ảnh AI</span>}
+      </div>
+    </div>
+  )
+}
+
+function ArticleAgentComposerForm({
+  canEdit,
+  loading,
+  status,
+  config,
+  imageProviderLabel,
+  entities,
+  entityLinks,
+  history,
+  historyLoading,
+  onCompose,
+  onOpenHistoryItem,
+}: {
+  canEdit: boolean
+  loading: boolean
+  status: string
+  config: ArticleToolConfigStatus | null
+  imageProviderLabel: string
+  entities: SeoEntity[]
+  entityLinks: SeoEntityLink[]
+  history: ArticleToolHistoryItem[]
+  historyLoading: boolean
+  onCompose: (event: FormEvent<HTMLFormElement>) => void
+  onOpenHistoryItem: (runId: string, edit?: boolean) => void
+}) {
+  const disabled = !canEdit || loading
+  const recentHistory = history.slice(0, 3)
+  const [selectedEntityId, setSelectedEntityId] = useState(entities[0]?.id ?? '')
+  const selectedEntity = entities.find((entity) => entity.id === selectedEntityId) ?? entities[0]
+  const selectedEntityLinks = selectedEntity ? entityLinks.filter((link) => link.entityId === selectedEntity.id) : []
+  const entityBusinessInfo = articleAgentBusinessFromEntity(selectedEntity, selectedEntityLinks)
+  const liveEntityLinkCount = selectedEntityLinks.filter((link) => link.liveUrl.trim()).length
+
+  return (
+    <>
+      <div className="article-agent-shell article-agent-aio">
+        <form className="article-agent-form article-agent-aio-form" onSubmit={onCompose}>
+          <div className="article-agent-hero">
+            <div>
+              <span className="eyebrow">Viết bài SEO Google</span>
+              <strong>Article Agent</strong>
+              <small>Từ khóa, SERP, dàn ý, bài viết và tối ưu.</small>
+            </div>
+            <div className="article-agent-hero-badges">
+              <span>Claude</span>
+              <span>{imageProviderLabel}</span>
+              <span>WordPress HTML</span>
+            </div>
+          </div>
+
+          <ArticleAgentStepRail />
+
+          <section className="article-agent-section article-agent-keyword-card">
+            <header className="article-agent-section-heading">
+              <strong>1. Từ khóa</strong>
+              <small>Keyword hoặc URL đối thủ</small>
+            </header>
+            <div className="article-agent-toggle-grid">
+              <label>
+                <input name="inputMode" type="radio" value="keyword" defaultChecked disabled={disabled} />
+                <span>Từ khóa chính</span>
+              </label>
+              <label>
+                <input name="inputMode" type="radio" value="competitor" disabled={disabled} />
+                <span>URL đối thủ</span>
+              </label>
+            </div>
+            <label className="article-agent-wide">
+              <span>Từ khóa / URL</span>
+              <textarea name="keyword" placeholder="mua pháo hoa bộ công an" required disabled={disabled} />
+            </label>
+            <div className="article-agent-fields article-agent-tight-fields">
+              <label>
+                <span>Tiêu đề bài viết</span>
+                <input name="title" placeholder="AI tự đề xuất nếu để trống" disabled={disabled} />
+              </label>
+              <label>
+                <span>Nguồn</span>
+                <select name="sourceRegion" defaultValue="VN" disabled={disabled}>
+                  <option value="VN">Việt Nam</option>
+                  <option value="US">US</option>
+                  <option value="Global">Global</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="article-agent-section">
+            <header className="article-agent-section-heading">
+              <strong>2. Thiết lập bài viết</strong>
+              <small>Ngôn ngữ, persona, tone, loại content</small>
+            </header>
+            <div className="article-agent-fields">
+              <label>
+                <span>Ngôn ngữ</span>
+                <select name="language" defaultValue="vi" disabled={disabled}>
+                  <option value="vi">Tiếng Việt</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+              <label>
+                <span>Xưng hô</span>
+                <select name="persona" defaultValue="Chúng tôi" disabled={disabled}>
+                  {articleAgentPersonas.map((item) => <option value={item} key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Tone</span>
+                <select name="tone" defaultValue="Chuyên nghiệp" disabled={disabled}>
+                  {articleAgentTones.map((item) => <option value={item} key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Loại content</span>
+                <select name="contentType" defaultValue="Blog Post" disabled={disabled}>
+                  {articleAgentContentTypes.map((item) => <option value={item} key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Độ dài</span>
+                <select name="targetLength" defaultValue="auto" disabled={disabled}>
+                  {articleAgentTargetLengths.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Mode viết</span>
+                <select name="writingMode" defaultValue="Mặc định" disabled={disabled}>
+                  {articleAgentWritingModes.map((item) => <option value={item} key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Output</span>
+                <select name="presentationStyle" defaultValue="wordpress" disabled={disabled}>
+                  <option value="wordpress">WordPress HTML</option>
+                  <option value="professional">HTML preview đầy đủ</option>
+                  <option value="raw">Raw HTML</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="article-agent-section">
+            <header className="article-agent-section-heading">
+              <strong>3. Brief nâng cao</strong>
+              <small>Ngành, brand voice, yêu cầu riêng</small>
+            </header>
+            <div className="article-agent-fields">
+              <label>
+                <span>Ngành / niche</span>
+                <input name="briefNiche" placeholder="Pháo hoa, pháp lý, mua hàng chính hãng" disabled={disabled} />
+              </label>
+              <label>
+                <span>Brand voice</span>
+                <input name="briefBrandVoice" placeholder="Tin cậy, rõ ràng, cẩn trọng pháp lý" disabled={disabled} />
+              </label>
+              <label className="article-agent-wide">
+                <span>Yêu cầu bổ sung</span>
+                <textarea name="briefExtraRequirements" placeholder="Nguồn ưu tiên, góc nhìn, điểm cần tránh, CTA" disabled={disabled} />
+              </label>
+            </div>
+            <div className="article-agent-checks article-agent-switches">
+              <label><input name="briefEnabled" type="checkbox" defaultChecked disabled={disabled} /><span>Bật brief nâng cao</span></label>
+              <label><input name="briefFaq" type="checkbox" defaultChecked disabled={disabled} /><span>FAQ</span></label>
+              <label><input name="briefComparisonTable" type="checkbox" disabled={disabled} /><span>Bảng so sánh</span></label>
+              <label><input name="briefHowTo" type="checkbox" disabled={disabled} /><span>How-to steps</span></label>
+            </div>
+          </section>
+
+          <section className="article-agent-section">
+            <header className="article-agent-section-heading">
+              <strong>4. Tùy chọn</strong>
+              <small>Dàn ý, hình ảnh, internal links</small>
+            </header>
+            <div className="article-agent-checks article-agent-switches">
+              <label><input name="reviewOutline" type="checkbox" disabled={disabled} /><span>Xem lại dàn ý</span></label>
+              <label><input name="generateImages" type="checkbox" disabled={disabled} /><span>Tạo ảnh AI</span></label>
+              <label><input name="internalLinks" type="checkbox" disabled={disabled} /><span>Gợi ý internal links</span></label>
+            </div>
+          </section>
+
+          <input type="hidden" name="businessEntityId" value={entityBusinessInfo.entityId} readOnly />
+          <input type="hidden" name="businessWebsite" value={entityBusinessInfo.website} readOnly />
+          <input type="hidden" name="businessBrandName" value={entityBusinessInfo.brandName} readOnly />
+          <input type="hidden" name="businessPhone" value={entityBusinessInfo.phone} readOnly />
+          <input type="hidden" name="businessEmail" value={entityBusinessInfo.email} readOnly />
+          <input type="hidden" name="businessAddress" value={entityBusinessInfo.address} readOnly />
+          <input type="hidden" name="businessServiceArea" value={entityBusinessInfo.serviceArea} readOnly />
+          <input type="hidden" name="businessWorkingHours" value={entityBusinessInfo.workingHours} readOnly />
+          <input type="hidden" name="businessWebsiteLinks" value={entityBusinessInfo.websiteLinks} readOnly />
+          <input type="hidden" name="businessZalo" value={entityBusinessInfo.zalo} readOnly />
+          <input type="hidden" name="businessSocialLinks" value={entityBusinessInfo.socialLinks} readOnly />
+          <input type="hidden" name="businessProductDescription" value={entityBusinessInfo.productDescription} readOnly />
+          <input type="hidden" name="businessAdvantages" value={entityBusinessInfo.advantages} readOnly />
+          <input type="hidden" name="businessWebsiteContext" value={entityBusinessInfo.websiteContext} readOnly />
+
+          <div className="article-agent-actions">
+            <label className="tool-inline-check">
+              <input name="useVertexImageProvider" type="checkbox" defaultChecked={config?.imageProvider === 'vertex-ai'} disabled={disabled || !config?.vertexConfigured} />
+              <span>Dùng Vertex AI khi tạo ảnh</span>
+            </label>
+            <button type="submit" disabled={disabled}>
+              {loading ? 'Đang chạy Article Agent...' : 'Viết bài với Article Agent'}
+            </button>
+          </div>
+        </form>
+
+        <aside className="article-agent-sidecar">
+          <div className="article-agent-side-panel">
+            <span className="eyebrow">Thông tin doanh nghiệp</span>
+            <strong>Hồ sơ Entity</strong>
+            <label className="article-agent-entity-select">
+              <span>Chọn Entity</span>
+              <select value={selectedEntity?.id ?? ''} onChange={(event) => setSelectedEntityId(event.target.value)} disabled={disabled || entities.length === 0}>
+                {entities.length === 0 ? (
+                  <option value="">Chưa có Hồ sơ Entity</option>
+                ) : (
+                  entities.map((entity) => (
+                    <option value={entity.id} key={entity.id}>{entityDisplayNameOf(entity)}</option>
+                  ))
+                )}
+              </select>
+            </label>
+            {selectedEntity ? (
+              <div className="article-agent-entity-card">
+                <strong>{entityBusinessInfo.brandName}</strong>
+                <small>{entityBusinessInfo.website || 'Chưa có website'}</small>
+                <div>
+                  <span>{selectedEntity.entityType}</span>
+                  <span>{selectedEntity.status}</span>
+                  <span>{liveEntityLinkCount} link live</span>
+                </div>
+                <p>{entityBusinessInfo.productDescription || selectedEntity.industry || 'Chưa có mô tả Entity.'}</p>
+              </div>
+            ) : (
+              <div className="article-agent-entity-card muted">
+                <strong>Chưa có Hồ sơ Entity</strong>
+                <p>Tạo hồ sơ trong module SEO Entity để Article Agent lấy NAP và brand context.</p>
+              </div>
+            )}
+          </div>
+          <div className="article-agent-side-panel">
+            <span className="eyebrow">Cấu hình</span>
+            <strong>{config?.claudeConfigured ? 'Claude sẵn sàng' : 'Chưa có Claude key'}</strong>
+            <small>{config?.vertexConfigured ? 'Vertex AI khả dụng' : `${imageProviderLabel} theo cấu hình hiện tại`}</small>
+            <small>Phase hiện tại dùng composer có sẵn của SEO Ops.</small>
+          </div>
+          <div className="article-agent-side-panel">
+            <span className="eyebrow">Bài gần đây</span>
+            {historyLoading ? (
+              <small>Đang tải...</small>
+            ) : recentHistory.length === 0 ? (
+              <small>Chưa có bài trong history.</small>
+            ) : (
+              <div className="article-agent-recent-list">
+                {recentHistory.map((item) => (
+                  <button className="article-agent-recent-item" type="button" key={item.runId} onClick={() => onOpenHistoryItem(item.runId)}>
+                    <strong>{item.topic || item.runId}</strong>
+                    <small>{item.agent ? 'Article Agent' : 'Composer cũ'} · {formatDateTime(item.updatedAt || item.generatedAt)}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      {status && <p className="tool-status">{status}</p>}
+      {!canEdit && (
+        <EmptyState title="Chưa có quyền chạy công cụ" text="Admin cần cấp quyền Chỉnh sửa cho module Công cụ nếu muốn tài khoản này gọi API tạo bài." />
+      )}
+    </>
+  )
+}
+
 function ToolsModule({
   canEdit,
   loading,
@@ -8769,6 +9424,8 @@ function ToolsModule({
   result,
   config,
   regeneratingImageIndex,
+  entities,
+  entityLinks,
   history,
   historyStatus,
   historyLoading,
@@ -8791,6 +9448,8 @@ function ToolsModule({
   result: ArticleToolResult | null
   config: ArticleToolConfigStatus | null
   regeneratingImageIndex: number | null
+  entities: SeoEntity[]
+  entityLinks: SeoEntityLink[]
   history: ArticleToolHistoryItem[]
   historyStatus: string
   historyLoading: boolean
@@ -8816,60 +9475,32 @@ function ToolsModule({
   return (
     <section className="view-stack tools-module">
       <div className="metric-grid">
-        <Metric title="Module con" value="Viết bài" note="Tự động hóa quy trình tạo bài SEO" />
+        <Metric title="Module con" value="Article Agent" note="Viết bài SEO theo quy trình 5 bước" />
+        <Metric title="Phase" value="1" note="Form, composer và history metadata" />
         <Metric title="AI nội dung" value="Claude" note={config?.claudeConfigured ? 'Đã cấu hình' : 'Chưa có key'} />
-        <Metric title="AI hình ảnh" value={imageProviderLabel} note={config?.imageProvider === 'vertex-ai' ? (config?.vertexConfigured ? 'Đã cấu hình' : 'Thiếu Vertex') : (config?.geminiConfigured ? 'Đã cấu hình' : 'Chưa có key')} />
-        <Metric title="Output" value="HTML" note="Có preview và lưu file .html kèm ảnh" />
+        <Metric title="Output" value="WordPress HTML" note="Preview, copy HTML và lưu lịch sử" />
       </div>
 
-      <Panel title="Tạo bài viết SEO" action={canEdit ? `Claude Gateway + ${imageProviderLabel}` : 'Chỉ xem'}>
-        <form className="tool-compose-form" onSubmit={onCompose}>
-          <label>
-            <span>Từ khóa / chủ đề</span>
-            <textarea name="keyword" placeholder="Ví dụ: poster bóng đá Arsenal" required disabled={!canEdit || loading} />
-          </label>
-          <label>
-            <span>Dạng trình bày</span>
-            <select name="presentationStyle" defaultValue="professional" disabled={!canEdit || loading}>
-              <option value="professional">Trình bày chuyên nghiệp</option>
-              <option value="wordpress">WordPress (HTML)</option>
-              <option value="raw">Raw - Văn bản thuần</option>
-            </select>
-          </label>
-          <label>
-            <span>Đối tượng đọc</span>
-            <input name="targetAudience" placeholder="Ví dụ: khách hàng đang tìm sản phẩm, nhân viên SEO, chủ shop..." disabled={!canEdit || loading} />
-          </label>
-          <label>
-            <span>Giọng văn</span>
-            <input name="tone" placeholder="Chuyên nghiệp, dễ đọc, thuyết phục" disabled={!canEdit || loading} />
-          </label>
-          <label>
-            <span>Độ dài mục tiêu</span>
-            <select name="wordCount" defaultValue="1800" disabled={!canEdit || loading}>
-              <option value="1200">Khoảng 1.200 từ</option>
-              <option value="1800">Khoảng 1.800 từ</option>
-              <option value="2500">Khoảng 2.500 từ</option>
-              <option value="3500">Khoảng 3.500 từ</option>
-            </select>
-          </label>
-          <label className="tool-inline-check">
-            <input name="useVertexImageProvider" type="checkbox" defaultChecked={config?.imageProvider === 'vertex-ai'} disabled={!canEdit || loading || !config?.vertexConfigured} />
-            <span>Tạo ảnh bằng Vertex AI</span>
-          </label>
-          <button type="submit" disabled={!canEdit || loading}>
-            {loading ? 'Đang viết bài...' : 'Tạo bài viết SEO'}
-          </button>
-        </form>
-        {status && <p className="tool-status">{status}</p>}
-        {!canEdit && (
-          <EmptyState title="Chưa có quyền chạy công cụ" text="Admin cần cấp quyền Chỉnh sửa cho module Công cụ nếu muốn tài khoản này gọi API tạo bài." />
-        )}
+      <Panel title="Article Agent - Viết bài SEO Google" action={canEdit ? `Claude Gateway + ${imageProviderLabel}` : 'Chỉ xem'}>
+        <ArticleAgentComposerForm
+          canEdit={canEdit}
+          loading={loading}
+          status={status}
+          config={config}
+          imageProviderLabel={imageProviderLabel}
+          entities={entities}
+          entityLinks={entityLinks}
+          history={history}
+          historyLoading={historyLoading}
+          onCompose={onCompose}
+          onOpenHistoryItem={onOpenHistoryItem}
+        />
       </Panel>
 
       {result && (
-        <Panel title="Preview bài viết HTML" action={presentationLabel(result.presentationStyle)}>
+        <Panel title="Kết quả Article Agent" action={presentationLabel(result.presentationStyle)}>
           <div className="tool-result-grid">
+            <ArticleAgentResultStrip agent={result.agent} />
             <div className="tool-result-actions">
               <a className="secondary-button" href={result.htmlUrl} target="_blank" rel="noreferrer">
                 Mở file HTML
@@ -8941,8 +9572,8 @@ function ToolsModule({
               <article className="tool-history-card" key={item.runId}>
                 <div>
                   <strong>{item.topic || item.runId}</strong>
-                  <small>{presentationLabel(item.presentationStyle)} · {formatDateTime(item.updatedAt || item.generatedAt)}</small>
-                  <small>{item.images?.length || 0} ảnh · {item.imageErrors?.length || 0} ảnh lỗi</small>
+                  <small>{item.agent ? 'Article Agent' : presentationLabel(item.presentationStyle)} · {formatDateTime(item.updatedAt || item.generatedAt)}</small>
+                  <small>{item.agent?.settings.contentType || presentationLabel(item.presentationStyle)} · {item.images?.length || 0} ảnh · {item.imageErrors?.length || 0} ảnh lỗi</small>
                 </div>
                 <div className="tool-result-actions">
                   <button className="secondary-button" type="button" onClick={() => onOpenHistoryItem(item.runId)}>Mở lại</button>
@@ -11456,6 +12087,56 @@ function QuickKeywordModal({
   )
 }
 
+function QuickTaskModal({
+  issues,
+  onClose,
+  onSubmit,
+}: {
+  issues: QuickTaskIssue[]
+  onClose: () => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="quick-keyword-modal quick-task-modal" role="dialog" aria-modal="true" aria-labelledby="quick-task-title">
+        <div className="panel-head">
+          <h2 id="quick-task-title">Nhập nhanh công việc</h2>
+          <button className="secondary-button" type="button" onClick={onClose}>Đóng</button>
+        </div>
+        <form className="quick-keyword-form quick-task-form" onSubmit={onSubmit}>
+          <div className="quick-task-syntax">
+            <span>Cú pháp chuẩn mỗi dòng</span>
+            <code>{quickTaskSyntax}</code>
+          </div>
+          <label>
+            <span>Mỗi dòng một công việc, phân tách bằng dấu |</span>
+            <textarea
+              name="quickTasks"
+              autoFocus
+              required
+              rows={12}
+              placeholder={'Tối ưu tốc độ trang dịch vụ | anh@agency.vn | 2026-06-25 20:00 | Phát triển & Bảo trì | 500000 | Ưu tiên mobile | HD-00000001\nSửa lỗi schema LocalBusiness | Trần Bảo Long | 2026-06-26T17:30 | SEO Entity | | Kiểm tra JSON-LD | https://example.com/guide'}
+            />
+          </label>
+          <p>Nhân sự có thể nhập bằng tên, email hoặc id. Deadline nhận YYYY-MM-DD HH:mm, YYYY-MM-DDTHH:mm hoặc chỉ YYYY-MM-DD.</p>
+          <p>Danh mục hợp lệ: {taskSalaryModules.join(', ')}. Có thể bỏ trống lương để dùng mức mặc định của danh mục nếu đã cấu hình.</p>
+          {issues.length > 0 && (
+            <div className="quick-keyword-issues" role="alert">
+              {issues.map((issue) => (
+                <span key={`${issue.line}-${issue.text}`}>Dòng {issue.line}: {issue.text}</span>
+              ))}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button className="secondary-button" type="button" onClick={onClose}>Hủy</button>
+            <button type="submit">Nhập công việc</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function KeywordBuilderModal({
   keyword,
   onClose,
@@ -11496,6 +12177,23 @@ function KeywordBuilderModal({
         </form>
       </section>
     </div>
+  )
+}
+
+function TaskGuideLine({ guide }: { guide?: string }) {
+  const value = guide?.trim()
+  if (!value) return null
+  return (
+    <small className="task-note task-guide">
+      Hướng dẫn:{' '}
+      {guideReferenceIsUrl(value) ? (
+        <a className="task-guide-link" href={value} target="_blank" rel="noreferrer">
+          {value}
+        </a>
+      ) : (
+        value
+      )}
+    </small>
   )
 }
 
@@ -11601,6 +12299,9 @@ function EmployeeOverview({
                     <strong>{task.title}</strong>
                     <span>{projects.find((project) => project.id === task.projectId)?.name ?? 'Dự án đã xóa'}</span>
                     <small>Giao: {formatDateTime(task.assignedAt)} · Hạn: {formatDateTime(taskDeadline(task))}</small>
+                    {task.salaryModule && <small>Danh mục: {task.salaryModule}</small>}
+                    {task.note && <small>Ghi chú: {task.note}</small>}
+                    <TaskGuideLine guide={task.guide} />
                     {deadlineBadge && <b className={`task-deadline-badge ${deadlineBadge.className}`}>{deadlineBadge.label}</b>}
                     {task.rejectionReason && <small>Từ chối: {task.rejectionReason}</small>}
                     {task.revisionNote && <small>Cần chỉnh sửa: {task.revisionNote}</small>}
@@ -11714,6 +12415,8 @@ function TaskTable({
                 ) : (
                   <strong className="task-table-title">{task.title}</strong>
                 )}
+                {task.note && <small className="task-note task-detail-note">Ghi chú: {task.note}</small>}
+                <TaskGuideLine guide={task.guide} />
               </td>
               {!compact && <td>{projects.find((project) => project.id === task.projectId)?.name}</td>}
               <td>
@@ -11748,7 +12451,7 @@ function TaskTable({
               )}
               <td>
                 <strong>{currency.format(task.taskSalary ?? 0)}</strong>
-                {task.salaryModule && <small className="task-note task-module">{task.salaryModule}</small>}
+                {task.salaryModule && <small className="task-note task-module">Danh mục: {task.salaryModule}</small>}
               </td>
               <td>
                 <select className="status-select" value={status} onChange={(event) => onStatus(task.id, event.target.value as TaskStatus)} disabled={!canEdit || status === 'Đã hủy'}>

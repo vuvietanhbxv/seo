@@ -547,12 +547,59 @@ function publicArticleToolLogs() {
   return Array.isArray(storage.articleComposerLogs) ? storage.articleComposerLogs.slice(0, 80) : []
 }
 
+const articleAgentStepLabels = {
+  keyword: 'Tu khoa',
+  serp: 'SERP',
+  outline: 'Dan y',
+  draft: 'Viet bai',
+  optimize: 'Toi uu',
+}
+
+function sanitizeArticleAgentSnapshot(value) {
+  if (!value || typeof value !== 'object') return undefined
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return undefined
+  }
+}
+
+function completeArticleAgentSnapshot(value, updatedAt) {
+  const snapshot = sanitizeArticleAgentSnapshot(value)
+  if (!snapshot) return undefined
+  const currentSteps = Array.isArray(snapshot.steps) ? snapshot.steps : []
+  const phaseNotes = {
+    keyword: 'Da nhan cau hinh dau vao.',
+    serp: 'Phase 1 dung composer hien tai; SERP that se gan o Phase 2.',
+    outline: 'Dan y duoc Claude xu ly trong composer hien tai.',
+    draft: 'Da tao ban nhap HTML bang composer hien tai.',
+    optimize: 'Da luu ket qua va metadata; score/schema/social se gan o cac phase tiep theo.',
+  }
+  const steps = Object.keys(articleAgentStepLabels).map((id) => {
+    const current = currentSteps.find((item) => item && item.id === id) || {}
+    return {
+      id,
+      label: current.label || articleAgentStepLabels[id],
+      status: 'completed',
+      note: current.note || phaseNotes[id],
+    }
+  })
+  return {
+    ...snapshot,
+    mode: 'agent',
+    currentStep: 'optimize',
+    steps,
+    updatedAt,
+  }
+}
+
 function articleHistoryRecord(result) {
   return {
     runId: result.runId,
     topic: result.topic,
     presentationStyle: result.presentationStyle,
     imageProvider: result.imageProvider,
+    agent: sanitizeArticleAgentSnapshot(result.agent),
     htmlUrl: result.htmlUrl,
     sourceUrl: result.sourceUrl,
     outputDir: result.outputDir,
@@ -894,6 +941,7 @@ function buildSeoArticlePrompt(payload) {
   const tone = String(payload.tone || 'chuyen nghiep, ro rang, de doc').trim()
   const wordCount = Math.max(800, Math.min(6000, Number(payload.wordCount) || 1800))
   const presentationStyle = normalizePresentationStyle(payload.presentationStyle)
+  const shouldGenerateImages = payload.generateImages !== false && payload.agent?.settings?.generateImages !== false
   const presentationPrompt = (() => {
     if (presentationStyle === 'wordpress') {
       return [
@@ -933,10 +981,16 @@ function buildSeoArticlePrompt(payload) {
     '- Viet bang tieng Viet tu nhien, co H1, muc luc neu phu hop, cac H2/H3 ro rang.',
     '- Toi uu title, meta description, intent tim kiem, internal link goi y va FAQ neu phu hop.',
     '- Khong boc noi dung trong code block.',
-    '- NGAY SAU MOI the <h2>, BAT BUOC chen dung mot dong rieng theo cu phap chinh xac:',
-    '[IMAGE_PROMPT: <Mo ta chi tiet bang tieng Anh de tao anh>]',
-    '- Mo ta anh phai bang tieng Anh, cu the ve boi canh, chu the, phong cach, anh sang, ti le khung hinh; khong chen chu noi tren anh neu khong can.',
-    '- Khong de IMAGE_PROMPT ben trong thuoc tinh HTML.',
+    ...(shouldGenerateImages
+      ? [
+        '- NGAY SAU MOI the <h2>, BAT BUOC chen dung mot dong rieng theo cu phap chinh xac:',
+        '[IMAGE_PROMPT: <Mo ta chi tiet bang tieng Anh de tao anh>]',
+        '- Mo ta anh phai bang tieng Anh, cu the ve boi canh, chu the, phong cach, anh sang, ti le khung hinh; khong chen chu noi tren anh neu khong can.',
+        '- Khong de IMAGE_PROMPT ben trong thuoc tinh HTML.',
+      ]
+      : [
+        '- Khong chen IMAGE_PROMPT, khong chen URL anh ngoai va khong tao placeholder anh.',
+      ]),
   ].join('\n')
 }
 
@@ -1239,17 +1293,18 @@ async function composeSeoArticle(payload) {
   if (!keyword) throw new Error('Vui long nhap tu khoa hoac chu de can soan bai.')
   const presentationStyle = normalizePresentationStyle(payload.presentationStyle)
   const config = applyImageProviderOverride(articleComposerConfig(), payload.imageProviderOverride)
+  const shouldGenerateImages = payload.generateImages !== false && payload.agent?.settings?.generateImages !== false
   if (!config.claudeApiKey) throw new Error('Chua cau hinh Claude API key trong Cong cu -> Viet bai.')
-  if (!isArticleImageConfigured(config)) {
+  if (shouldGenerateImages && !isArticleImageConfigured(config)) {
     throw new Error(config.imageProvider === 'vertex-ai'
       ? 'Chua cau hinh Vertex AI Project ID, Region hoac Service Account JSON trong Cong cu -> Viet bai.'
       : 'Chua cau hinh Google AI API key trong Cong cu -> Viet bai.')
   }
 
   // Buoc 1-2: goi Claude de tao bai HTML kem cac marker IMAGE_PROMPT.
-  const claudeHtml = await createClaudeArticleHtml({ ...payload, keyword, presentationStyle }, config)
+  const claudeHtml = await createClaudeArticleHtml({ ...payload, keyword, presentationStyle, generateImages: shouldGenerateImages }, config)
   const markers = extractImagePromptMarkers(claudeHtml)
-  if (!markers.length) throw new Error('Claude khong tra ve IMAGE_PROMPT nao. Hay thu lai de tao bai dung cau truc anh.')
+  if (shouldGenerateImages && !markers.length) throw new Error('Claude khong tra ve IMAGE_PROMPT nao. Hay thu lai de tao bai dung cau truc anh.')
 
   const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(4).toString('hex')}-${slugifyFileName(keyword)}`
   const runDir = path.join(toolOutputDir, runId)
@@ -1260,23 +1315,25 @@ async function composeSeoArticle(payload) {
   const images = []
   const imagesByIndex = []
   const imageErrors = []
-  for (let index = 0; index < markers.length; index += 1) {
-    const marker = markers[index]
-    try {
-      const image = await createArticleImage(marker.prompt, index, imagesDir, config)
-      const relativePath = `images/${image.fileName}`
-      images.push({
-        index,
-        prompt: marker.prompt,
-        filePath: image.filePath,
-        relativePath,
-        fileUrl: safeToolPublicUrl(`${runId}/${relativePath}`),
-        mimeType: image.mimeType,
-        imageProvider: config.imageProvider,
-      })
-      imagesByIndex[index] = images[images.length - 1]
-    } catch (error) {
-      imageErrors.push({ index, prompt: marker.prompt, message: error.message || 'Khong tao duoc anh.', imageProvider: config.imageProvider })
+  if (shouldGenerateImages) {
+    for (let index = 0; index < markers.length; index += 1) {
+      const marker = markers[index]
+      try {
+        const image = await createArticleImage(marker.prompt, index, imagesDir, config)
+        const relativePath = `images/${image.fileName}`
+        images.push({
+          index,
+          prompt: marker.prompt,
+          filePath: image.filePath,
+          relativePath,
+          fileUrl: safeToolPublicUrl(`${runId}/${relativePath}`),
+          mimeType: image.mimeType,
+          imageProvider: config.imageProvider,
+        })
+        imagesByIndex[index] = images[images.length - 1]
+      } catch (error) {
+        imageErrors.push({ index, prompt: marker.prompt, message: error.message || 'Khong tao duoc anh.', imageProvider: config.imageProvider })
+      }
     }
   }
 
@@ -1284,9 +1341,9 @@ async function composeSeoArticle(payload) {
   for (let index = 0; index < markers.length; index += 1) {
     const image = imagesByIndex[index]
     const fallback = imageErrors.find((item) => item.index === index)
-    const replacement = image
-      ? generatedImageFigure(image, index)
-      : failedImagePlaceholder(fallback, index)
+    const replacement = shouldGenerateImages
+      ? (image ? generatedImageFigure(image, index) : failedImagePlaceholder(fallback, index))
+      : ''
     finalHtml = finalHtml.replace(markers[index].marker, replacement)
   }
 
@@ -1310,11 +1367,14 @@ ${finalHtml}
   fs.writeFileSync(htmlPath, finalHtml, 'utf8')
   fs.writeFileSync(sourcePath, finalHtml, 'utf8')
 
+  const generatedAt = new Date().toISOString()
+  const agent = completeArticleAgentSnapshot(payload.agent, generatedAt)
   const result = {
     runId,
     topic: keyword,
     presentationStyle,
-    imageProvider: config.imageProvider,
+    imageProvider: shouldGenerateImages ? config.imageProvider : undefined,
+    agent,
     html: finalHtml,
     previewHtml: finalHtml,
     htmlPath,
@@ -1324,7 +1384,7 @@ ${finalHtml}
     outputDir: runDir,
     images,
     imageErrors,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
   }
   upsertArticleHistory(result)
   return result

@@ -22,6 +22,7 @@ npm.cmd run build
 npm.cmd run build:seo-domain
 npm.cmd run build:seo-ops
 npm.cmd run publish:plesk
+npm.cmd run publish:cloudpanel
 npm.cmd start
 npm.cmd run lint
 ```
@@ -30,6 +31,32 @@ App local mac dinh:
 
 ```text
 http://127.0.0.1:5173/
+```
+
+## Deploy CloudPanel seoops.sumu.id.vn
+
+Huong dan CloudPanel moi nam tai:
+
+```text
+deploy/cloudpanel/README-CLOUDPANEL.md
+```
+
+Thong tin host moi:
+
+```text
+Domain: seoops.sumu.id.vn
+Application Root: /home/seoops/htdocs/seoops.sumu.id.vn
+Site user: seoops
+Node.js: Node 22 LTS
+App Port: 3000
+Startup File: app.js
+Storage runtime: /home/seoops/seo-ops-storage
+```
+
+Build/publish bundle production cho CloudPanel:
+
+```powershell
+npm.cmd run publish:cloudpanel
 ```
 
 ## Deploy seo.cuahangphaohoa.shop

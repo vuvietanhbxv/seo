@@ -10,6 +10,7 @@
     "build:seo-ops": "node -e \"process.env.VITE_BASE_PATH='/seo-ops/'; require('child_process').execSync('npm run build',{stdio:'inherit'})\"",
     "seed:clean": "node scripts/create-clean-seed.cjs",
     "publish:plesk": "npm run seed:clean && npm run build:seo-domain && node scripts/publish-plesk.cjs",
+    "publish:cloudpanel": "npm run publish:plesk",
     "open-seo:install": "cd open-seo && pnpm install --frozen-lockfile",
     "open-seo:migrate": "cd open-seo && pnpm run db:migrate:local",
     "open-seo:dev": "cd open-seo && pnpm exec vite dev --host 127.0.0.1 --strictPort",
