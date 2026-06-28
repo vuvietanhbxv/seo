@@ -4,6 +4,7 @@ const path = require('path')
 const crypto = require('crypto')
 const { GoogleAuth } = require('google-auth-library')
 const { createMcpHandler } = require('./seo-ops-mcp.cjs')
+const { createStorage, normalizeStorageDriver } = require('./storage/index.cjs')
 
 const rootDir = path.resolve(__dirname, '..')
 loadDotEnvFile(path.join(rootDir, '.env'))
@@ -54,6 +55,7 @@ const vertexCredentialsPath = process.env.VERTEX_AI_CREDENTIALS_PATH || process.
 const basePath = normalizeBasePath(process.env.SEO_OPS_BASE_PATH || '/')
 const productionMode = process.env.NODE_ENV === 'production'
 const maxDbBackups = Math.max(0, Number(process.env.SEO_OPS_DB_BACKUPS || 50))
+const storageDriver = normalizeStorageDriver(process.env.SEO_OPS_STORAGE_DRIVER)
 const googleScopes = [
   'https://www.googleapis.com/auth/webmasters.readonly',
   'https://www.googleapis.com/auth/analytics.readonly',
@@ -137,22 +139,6 @@ function stripBasePath(pathname) {
   if (pathname === basePath) return '/'
   if (pathname.startsWith(`${basePath}/`)) return pathname.slice(basePath.length)
   return null
-}
-
-function ensureDb() {
-  fs.mkdirSync(dbDir, { recursive: true })
-  if (!fs.existsSync(dbPath)) {
-    const seed = fs.existsSync(seedPath)
-      ? JSON.parse(fs.readFileSync(seedPath, 'utf8'))
-      : { data: { projects: [], keywords: [], tasks: [], transactions: [], users: [] } }
-    const data = seed.data || seed
-    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2))
-  }
-}
-
-function readDb() {
-  ensureDb()
-  return JSON.parse(fs.readFileSync(dbPath, 'utf8'))
 }
 
 function dataCounts(data) {
@@ -266,32 +252,24 @@ function assertSafeDbWrite(currentData, nextData, options = {}) {
   }
 }
 
-function backupDb() {
-  if (!maxDbBackups || !fs.existsSync(dbPath)) return
-  fs.mkdirSync(dbBackupDir, { recursive: true })
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  fs.copyFileSync(dbPath, path.join(dbBackupDir, `seo-ops-data-${timestamp}.json`))
-  const backups = fs.readdirSync(dbBackupDir)
-    .filter((entry) => entry.startsWith('seo-ops-data-') && entry.endsWith('.json'))
-    .map((entry) => {
-      const fullPath = path.join(dbBackupDir, entry)
-      return { fullPath, mtimeMs: fs.statSync(fullPath).mtimeMs }
-    })
-    .sort((left, right) => right.mtimeMs - left.mtimeMs)
-  for (const backup of backups.slice(maxDbBackups)) {
-    fs.rmSync(backup.fullPath, { force: true })
-  }
-}
-
-function writeDb(data, options = {}) {
-  ensureDb()
-  const currentData = fs.existsSync(dbPath) ? JSON.parse(fs.readFileSync(dbPath, 'utf8')) : null
-  assertSafeDbWrite(currentData, data, options)
-  backupDb()
-  const tempPath = `${dbPath}.tmp`
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2))
-  fs.renameSync(tempPath, dbPath)
-}
+const storage = createStorage({
+  storageDriver,
+  dbDir,
+  dbPath,
+  dbBackupDir,
+  seedPath,
+  maxDbBackups,
+  assertSafeDbWrite,
+  dataCounts,
+  isInsideApp,
+  legacyDocumentPaths: {
+    'tool-config': toolConfigPath,
+    'google-oauth': googleOAuthPath,
+  },
+})
+const initStorage = () => storage.initStorage()
+const readDb = () => storage.readDb()
+const writeDb = (data, options = {}) => storage.writeDb(data, options)
 
 const taskDeadlineDayMs = 24 * 60 * 60 * 1000
 
@@ -412,37 +390,27 @@ function applyTaskDeadlineAutomation(data, now = new Date()) {
   }
 }
 
-function runTaskDeadlineAutomation() {
-  const currentData = readDb()
+async function runTaskDeadlineAutomation() {
+  const currentData = await readDb()
   const result = applyTaskDeadlineAutomation(currentData)
-  if (result.changed) writeDb(result.data)
+  if (result.changed) await writeDb(result.data)
 }
 
-function readGoogleConnections() {
-  ensureDb()
-  if (!fs.existsSync(googleOAuthPath)) return { connections: {} }
-  return JSON.parse(fs.readFileSync(googleOAuthPath, 'utf8'))
+async function readGoogleConnections() {
+  return storage.readJsonDocument('google-oauth', { connections: {} })
 }
 
-function writeGoogleConnections(data) {
-  ensureDb()
-  const tempPath = `${googleOAuthPath}.tmp`
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2))
-  fs.renameSync(tempPath, googleOAuthPath)
+async function writeGoogleConnections(data) {
+  await storage.writeJsonDocument('google-oauth', data)
 }
 
-function readToolConfig() {
-  ensureDb()
-  if (!fs.existsSync(toolConfigPath)) return { articleComposer: {} }
-  const parsed = JSON.parse(fs.readFileSync(toolConfigPath, 'utf8'))
+async function readToolConfig() {
+  const parsed = await storage.readJsonDocument('tool-config', { articleComposer: {} })
   return parsed && typeof parsed === 'object' ? parsed : { articleComposer: {} }
 }
 
-function writeToolConfig(data) {
-  ensureDb()
-  const tempPath = `${toolConfigPath}.tmp`
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2))
-  fs.renameSync(tempPath, toolConfigPath)
+async function writeToolConfig(data) {
+  await storage.writeJsonDocument('tool-config', data)
 }
 
 function normalizeArticleImageProvider(value) {
@@ -485,8 +453,8 @@ function applyImageProviderOverride(config, value) {
   return provider ? { ...config, imageProvider: normalizeArticleImageProvider(provider) } : config
 }
 
-function articleComposerConfig() {
-  const stored = readToolConfig().articleComposer || {}
+async function articleComposerConfig() {
+  const stored = (await readToolConfig()).articleComposer || {}
   const storedVertexCredentialsPath = resolveMaybePath(stored.vertexCredentialsPath)
   const envVertexCredentialsPath = resolveMaybePath(vertexCredentialsPath)
   const activeVertexCredentialsPath = storedVertexCredentialsPath || envVertexCredentialsPath
@@ -514,8 +482,8 @@ function articleComposerConfig() {
   }
 }
 
-function publicArticleComposerConfig() {
-  const config = articleComposerConfig()
+async function publicArticleComposerConfig() {
+  const config = await articleComposerConfig()
   return {
     articleComposerConfigured: Boolean(config.claudeApiKey && isArticleImageConfigured(config)),
     claudeConfigured: Boolean(config.claudeApiKey),
@@ -538,13 +506,13 @@ function publicArticleComposerConfig() {
     envClaudeConfigured: config.envClaudeConfigured,
     envGeminiConfigured: config.envGeminiConfigured,
     envVertexCredentialsConfigured: config.envVertexCredentialsConfigured,
-    logs: publicArticleToolLogs(),
+    logs: await publicArticleToolLogs(),
   }
 }
 
-function publicArticleToolLogs() {
-  const storage = readToolConfig()
-  return Array.isArray(storage.articleComposerLogs) ? storage.articleComposerLogs.slice(0, 80) : []
+async function publicArticleToolLogs() {
+  const storageData = await readToolConfig()
+  return Array.isArray(storageData.articleComposerLogs) ? storageData.articleComposerLogs.slice(0, 80) : []
 }
 
 const articleAgentStepLabels = {
@@ -610,34 +578,34 @@ function articleHistoryRecord(result) {
   }
 }
 
-function publicArticleHistory() {
-  const storage = readToolConfig()
-  const history = Array.isArray(storage.articleComposerHistory) ? storage.articleComposerHistory : []
+async function publicArticleHistory() {
+  const storageData = await readToolConfig()
+  const history = Array.isArray(storageData.articleComposerHistory) ? storageData.articleComposerHistory : []
   return history.slice(0, 120)
 }
 
-function upsertArticleHistory(result) {
-  const storage = readToolConfig()
-  const history = Array.isArray(storage.articleComposerHistory) ? storage.articleComposerHistory : []
+async function upsertArticleHistory(result) {
+  const storageData = await readToolConfig()
+  const history = Array.isArray(storageData.articleComposerHistory) ? storageData.articleComposerHistory : []
   const record = articleHistoryRecord(result)
-  storage.articleComposerHistory = [record, ...history.filter((item) => item.runId !== record.runId)].slice(0, 150)
-  writeToolConfig(storage)
+  storageData.articleComposerHistory = [record, ...history.filter((item) => item.runId !== record.runId)].slice(0, 150)
+  await writeToolConfig(storageData)
   return record
 }
 
-function updateArticleHistoryRecord(runId, updater) {
-  const storage = readToolConfig()
-  const history = Array.isArray(storage.articleComposerHistory) ? storage.articleComposerHistory : []
+async function updateArticleHistoryRecord(runId, updater) {
+  const storageData = await readToolConfig()
+  const history = Array.isArray(storageData.articleComposerHistory) ? storageData.articleComposerHistory : []
   const current = history.find((item) => item.runId === runId) || { runId, generatedAt: new Date().toISOString() }
   const next = { ...current, ...updater(current), updatedAt: new Date().toISOString() }
-  storage.articleComposerHistory = [next, ...history.filter((item) => item.runId !== runId)].slice(0, 150)
-  writeToolConfig(storage)
+  storageData.articleComposerHistory = [next, ...history.filter((item) => item.runId !== runId)].slice(0, 150)
+  await writeToolConfig(storageData)
   return next
 }
 
-function appendArticleToolLog(entry) {
-  const storage = readToolConfig()
-  const logs = Array.isArray(storage.articleComposerLogs) ? storage.articleComposerLogs : []
+async function appendArticleToolLog(entry) {
+  const storageData = await readToolConfig()
+  const logs = Array.isArray(storageData.articleComposerLogs) ? storageData.articleComposerLogs : []
   const log = {
     id: crypto.randomBytes(8).toString('hex'),
     at: new Date().toISOString(),
@@ -646,14 +614,14 @@ function appendArticleToolLog(entry) {
     message: entry.message || '',
     details: Array.isArray(entry.details) ? entry.details : [],
   }
-  storage.articleComposerLogs = [log, ...logs].slice(0, 100)
-  writeToolConfig(storage)
+  storageData.articleComposerLogs = [log, ...logs].slice(0, 100)
+  await writeToolConfig(storageData)
   return log
 }
 
-function updateArticleComposerConfig(payload) {
-  const storage = readToolConfig()
-  const next = { ...(storage.articleComposer || {}) }
+async function updateArticleComposerConfig(payload) {
+  const storageData = await readToolConfig()
+  const next = { ...(storageData.articleComposer || {}) }
   for (const field of ['claudeGatewayBaseUrl', 'claudeGatewayAuthHeader', 'claudeModel', 'geminiImageModel', 'geminiApiBaseUrl', 'vertexProjectId', 'vertexRegion', 'vertexImageModel']) {
     if (Object.prototype.hasOwnProperty.call(payload, field)) {
       next[field] = field === 'geminiImageModel' || field === 'vertexImageModel'
@@ -672,7 +640,7 @@ function updateArticleComposerConfig(payload) {
   if (String(payload.vertexServiceAccountJson || '').trim()) {
     const parsed = JSON.parse(String(payload.vertexServiceAccountJson))
     if (!parsed.client_email || !parsed.private_key) throw new Error('Service Account JSON không hợp lệ: thiếu client_email hoặc private_key.')
-    ensureDb()
+    fs.mkdirSync(dbDir, { recursive: true })
     fs.writeFileSync(toolVertexCredentialsPath, JSON.stringify(parsed, null, 2), { mode: 0o600 })
     next.vertexCredentialsPath = toolVertexCredentialsPath
     if (parsed.project_id && (!next.vertexProjectId || /^\d{16,}$/.test(String(next.vertexProjectId)))) next.vertexProjectId = parsed.project_id
@@ -686,9 +654,9 @@ function updateArticleComposerConfig(payload) {
     delete next.vertexCredentialsPath
   }
   next.updatedAt = new Date().toISOString()
-  storage.articleComposer = next
-  writeToolConfig(storage)
-  appendArticleToolLog({
+  storageData.articleComposer = next
+  await writeToolConfig(storageData)
+  await appendArticleToolLog({
     action: 'config',
     status: 'success',
     message: 'Đã lưu cấu hình công cụ Viết bài.',
@@ -717,12 +685,13 @@ function decryptGoogleToken(value) {
   return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64url')), decipher.final()]).toString('utf8')
 }
 
-function hasProject(projectId) {
-  return Boolean(projectId && readDb().projects.some((project) => project.id === projectId))
+async function hasProject(projectId) {
+  const data = await readDb()
+  return Boolean(projectId && data.projects.some((project) => project.id === projectId))
 }
 
-function connectionForProject(projectId) {
-  return readGoogleConnections().connections?.[projectId]
+async function connectionForProject(projectId) {
+  return (await readGoogleConnections()).connections?.[projectId]
 }
 
 function requestOrigin(req) {
@@ -788,7 +757,7 @@ async function googleTokenRequest(parameters) {
 }
 
 async function googleAccessToken(projectId) {
-  const connection = connectionForProject(projectId)
+  const connection = await connectionForProject(projectId)
   if (!connection?.refreshToken) throw new Error('Dự án chưa kết nối tài khoản Google.')
   const refreshToken = decryptGoogleToken(connection.refreshToken)
   const result = await googleTokenRequest({
@@ -1233,7 +1202,7 @@ async function testVertexArticleConnection(config) {
 }
 
 async function testArticleComposerConnectionLegacy() {
-  const config = articleComposerConfig()
+  const config = await articleComposerConfig()
   const details = []
   for (const test of [
     { provider: 'Claude Gateway', run: () => testClaudeArticleConnection(config) },
@@ -1249,17 +1218,17 @@ async function testArticleComposerConnectionLegacy() {
     }
   }
   const ok = details.every((item) => item.ok)
-  const log = appendArticleToolLog({
+  const log = await appendArticleToolLog({
     action: 'connection-test',
     status: ok ? 'success' : 'error',
     message: ok ? 'Kiểm tra kết nối Viết bài thành công.' : 'Kiểm tra kết nối Viết bài có lỗi.',
     details,
   })
-  return { ok, details, log, config: publicArticleComposerConfig() }
+  return { ok, details, log, config: await publicArticleComposerConfig() }
 }
 
 async function testArticleComposerConnection(provider = 'all') {
-  const config = articleComposerConfig()
+  const config = await articleComposerConfig()
   const tests = [
     { key: 'claude', provider: 'Claude Gateway', run: () => testClaudeArticleConnection(config) },
     { key: 'gemini', provider: 'Imagen Image', run: () => testGeminiArticleConnection(config) },
@@ -1279,20 +1248,20 @@ async function testArticleComposerConnection(provider = 'all') {
   }
   const ok = details.length > 0 && details.every((item) => item.ok)
   const label = provider === 'all' ? 'Viết bài' : provider === 'claude' ? 'Claude' : provider === 'vertex' ? 'Vertex AI' : 'Imagen'
-  const log = appendArticleToolLog({
+  const log = await appendArticleToolLog({
     action: provider === 'all' ? 'connection-test' : `connection-test-${provider}`,
     status: ok ? 'success' : 'error',
     message: ok ? `Kiểm tra ${label} thành công.` : `Kiểm tra ${label} có lỗi.`,
     details,
   })
-  return { ok, details, log, config: publicArticleComposerConfig() }
+  return { ok, details, log, config: await publicArticleComposerConfig() }
 }
 
 async function composeSeoArticle(payload) {
   const keyword = String(payload.keyword || payload.topic || '').trim()
   if (!keyword) throw new Error('Vui long nhap tu khoa hoac chu de can soan bai.')
   const presentationStyle = normalizePresentationStyle(payload.presentationStyle)
-  const config = applyImageProviderOverride(articleComposerConfig(), payload.imageProviderOverride)
+  const config = applyImageProviderOverride(await articleComposerConfig(), payload.imageProviderOverride)
   const shouldGenerateImages = payload.generateImages !== false && payload.agent?.settings?.generateImages !== false
   if (!config.claudeApiKey) throw new Error('Chua cau hinh Claude API key trong Cong cu -> Viet bai.')
   if (shouldGenerateImages && !isArticleImageConfigured(config)) {
@@ -1386,7 +1355,7 @@ ${finalHtml}
     imageErrors,
     generatedAt,
   }
-  upsertArticleHistory(result)
+  await upsertArticleHistory(result)
   return result
 }
 
@@ -1397,7 +1366,7 @@ async function regenerateArticleImage(payload) {
   if (!prompt) throw new Error('Thieu prompt tao anh.')
   if (!Number.isInteger(index) || index < 0) throw new Error('Chi so anh khong hop le.')
 
-  const config = applyImageProviderOverride(articleComposerConfig(), payload.imageProviderOverride)
+  const config = applyImageProviderOverride(await articleComposerConfig(), payload.imageProviderOverride)
   if (!isArticleImageConfigured(config)) {
     throw new Error(config.imageProvider === 'vertex-ai'
       ? 'Chua cau hinh Vertex AI Project ID, Region hoac Service Account JSON trong Cong cu -> Viet bai.'
@@ -1437,7 +1406,7 @@ async function regenerateArticleImage(payload) {
   fs.writeFileSync(htmlPath, finalHtml, 'utf8')
   fs.writeFileSync(sourcePath, finalHtml, 'utf8')
 
-  const record = updateArticleHistoryRecord(runId, (current) => ({
+  const record = await updateArticleHistoryRecord(runId, (current) => ({
     images: [...(Array.isArray(current.images) ? current.images : []).filter((item) => Number(item.index ?? -1) !== index), imageResult].sort((a, b) => Number(a.index ?? 0) - Number(b.index ?? 0)),
     imageErrors: (Array.isArray(current.imageErrors) ? current.imageErrors : []).filter((item) => Number(item.index ?? -1) !== index),
   }))
@@ -1460,7 +1429,7 @@ async function regenerateArticleImage(payload) {
   }
 }
 
-function loadArticleHistoryItem(runIdValue) {
+async function loadArticleHistoryItem(runIdValue) {
   const runId = safeRunId(runIdValue)
   const runDir = path.resolve(path.join(toolOutputDir, runId))
   if (!isInsideDirectory(toolOutputDir, runDir) || !fs.existsSync(runDir) || !fs.statSync(runDir).isDirectory()) {
@@ -1470,7 +1439,7 @@ function loadArticleHistoryItem(runIdValue) {
   const sourcePath = path.join(runDir, 'article-source.txt')
   if (!fs.existsSync(htmlPath)) throw new Error('Khong tim thay file HTML bai viet.')
   const html = fs.readFileSync(htmlPath, 'utf8')
-  const record = publicArticleHistory().find((item) => item.runId === runId) || {}
+  const record = (await publicArticleHistory()).find((item) => item.runId === runId) || {}
   return {
     runId,
     topic: record.topic || runId,
@@ -1489,7 +1458,7 @@ function loadArticleHistoryItem(runIdValue) {
   }
 }
 
-function updateArticleHistoryHtml(payload) {
+async function updateArticleHistoryHtml(payload) {
   const runId = safeRunId(payload.runId)
   const html = String(payload.html || '').trim()
   if (!html) throw new Error('Noi dung HTML khong duoc de trong.')
@@ -1502,14 +1471,14 @@ function updateArticleHistoryHtml(payload) {
   fs.writeFileSync(htmlPath, html, 'utf8')
   fs.writeFileSync(sourcePath, html, 'utf8')
   const topic = String(payload.topic || '').trim()
-  updateArticleHistoryRecord(runId, () => topic ? { topic } : {})
+  await updateArticleHistoryRecord(runId, () => topic ? { topic } : {})
   return loadArticleHistoryItem(runId)
 }
 
 async function generateStandaloneImage(payload) {
   const prompt = String(payload.prompt || '').trim()
   if (!prompt) throw new Error('Vui long nhap mo ta anh can tao.')
-  const config = applyImageProviderOverride(articleComposerConfig(), payload.imageProviderOverride)
+  const config = applyImageProviderOverride(await articleComposerConfig(), payload.imageProviderOverride)
   if (!isArticleImageConfigured(config)) {
     throw new Error(config.imageProvider === 'vertex-ai'
       ? 'Chua cau hinh Vertex AI Project ID, Region hoac Service Account JSON trong Cong cu -> Viet bai.'
@@ -1648,8 +1617,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (scopedPathname === '/api/health') {
-      const articleConfig = publicArticleComposerConfig()
-      sendJson(res, 200, { ok: true, dbPath, publicDir, toolOutputDir, entityGuideDir, entityGuideSearchDirs, toolConfigPath, storage: 'json-db', basePath: basePath || '/', databaseProtected: !isInsideApp(dbDir), dataCounts: dataCounts(readDb()), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
+      const articleConfig = await publicArticleComposerConfig()
+      const storageInfo = await storage.getStorageInfo()
+      const currentData = await readDb()
+      sendJson(res, 200, { ok: true, ...storageInfo, dbPath, publicDir, toolOutputDir, entityGuideDir, entityGuideSearchDirs, toolConfigPath, basePath: basePath || '/', dataCounts: dataCounts(currentData), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
       return
     }
 
@@ -1740,7 +1711,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === 'GET') {
-        sendJson(res, 200, { ok: true, data: readDb() })
+        sendJson(res, 200, { ok: true, data: await readDb() })
         return
       }
 
@@ -1752,7 +1723,7 @@ const server = http.createServer(async (req, res) => {
           return
         }
         try {
-          writeDb(applyTaskDeadlineAutomation(nextData).data, {
+          await writeDb(applyTaskDeadlineAutomation(nextData).data, {
             allowLargeOverwrite: req.headers['x-seo-ops-allow-large-overwrite'] === 'true',
           })
         } catch (error) {
@@ -1773,19 +1744,19 @@ const server = http.createServer(async (req, res) => {
     if (scopedPathname === '/api/tools/status') {
       sendJson(res, 200, {
         ok: true,
-        ...publicArticleComposerConfig(),
+        ...(await publicArticleComposerConfig()),
       })
       return
     }
 
     if (scopedPathname === '/api/tools/article-compose/config') {
       if (req.method === 'GET') {
-        sendJson(res, 200, { ok: true, config: publicArticleComposerConfig() })
+        sendJson(res, 200, { ok: true, config: await publicArticleComposerConfig() })
         return
       }
       if (req.method === 'POST') {
         const payload = JSON.parse(await readBody(req))
-        sendJson(res, 200, { ok: true, config: updateArticleComposerConfig(payload) })
+        sendJson(res, 200, { ok: true, config: await updateArticleComposerConfig(payload) })
         return
       }
       sendJson(res, 405, { ok: false, message: 'Method not allowed' })
@@ -1809,25 +1780,25 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 405, { ok: false, message: 'Method not allowed' })
         return
       }
-      sendJson(res, 200, { ok: true, history: publicArticleHistory() })
+      sendJson(res, 200, { ok: true, history: await publicArticleHistory() })
       return
     }
 
     if (scopedPathname === '/api/tools/article-compose/history-item') {
       if (req.method === 'GET') {
         const runId = url.searchParams.get('runId') || ''
-        sendJson(res, 200, { ok: true, result: loadArticleHistoryItem(runId), history: publicArticleHistory() })
+        sendJson(res, 200, { ok: true, result: await loadArticleHistoryItem(runId), history: await publicArticleHistory() })
         return
       }
       if (req.method === 'POST') {
         const payload = JSON.parse(await readBody(req))
-        const result = updateArticleHistoryHtml(payload)
-        appendArticleToolLog({
+        const result = await updateArticleHistoryHtml(payload)
+        await appendArticleToolLog({
           action: 'edit-article-html',
           status: 'success',
           message: `Da cap nhat HTML bai viet ${payload.runId}.`,
         })
-        sendJson(res, 200, { ok: true, result, history: publicArticleHistory() })
+        sendJson(res, 200, { ok: true, result, history: await publicArticleHistory() })
         return
       }
       sendJson(res, 405, { ok: false, message: 'Method not allowed' })
@@ -1842,14 +1813,14 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = JSON.parse(await readBody(req))
         const result = await generateStandaloneImage(payload)
-        appendArticleToolLog({
+        await appendArticleToolLog({
           action: 'single-image',
           status: 'success',
           message: 'Da tao anh don theo mo ta.',
         })
-        sendJson(res, 200, { ok: true, result, config: publicArticleComposerConfig() })
+        sendJson(res, 200, { ok: true, result, config: await publicArticleComposerConfig() })
       } catch (error) {
-        appendArticleToolLog({
+        await appendArticleToolLog({
           action: 'single-image',
           status: 'error',
           message: error.message || 'Khong tao duoc anh don.',
@@ -1867,14 +1838,14 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = JSON.parse(await readBody(req))
         const result = await regenerateArticleImage(payload)
-        appendArticleToolLog({
+        await appendArticleToolLog({
           action: 'regenerate-image',
           status: 'success',
           message: `Da tao lai anh ${Number(payload.index) + 1} cho bai viet ${payload.runId}.`,
         })
-        sendJson(res, 200, { ok: true, result, config: publicArticleComposerConfig() })
+        sendJson(res, 200, { ok: true, result, config: await publicArticleComposerConfig() })
       } catch (error) {
-        appendArticleToolLog({
+        await appendArticleToolLog({
           action: 'regenerate-image',
           status: 'error',
           message: error.message || 'Khong tao lai duoc anh.',
@@ -1892,7 +1863,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = JSON.parse(await readBody(req))
         const result = await composeSeoArticle(payload)
-        appendArticleToolLog({
+        await appendArticleToolLog({
           action: 'compose',
           status: 'success',
           message: `Đã tạo bài viết SEO: ${result.topic}`,
@@ -1900,7 +1871,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, result })
       } catch (error) {
         const missingConfig = /CLAUDE_API_KEY|GEMINI_API_KEY|API key|Gateway base URL|Chua cau hinh|Chưa/i.test(error.message || '')
-        appendArticleToolLog({
+        await appendArticleToolLog({
           action: 'compose',
           status: 'error',
           message: error.message || 'Không tạo được bài viết SEO.',
@@ -1912,11 +1883,11 @@ const server = http.createServer(async (req, res) => {
 
     if (scopedPathname === '/api/google/oauth/status') {
       const projectId = String(url.searchParams.get('projectId') || '')
-      if (!hasProject(projectId)) {
+      if (!(await hasProject(projectId))) {
         sendJson(res, 404, { ok: false, message: 'Không tìm thấy dự án.' })
         return
       }
-      const connection = connectionForProject(projectId)
+      const connection = await connectionForProject(projectId)
       sendJson(res, 200, {
         ok: true,
         configured: googleOAuthConfigured,
@@ -1933,7 +1904,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 503, { ok: false, message: 'Server chưa cấu hình Google OAuth Client và khóa mã hóa token.' })
         return
       }
-      if (!hasProject(projectId)) {
+      if (!(await hasProject(projectId))) {
         sendJson(res, 404, { ok: false, message: 'Không tìm thấy dự án để kết nối Google.' })
         return
       }
@@ -1974,18 +1945,18 @@ const server = http.createServer(async (req, res) => {
           grant_type: 'authorization_code',
           redirect_uri: googleRedirectUri,
         })
-        const existing = connectionForProject(projectId)
+        const existing = await connectionForProject(projectId)
         if (!tokenResult.refresh_token && !existing?.refreshToken) {
           throw new Error('Google chưa cấp refresh token. Hãy ngắt quyền ứng dụng Google và kết nối lại.')
         }
-        const storage = readGoogleConnections()
-        storage.connections = storage.connections || {}
-        storage.connections[projectId] = {
+        const storageData = await readGoogleConnections()
+        storageData.connections = storageData.connections || {}
+        storageData.connections[projectId] = {
           refreshToken: tokenResult.refresh_token ? encryptGoogleToken(tokenResult.refresh_token) : existing.refreshToken,
           scope: tokenResult.scope || existing?.scope || googleScopes.join(' '),
           connectedAt: new Date().toISOString(),
         }
-        writeGoogleConnections(storage)
+        await writeGoogleConnections(storageData)
         res.writeHead(302, {
           Location: googleAppRedirect('connected', projectId),
           'Set-Cookie': googleCookie(req, '', 0),
@@ -2011,10 +1982,10 @@ const server = http.createServer(async (req, res) => {
       }
       const payload = JSON.parse(await readBody(req))
       const projectId = String(payload.projectId || '')
-      const storage = readGoogleConnections()
-      if (storage.connections?.[projectId]) {
-        delete storage.connections[projectId]
-        writeGoogleConnections(storage)
+      const storageData = await readGoogleConnections()
+      if (storageData.connections?.[projectId]) {
+        delete storageData.connections[projectId]
+        await writeGoogleConnections(storageData)
       }
       sendJson(res, 200, { ok: true, connected: false })
       return
@@ -2031,7 +2002,7 @@ const server = http.createServer(async (req, res) => {
         return
       }
       let token = searchConsoleToken
-      if (payload.projectId && googleOAuthConfigured && connectionForProject(String(payload.projectId))) {
+      if (payload.projectId && googleOAuthConfigured && await connectionForProject(String(payload.projectId))) {
         try {
           token = await googleAccessToken(String(payload.projectId))
         } catch (error) {
@@ -2072,7 +2043,7 @@ const server = http.createServer(async (req, res) => {
       const payload = JSON.parse(await readBody(req))
       const projectId = String(payload.projectId || '')
       const propertyId = String(payload.propertyId || '').replace(/^properties\//, '').trim()
-      if (!hasProject(projectId) || !propertyId) {
+      if (!(await hasProject(projectId)) || !propertyId) {
         sendJson(res, 400, { ok: false, message: 'Thiếu projectId hoặc GA4 Property ID.' })
         return
       }
@@ -2111,13 +2082,30 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-validateDatabaseLocation()
-ensureDb()
-runTaskDeadlineAutomation()
-const taskDeadlineTimer = setInterval(runTaskDeadlineAutomation, 60 * 1000)
-taskDeadlineTimer.unref()
+async function startServer() {
+  validateDatabaseLocation()
+  await initStorage()
+  await runTaskDeadlineAutomation()
+  const taskDeadlineTimer = setInterval(() => {
+    void runTaskDeadlineAutomation().catch((error) => {
+      console.error(`Task deadline automation failed: ${error.message || error}`)
+    })
+  }, 60 * 1000)
+  taskDeadlineTimer.unref()
 
-server.listen(port, host, () => {
-  console.log(`SEO Ops running at http://${host}:${port}${basePath || '/'}`)
-  console.log(`Shared data file: ${dbPath}`)
+  server.listen(port, host, async () => {
+    const storageInfo = await storage.getStorageInfo()
+    console.log(`SEO Ops running at http://${host}:${port}${basePath || '/'}`)
+    console.log(`Storage driver: ${storageInfo.storageDriver}`)
+    if (storageInfo.storageDriver === 'mysql') {
+      console.log(`MariaDB database: ${storageInfo.dbHost}/${storageInfo.dbDatabase}`)
+    } else {
+      console.log(`Shared data file: ${dbPath}`)
+    }
+  })
+}
+
+startServer().catch((error) => {
+  console.error(`SEO Ops failed to start: ${error.message || error}`)
+  process.exit(1)
 })

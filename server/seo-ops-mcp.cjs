@@ -134,8 +134,8 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
     },
   ]
 
-  function callTool(name, args = {}) {
-    const data = readDb()
+  async function callTool(name, args = {}) {
+    const data = await readDb()
     const keywordsAvailableForArticles = acceptedKeywords(data)
     switch (name) {
       case 'seo_list_projects': {
@@ -186,7 +186,7 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
           articleUpdatedAt: updatedAt,
           articleSource: 'Claude MCP',
         }
-        writeDb({
+        await writeDb({
           ...data,
           keywords: data.keywords.map((item) => (item.id === keyword.id ? nextKeyword : item)),
         })
@@ -200,7 +200,7 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
           articleStatus: String(args.status),
           articleUpdatedAt: new Date().toISOString(),
         }
-        writeDb({
+        await writeDb({
           ...data,
           keywords: data.keywords.map((item) => (item.id === keyword.id ? nextKeyword : item)),
         })
@@ -249,7 +249,7 @@ function createMcpHandler({ readDb, writeDb, token, connectorKey }) {
           sendJson(res, 200, rpcResult(id, { tools }))
           return
         case 'tools/call':
-          sendJson(res, 200, rpcResult(id, callTool(request.params?.name, request.params?.arguments || {})))
+          sendJson(res, 200, rpcResult(id, await callTool(request.params?.name, request.params?.arguments || {})))
           return
         default:
           sendJson(res, 200, rpcError(id, -32601, `Method not found: ${request.method}`))
