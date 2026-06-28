@@ -144,6 +144,49 @@ File `public/seo-ops-seed.json` chi la seed khoi tao sach cho cai dat moi, khong
 
 Module `Quan ly Keyword` dung Google Search Console URL Inspection API de check trang thai index cua URL bai viet.
 
+## OpenSEO Bridge
+
+SEO Ops co the doc trang thai OpenSEO self-host qua MCP de map tung du an SEO Ops voi OpenSEO project/rank tracker. Bridge nay chi doc cac tool khong ton credit trong phase 1:
+
+```text
+OPEN_SEO_BASE_URL=http://127.0.0.1:3001
+OPEN_SEO_MCP_URL=http://127.0.0.1:3001/mcp
+OPEN_SEO_TIMEOUT_MS=8000
+```
+
+Neu OpenSEO MCP co bearer token hoac connector key:
+
+```text
+OPEN_SEO_MCP_TOKEN=token-noi-bo
+OPEN_SEO_MCP_CONNECTOR_KEY=key-noi-bo
+```
+
+OpenSEO nen chay rieng process va chi public sau Cloudflare Access/VPN/reverse proxy auth. Trong SEO Ops vao `Du an SEO -> OpenSEO Bridge`, bam `Kiem tra`, dung goi y project/rank tracker neu dung, roi `Luu mapping`.
+
+Phase 2 sync:
+
+- `Sync keywords`: day keyword SEO Ops sang OpenSEO saved keywords va import/cap nhat saved keywords ve SEO Ops. Khong goi DataForSEO.
+- `Sync rank`: keo ket qua rank tracker moi nhat ve keyword SEO Ops. Khong goi DataForSEO.
+- `Sync metrics`: goi `get_keyword_metrics` cua OpenSEO de cap nhat volume/KD/CPC/intent, co the ton DataForSEO credit va UI se hoi xac nhan truoc khi chay.
+
+Phase 3 GSC:
+
+- `Sync GSC`: goi OpenSEO `get_search_console_performance` voi dimensions `query,page`, mac dinh `last_28_days` va `dataState=final`.
+- SEO Ops map query trung voi keyword hien co, query moi se duoc import thanh keyword moi kem landing URL tu page GSC. Du lieu click/impression/CTR/position duoc ghi vao keyword va cac truong `openSeoGsc*`.
+- De OpenSEO tu lay duoc GSC, cau hinh ben VPS OpenSEO cac bien `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRET`, restart OpenSEO, roi connect Google Search Console property trong OpenSEO. Neu chua cau hinh, SEO Ops se hien `gsc_oauth_not_configured` va link setup docs tu OpenSEO.
+
+Phase 4 SEO task automation:
+
+- Sau khi sync OpenSEO hoac khi SEO Ops luu du lieu, server quet keyword va tao task neu gap cac dieu kien: rank tut tu 3 bac tro len, impressions >= 500 va position 11-30, URL bi `Noindex`, hoac keyword thieu landing page/article URL.
+- Task tu dong co `automationKey` theo project/keyword/issue de khong tao trung khi task cu con mo. Neu task da hoan thanh/huy va issue van con, lan quet sau co the tao task moi.
+- Nut `Auto tasks` trong `OpenSEO Bridge` cho phep quet lai thu cong. Route noi bo: `POST /api/open-seo/auto-tasks` voi `projectId`, co the dung `dryRun=true`, `highImpressionThreshold`, `rankDropThreshold`, `maxTasks`.
+
+Phase 5 Agency dashboard:
+
+- Man hinh `Tong quan` cua admin co block agency gom ROI/margin, content backlog, rank movement, GSC opportunity va workflow issue cua Backlink/Entity.
+- ROI dung `budget` cua project nhu contract value va transaction `Chi` nhu spend. GSC opportunity lay keyword impressions >= 500, position 11-30. Rank movement doc `openSeoRankDelta` tu cac lan sync OpenSEO/GSC.
+- Workflow Backlink/Entity gom so live, pending va issue de agency nhin nhanh viec dang tac nghen.
+
 ## Ket noi Google OAuth cho Search Console va GA4
 
 SEO Ops ho tro nguoi dung dang nhap Google va cap quyen doc Search Console/Google Analytics theo tung du an. Refresh token duoc ma hoa tai backend va luu trong thu muc `SEO_OPS_DB_DIR`, khong ghi vao frontend, localStorage hoac file du lieu du an.

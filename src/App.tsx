@@ -351,6 +351,135 @@ type Project = {
   analytics?: AnalyticsSettings
   searchConsole?: SearchConsoleSettings
   wordpress?: WordPressSettings
+  openSeo?: OpenSeoSettings
+}
+
+type OpenSeoSettings = {
+  projectId: string
+  projectName: string
+  domain: string
+  rankTrackerId: string
+  rankTrackerDomain: string
+  locationCode: number
+  languageCode: string
+  linkedAt: string
+  lastStatusAt: string
+  lastCheckedAt: string
+  nextCheckAt: string
+  statusMessage: string
+  gscSiteUrl: string
+  gscStartDate: string
+  gscEndDate: string
+  gscSyncedAt: string
+  gscRowCount: number
+}
+
+type OpenSeoProjectOption = {
+  id: string
+  name: string
+  domain?: string | null
+  url?: string
+}
+
+type OpenSeoRankTracker = {
+  id: string
+  projectId: string
+  domain: string
+  locationCode: number
+  languageCode: string
+  devices: string
+  serpDepth: number
+  scheduleInterval: string
+  isActive: boolean
+  lastCheckedAt: string
+  nextCheckAt: string
+}
+
+type OpenSeoStatus = {
+  ok: boolean
+  message?: string
+  configured?: {
+    baseUrl?: string
+    mcpUrl?: string
+    hasBearerToken?: boolean
+    hasConnectorKey?: boolean
+    timeoutMs?: number
+  }
+  project?: {
+    id: string
+    name: string
+    website: string
+    normalizedDomain: string
+  }
+  link?: Partial<OpenSeoSettings>
+  openSeo?: {
+    reachable: boolean
+    mode?: string
+    userEmail?: string
+    organizationId?: string
+    projectCount?: number
+    projects?: OpenSeoProjectOption[]
+    suggestedProject?: OpenSeoProjectOption | null
+    rankTrackers?: OpenSeoRankTracker[]
+    suggestedTracker?: OpenSeoRankTracker | null
+    trackerDetails?: {
+      config?: OpenSeoRankTracker
+      results?: {
+        rows?: Array<{
+          keyword?: string
+          desktop?: { position?: number | null; rankingUrl?: string | null }
+          mobile?: { position?: number | null; rankingUrl?: string | null }
+        }>
+      }
+    }
+    error?: string
+  }
+}
+
+type OpenSeoSyncResult = {
+  ok: boolean
+  mode: 'keywords' | 'rank-tracker' | 'metrics' | 'gsc' | 'auto-tasks'
+  dryRun: boolean
+  syncedAt: string
+  connected?: boolean
+  reason?: string
+  seoOpsKeywordCount?: number
+  pushedKeywordCount?: number
+  openSeoSavedKeywordCount?: number
+  rankingKeywordCount?: number
+  requestedKeywordCount?: number
+  metricsKeywordCount?: number
+  wouldFetchKeywordCount?: number
+  rowCount?: number
+  importedKeywordCount?: number
+  updatedKeywordCount?: number
+  matchedByQueryCount?: number
+  matchedByPageCount?: number
+  unmatchedRowCount?: number
+  skippedDuplicateRowCount?: number
+  rankTrackerDomain?: string
+  lastCheckedAt?: string
+  nextCheckAt?: string
+  siteUrl?: string
+  startDate?: string
+  endDate?: string
+  setupDocsUrl?: string
+  connectUrl?: string
+  hasMore?: boolean
+  nextStartRow?: number | null
+  createdTaskCount?: number
+  candidateCount?: number
+  duplicateTaskCount?: number
+  skippedLimitCount?: number
+  createdByIssue?: Record<string, number>
+  seoTaskAutomation?: {
+    createdTaskCount?: number
+    candidateCount?: number
+    duplicateTaskCount?: number
+    skippedLimitCount?: number
+    createdByIssue?: Record<string, number>
+  }
+  message?: string
 }
 
 type Keyword = {
@@ -384,6 +513,27 @@ type Keyword = {
   indexCoverageState?: string
   indexLastCrawlAt?: string
   indexInspectionLink?: string
+  openSeoImported?: boolean
+  openSeoSyncedAt?: string
+  openSeoMetricsAt?: string
+  openSeoCpc?: number | null
+  openSeoCompetition?: number | null
+  openSeoIntent?: string
+  openSeoRankTrackerId?: string
+  openSeoRankDesktop?: number | null
+  openSeoRankMobile?: number | null
+  openSeoRankingUrl?: string
+  openSeoPreviousPosition?: number | null
+  openSeoRankDelta?: number | null
+  openSeoRankDroppedAt?: string
+  openSeoGscSyncedAt?: string
+  openSeoGscQuery?: string
+  openSeoGscPage?: string
+  openSeoGscClicks?: number
+  openSeoGscImpressions?: number
+  openSeoGscCtr?: number
+  openSeoGscPosition?: number
+  openSeoGscDateRange?: string
 }
 
 type Task = {
@@ -410,6 +560,10 @@ type Task = {
   overdueEscalatedAt?: string
   cancelledAt?: string
   status: TaskStatus
+  automationKey?: string
+  automationSource?: string
+  sourceKeywordId?: string
+  sourceKeywordTerm?: string
 }
 
 type Transaction = {
@@ -1154,6 +1308,26 @@ const emptyWordPressSettings: WordPressSettings = {
   siteUrl: '',
   connectorEndpoint: '',
   apiKey: '',
+}
+
+const emptyOpenSeoSettings: OpenSeoSettings = {
+  projectId: '',
+  projectName: '',
+  domain: '',
+  rankTrackerId: '',
+  rankTrackerDomain: '',
+  locationCode: 2704,
+  languageCode: 'vi',
+  linkedAt: '',
+  lastStatusAt: '',
+  lastCheckedAt: '',
+  nextCheckAt: '',
+  statusMessage: '',
+  gscSiteUrl: '',
+  gscStartDate: '',
+  gscEndDate: '',
+  gscSyncedAt: '',
+  gscRowCount: 0,
 }
 
 const emptyGoogleOAuthStatus: GoogleOAuthStatus = {
@@ -2275,6 +2449,10 @@ const wordpressSettingsOf = (project?: Project): WordPressSettings => ({
   ...emptyWordPressSettings,
   ...(project?.wordpress ?? {}),
 })
+const openSeoSettingsOf = (project?: Project): OpenSeoSettings => ({
+  ...emptyOpenSeoSettings,
+  ...(project?.openSeo ?? {}),
+})
 const wordpressErrorMessage = async (response: Response) => {
   let detail = ''
   try {
@@ -2449,6 +2627,7 @@ const normalizeData = (data: AppData): AppData => ({
     analytics: analyticsSettingsOf(project),
     searchConsole: searchConsoleSettingsOf(project),
     wordpress: wordpressSettingsOf(project),
+    openSeo: openSeoSettingsOf(project),
   })),
   users: data.users.map((user) => ({
     ...user,
@@ -2478,6 +2657,27 @@ const normalizeData = (data: AppData): AppData => ({
     indexCoverageState: keyword.indexCoverageState ?? '',
     indexLastCrawlAt: keyword.indexLastCrawlAt ?? '',
     indexInspectionLink: keyword.indexInspectionLink ?? '',
+    openSeoImported: keyword.openSeoImported ?? false,
+    openSeoSyncedAt: keyword.openSeoSyncedAt ?? '',
+    openSeoMetricsAt: keyword.openSeoMetricsAt ?? '',
+    openSeoCpc: keyword.openSeoCpc ?? null,
+    openSeoCompetition: keyword.openSeoCompetition ?? null,
+    openSeoIntent: keyword.openSeoIntent ?? '',
+    openSeoRankTrackerId: keyword.openSeoRankTrackerId ?? '',
+    openSeoRankDesktop: keyword.openSeoRankDesktop ?? null,
+    openSeoRankMobile: keyword.openSeoRankMobile ?? null,
+    openSeoRankingUrl: keyword.openSeoRankingUrl ?? '',
+    openSeoPreviousPosition: keyword.openSeoPreviousPosition ?? null,
+    openSeoRankDelta: keyword.openSeoRankDelta ?? null,
+    openSeoRankDroppedAt: keyword.openSeoRankDroppedAt ?? '',
+    openSeoGscSyncedAt: keyword.openSeoGscSyncedAt ?? '',
+    openSeoGscQuery: keyword.openSeoGscQuery ?? '',
+    openSeoGscPage: keyword.openSeoGscPage ?? '',
+    openSeoGscClicks: keyword.openSeoGscClicks ?? 0,
+    openSeoGscImpressions: keyword.openSeoGscImpressions ?? 0,
+    openSeoGscCtr: keyword.openSeoGscCtr ?? 0,
+    openSeoGscPosition: keyword.openSeoGscPosition ?? 0,
+    openSeoGscDateRange: keyword.openSeoGscDateRange ?? '',
   })),
   transactions: data.transactions.map((transaction) => ({
     ...transaction,
@@ -2507,6 +2707,10 @@ const normalizeData = (data: AppData): AppData => ({
     deadlineReminderAt: task.deadlineReminderAt ?? '',
     overdueEscalatedAt: task.overdueEscalatedAt ?? '',
     cancelledAt: task.cancelledAt ?? '',
+    automationKey: task.automationKey ?? '',
+    automationSource: task.automationSource ?? '',
+    sourceKeywordId: task.sourceKeywordId ?? '',
+    sourceKeywordTerm: task.sourceKeywordTerm ?? '',
   })),
   payrollSettlements: (data.payrollSettlements ?? []).map((settlement) => ({
     ...settlement,
@@ -2705,18 +2909,22 @@ function useStoredData() {
   const [apiEnabled, setApiEnabled] = useState(false)
   const [loadingRemoteData, setLoadingRemoteData] = useState(true)
 
+  const refreshRemoteData = useCallback(async () => {
+    const response = await fetch(apiDataUrl)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const remoteData = await response.json()
+    const next = normalizeData(remoteData?.data ?? remoteData)
+    setData(next)
+    localStorage.setItem(storageKey, JSON.stringify(next))
+    setApiEnabled(true)
+    return next
+  }, [])
+
   useEffect(() => {
-    fetch(apiDataUrl)
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
-      .then((remoteData) => {
-        const next = normalizeData(remoteData?.data ?? remoteData)
-        setData(next)
-        localStorage.setItem(storageKey, JSON.stringify(next))
-        setApiEnabled(true)
-      })
+    refreshRemoteData()
       .catch(() => setApiEnabled(false))
       .finally(() => setLoadingRemoteData(false))
-  }, [])
+  }, [refreshRemoteData])
 
   const syncRemoteData = useCallback((next: AppData, options?: { allowLargeOverwrite?: boolean }) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -2728,6 +2936,12 @@ function useStoredData() {
     })
       .then(async (response) => {
         if (response.ok) {
+          const payload = await response.json().catch(() => null)
+          if (payload?.data) {
+            const saved = normalizeData(payload.data)
+            setData(saved)
+            localStorage.setItem(storageKey, JSON.stringify(saved))
+          }
           setApiEnabled(true)
           return
         }
@@ -2768,13 +2982,14 @@ function useStoredData() {
     updateData(normalizeData(next), { allowLargeOverwrite: true })
   }, [updateData])
 
-  return [data, updateData, reloadData, importData, apiEnabled, loadingRemoteData] as const
+  return [data, updateData, reloadData, importData, apiEnabled, loadingRemoteData, refreshRemoteData] as const
 }
 
 function App() {
-  const [data, setData, reloadData, importData, apiEnabled, loadingRemoteData] = useStoredData()
+  const [data, setData, reloadData, importData, apiEnabled, loadingRemoteData, refreshRemoteData] = useStoredData()
   const projectFormRef = useRef<HTMLFormElement | null>(null)
   const wordpressFormRef = useRef<HTMLFormElement | null>(null)
+  const openSeoFormRef = useRef<HTMLFormElement | null>(null)
   const [view, setView] = useState<View>(getViewFromHash)
   const [expandedNavGroups, setExpandedNavGroups] = useState<Set<NavGroupId>>(() => initialExpandedNavGroups(getViewFromHash()))
   const [activeProjectId, setActiveProjectId] = useState(data.projects[0]?.id ?? '')
@@ -2800,6 +3015,11 @@ function App() {
   const [googleOAuthStatus, setGoogleOAuthStatus] = useState<GoogleOAuthStatus>(emptyGoogleOAuthStatus)
   const [googleOAuthLoading, setGoogleOAuthLoading] = useState(true)
   const [googleOAuthMessage, setGoogleOAuthMessage] = useState(googleOAuthMessageFromUrl)
+  const [openSeoStatus, setOpenSeoStatus] = useState<OpenSeoStatus | null>(null)
+  const [openSeoLoading, setOpenSeoLoading] = useState(false)
+  const [openSeoMessage, setOpenSeoMessage] = useState('')
+  const [openSeoSyncMode, setOpenSeoSyncMode] = useState<OpenSeoSyncResult['mode'] | ''>('')
+  const [openSeoSyncSummary, setOpenSeoSyncSummary] = useState<OpenSeoSyncResult | null>(null)
   const [checkingKeywordIds, setCheckingKeywordIds] = useState<Set<string>>(() => new Set())
   const [checkingAllKeywords, setCheckingAllKeywords] = useState(false)
   const [wordpressStatus, setWordpressStatus] = useState('')
@@ -3041,6 +3261,12 @@ function App() {
     }
   }, [activeProjectId, currentUserIdValue, visibleProjectIdsSignature])
   const editingProject = editingProjectId ? data.projects.find((project) => project.id === editingProjectId) : undefined
+  const activeOpenSeoSettings = openSeoSettingsOf(activeProject)
+  const openSeoSuggestedProject = openSeoStatus?.openSeo?.suggestedProject ?? null
+  const openSeoSuggestedTracker = openSeoStatus?.openSeo?.suggestedTracker ?? null
+  const openSeoProjects = openSeoStatus?.openSeo?.projects ?? []
+  const openSeoRankTrackers = openSeoStatus?.openSeo?.rankTrackers ?? []
+  const openSeoTrackedKeywordCount = openSeoStatus?.openSeo?.trackerDetails?.results?.rows?.length ?? 0
   const canEditAssignedArticle = (keyword: Keyword) => assignedArticleKeywordIds.has(keyword.id)
   const projectTasks = data.tasks.filter((task) =>
     task.projectId === activeProject?.id &&
@@ -3173,6 +3399,72 @@ function App() {
   const avgPosition = activeKeywords.length
     ? activeKeywords.reduce((sum, keyword) => sum + keyword.position, 0) / activeKeywords.length
     : 0
+  const agencyRevenue = activeProjects.reduce((sum, project) => sum + (project.budget || 0), 0)
+  const agencySpend = activeTransactions.filter((item) => item.type === 'Chi').reduce((sum, item) => sum + item.amount, 0)
+  const agencyProfit = agencyRevenue - agencySpend
+  const agencyRoi = agencySpend > 0 ? (agencyProfit / agencySpend) * 100 : agencyRevenue > 0 ? 100 : 0
+  const agencyMargin = agencyRevenue > 0 ? (agencyProfit / agencyRevenue) * 100 : 0
+  const agencyProjectName = (projectId: string) => activeProjects.find((project) => project.id === projectId)?.name ?? 'Dự án đã xóa'
+  const contentBacklogKeywords = activeKeywords.filter((keyword) =>
+    !keywordIsInArticles(keyword) ||
+    ['Chua viet', 'Ban nhap AI', 'Can chinh sua'].includes(keyword.articleStatus ?? 'Chua viet') ||
+    (keywordIsInArticles(keyword) && !keyword.articleUrl?.trim() && !keyword.articleContent?.trim()),
+  )
+  const contentReviewKeywords = activeKeywords.filter((keyword) => keyword.articleStatus === 'Cho duyet')
+  const contentApprovedKeywords = activeKeywords.filter((keyword) => keyword.articleStatus === 'Da duyet' || Boolean(keyword.articleUrl?.trim()))
+  const openContentTasks = activeTasks.filter((task) =>
+    (task.salaryModule === 'Bài viết' || /^Viết bài:|^Tạo landing page:/i.test(task.title)) &&
+    !['Hoàn thành', 'Đã hủy'].includes(taskStatusOf(task)),
+  )
+  const contentBacklogTop = [...contentBacklogKeywords]
+    .sort((a, b) => (b.impressions - a.impressions) || (b.searchVolume - a.searchVolume))
+    .slice(0, 5)
+  const rankMovementKeywords = activeKeywords
+    .filter((keyword) => Number.isFinite(Number(keyword.openSeoRankDelta)))
+    .sort((a, b) => Math.abs(Number(b.openSeoRankDelta)) - Math.abs(Number(a.openSeoRankDelta)))
+  const rankImprovedCount = rankMovementKeywords.filter((keyword) => Number(keyword.openSeoRankDelta) < 0).length
+  const rankDroppedCount = rankMovementKeywords.filter((keyword) => Number(keyword.openSeoRankDelta) >= 3).length
+  const rankMovementTop = rankMovementKeywords.slice(0, 5)
+  const gscOpportunityKeywords = [...activeKeywords]
+    .filter((keyword) => keyword.impressions >= 500 && keyword.position >= 11 && keyword.position <= 30)
+    .sort((a, b) => (b.impressions - a.impressions) || (a.position - b.position))
+  const gscOpportunityImpressions = gscOpportunityKeywords.reduce((sum, keyword) => sum + keyword.impressions, 0)
+  const gscOpportunityTop = gscOpportunityKeywords.slice(0, 5)
+  const agencyBacklinks = (data.seoBacklinks ?? []).filter((backlink) => activeProjectIds.has(backlink.projectId))
+  const agencyBacklinkPlans = (data.seoBacklinkPlans ?? []).filter((plan) => activeProjectIds.has(plan.projectId))
+  const agencyEntityLinks = (data.seoEntityLinks ?? []).filter((link) => activeProjectIds.has(link.projectId))
+  const agencyBacklinkOpenPlans = agencyBacklinkPlans.filter((plan) => !['Hoàn thành', 'Hoãn'].includes(plan.status))
+  const agencyBacklinkLive = agencyBacklinks.filter((backlink) => backlink.linkStatus === 'Live')
+  const agencyBacklinkIssues = agencyBacklinks.filter((backlink) =>
+    ['Lỗi', 'Hủy'].includes(backlink.deploymentStatus) ||
+    ['Mất link', 'Sai URL đích', 'Sai anchor', '404', '403'].includes(backlink.linkStatus) ||
+    (backlink.linkStatus === 'Live' && backlink.indexStatus !== 'Đã index'),
+  )
+  const agencyEntityLive = agencyEntityLinks.filter((link) => link.linkStatus === 'Live')
+  const agencyEntityPending = agencyEntityLinks.filter((link) => !['Đã live', 'Không phù hợp'].includes(link.deploymentStatus))
+  const agencyEntityIssues = agencyEntityLinks.filter((link) =>
+    link.deploymentStatus === 'Lỗi' ||
+    ['404', '403', 'Mất link', 'Không tìm thấy URL đích'].includes(link.linkStatus) ||
+    (link.linkStatus === 'Live' && link.indexStatus !== 'Đã index') ||
+    !['Đúng', 'Chưa check'].includes(link.napStatus),
+  )
+  const agencyWorkflowIssueCount = agencyBacklinkIssues.length + agencyEntityIssues.length
+  const agencyWorkflowRows = [
+    {
+      label: 'Backlink',
+      total: agencyBacklinks.length + agencyBacklinkOpenPlans.length,
+      done: agencyBacklinkLive.length,
+      pending: agencyBacklinkOpenPlans.length + agencyBacklinks.filter((backlink) => !['Đã đăng', 'Hủy'].includes(backlink.deploymentStatus)).length,
+      issue: agencyBacklinkIssues.length,
+    },
+    {
+      label: 'Entity',
+      total: agencyEntityLinks.length,
+      done: agencyEntityLive.length,
+      pending: agencyEntityPending.length,
+      issue: agencyEntityIssues.length,
+    },
+  ]
 
   const staffProgress = data.users.map((user) => {
     const tasks = activeTasks.filter((task) => task.assigneeId === user.id)
@@ -3253,6 +3545,159 @@ function App() {
       activityLogs: [log, ...(nextData.activityLogs ?? [])].slice(0, 300),
     })
   }
+
+  const loadOpenSeoStatus = async (projectId = activeProject?.id ?? '') => {
+    if (!projectId) return
+    setOpenSeoLoading(true)
+    setOpenSeoMessage('Đang kiểm tra OpenSEO...')
+    try {
+      const response = await fetch(`${appUrl('api/open-seo/status')}?projectId=${encodeURIComponent(projectId)}`)
+      const payload = await readApiJson(response) as OpenSeoStatus
+      if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setOpenSeoStatus(payload)
+      setOpenSeoMessage(payload.openSeo?.reachable ? 'OpenSEO đang phản hồi qua bridge nội bộ.' : `Chưa kết nối được OpenSEO. ${payload.openSeo?.error || ''}`.trim())
+    } catch (error) {
+      setOpenSeoStatus(null)
+      setOpenSeoMessage(`Không kiểm tra được OpenSEO. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setOpenSeoLoading(false)
+    }
+  }
+
+  const applyOpenSeoSuggestion = () => {
+    const form = openSeoFormRef.current
+    const suggestedProject = openSeoStatus?.openSeo?.suggestedProject
+    const suggestedTracker = openSeoStatus?.openSeo?.suggestedTracker
+    if (!form || !suggestedProject) {
+      setOpenSeoMessage('Chưa có gợi ý OpenSEO để áp dụng.')
+      return
+    }
+    const setField = (name: string, value: string | number | null | undefined) => {
+      const field = form.elements.namedItem(name)
+      if (field instanceof HTMLInputElement) field.value = String(value ?? '')
+    }
+    setField('openSeoProjectId', suggestedProject.id)
+    setField('openSeoProjectName', suggestedProject.name)
+    setField('openSeoDomain', suggestedProject.domain || activeProject?.website || '')
+    setField('rankTrackerId', suggestedTracker?.id || '')
+    setField('rankTrackerDomain', suggestedTracker?.domain || activeProject?.website || '')
+    setField('locationCode', suggestedTracker?.locationCode || openSeoSettingsOf(activeProject).locationCode)
+    setField('languageCode', suggestedTracker?.languageCode || openSeoSettingsOf(activeProject).languageCode)
+    setOpenSeoMessage('Đã điền gợi ý OpenSEO vào form. Bấm Lưu mapping để ghi vào SEO Ops.')
+  }
+
+  const saveOpenSeoSettings = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeProject) return
+    const form = new FormData(event.currentTarget)
+    const currentSettings = openSeoSettingsOf(activeProject)
+    const projectId = String(form.get('openSeoProjectId')).trim()
+    const rankTrackerId = String(form.get('rankTrackerId')).trim()
+    if (!projectId) {
+      window.alert('Vui lòng nhập OpenSEO Project ID hoặc dùng gợi ý từ trạng thái OpenSEO.')
+      return
+    }
+    const selectedTracker = openSeoStatus?.openSeo?.rankTrackers?.find((tracker) => tracker.id === rankTrackerId)
+    const now = appNowIso()
+    const settings: OpenSeoSettings = {
+      ...currentSettings,
+      projectId,
+      projectName: String(form.get('openSeoProjectName')).trim(),
+      domain: String(form.get('openSeoDomain')).trim(),
+      rankTrackerId,
+      rankTrackerDomain: String(form.get('rankTrackerDomain')).trim(),
+      locationCode: Number(form.get('locationCode')) || currentSettings.locationCode,
+      languageCode: String(form.get('languageCode')).trim() || currentSettings.languageCode,
+      linkedAt: currentSettings.linkedAt || now,
+      lastStatusAt: now,
+      lastCheckedAt: selectedTracker?.lastCheckedAt || currentSettings.lastCheckedAt,
+      nextCheckAt: selectedTracker?.nextCheckAt || currentSettings.nextCheckAt,
+      statusMessage: openSeoStatus?.openSeo?.reachable ? 'Bridge OK' : currentSettings.statusMessage,
+    }
+    saveData({
+      ...data,
+      projects: data.projects.map((project) => (project.id === activeProject.id ? { ...project, openSeo: settings } : project)),
+    }, 'Cập nhật OpenSEO mapping', activeProject.name)
+    setOpenSeoMessage('Đã lưu mapping OpenSEO cho dự án đang chọn.')
+    void loadOpenSeoStatus(activeProject.id)
+  }
+
+  const disconnectOpenSeoProject = () => {
+    if (!activeProject || !window.confirm(`Ngắt mapping OpenSEO khỏi dự án "${activeProject.name}"? Dữ liệu OpenSEO gốc không bị xóa.`)) return
+    saveData({
+      ...data,
+      projects: data.projects.map((project) => (project.id === activeProject.id ? { ...project, openSeo: emptyOpenSeoSettings } : project)),
+    }, 'Ngắt OpenSEO mapping', activeProject.name)
+    setOpenSeoMessage('Đã ngắt mapping OpenSEO khỏi dự án SEO Ops. OpenSEO vẫn chạy riêng.')
+    setOpenSeoStatus(null)
+  }
+
+  const openSeoSyncMessage = (payload: OpenSeoSyncResult) => {
+    const autoTaskCount = payload.seoTaskAutomation?.createdTaskCount ?? payload.createdTaskCount ?? 0
+    const autoTaskText = autoTaskCount ? ` Tao ${autoTaskCount} task SEO tu dong.` : ''
+    if (payload.mode === 'keywords') {
+      return `Da sync keyword: day ${payload.pushedKeywordCount ?? 0}/${payload.seoOpsKeywordCount ?? 0} keyword tu SEO Ops, doc ${payload.openSeoSavedKeywordCount ?? 0} saved keyword, cap nhat ${payload.updatedKeywordCount ?? 0}, import moi ${payload.importedKeywordCount ?? 0}.${autoTaskText}`
+    }
+    if (payload.mode === 'rank-tracker') {
+      return `Da sync rank tracker ${payload.rankTrackerDomain || ''}: ${payload.rankingKeywordCount ?? 0} keyword, cap nhat ${payload.updatedKeywordCount ?? 0}, import moi ${payload.importedKeywordCount ?? 0}.${autoTaskText}`
+    }
+    if (payload.mode === 'gsc') {
+      if (!payload.ok) {
+        if (payload.reason === 'gsc_oauth_not_configured') return 'OpenSEO GSC chua duoc cau hinh OAuth tren VPS. Them GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BETTER_AUTH_SECRET vao OpenSEO roi ket noi Search Console.'
+        if (payload.reason === 'not_connected') return 'OpenSEO chua ket noi Google Search Console property cho project nay. Mo OpenSEO va connect GSC truoc khi sync.'
+        return payload.message || 'OpenSEO chua tra duoc du lieu Google Search Console.'
+      }
+      return `Da sync GSC: doc ${payload.rowCount ?? 0} query/page row, cap nhat ${payload.updatedKeywordCount ?? 0}, import moi ${payload.importedKeywordCount ?? 0}, bo qua trung ${payload.skippedDuplicateRowCount ?? 0}.${autoTaskText}`
+    }
+    if (payload.mode === 'auto-tasks') {
+      return `Da quet task SEO tu dong: tao ${payload.createdTaskCount ?? 0}/${payload.candidateCount ?? 0} task, bo qua trung ${payload.duplicateTaskCount ?? 0}.`
+    }
+    return `Da sync metrics: yeu cau ${payload.requestedKeywordCount ?? 0} keyword, nhan ${payload.metricsKeywordCount ?? 0}, cap nhat ${payload.updatedKeywordCount ?? 0}, import moi ${payload.importedKeywordCount ?? 0}.${autoTaskText}`
+  }
+
+  const runOpenSeoSync = async (mode: OpenSeoSyncResult['mode']) => {
+    if (!activeProject) return
+    if (mode === 'metrics' && !window.confirm('Dong bo metrics se goi DataForSEO qua OpenSEO va co the ton credit. Ban muon tiep tuc?')) {
+      return
+    }
+    const endpoint = mode === 'keywords'
+      ? 'api/open-seo/sync-keywords'
+      : mode === 'rank-tracker'
+        ? 'api/open-seo/sync-rank-tracker'
+        : mode === 'gsc'
+          ? 'api/open-seo/sync-gsc'
+          : mode === 'auto-tasks'
+            ? 'api/open-seo/auto-tasks'
+            : 'api/open-seo/sync-metrics'
+    setOpenSeoSyncMode(mode)
+    setOpenSeoMessage(mode === 'metrics' ? 'Dang dong bo metrics tu OpenSEO...' : mode === 'gsc' ? 'Dang dong bo GSC tu OpenSEO...' : mode === 'auto-tasks' ? 'Dang quet task SEO tu dong...' : 'Dang dong bo OpenSEO...')
+    try {
+      const response = await fetch(appUrl(endpoint), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: activeProject.id,
+          confirmPaidMetrics: mode === 'metrics',
+          importMissing: true,
+        }),
+      })
+      const payload = await readApiJson(response) as OpenSeoSyncResult
+      if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setOpenSeoSyncSummary(payload)
+      const message = openSeoSyncMessage(payload)
+      setOpenSeoMessage(message)
+      if (payload.ok) {
+        await refreshRemoteData()
+        if (mode !== 'auto-tasks') await loadOpenSeoStatus(activeProject.id)
+        setOpenSeoMessage(message)
+      }
+    } catch (error) {
+      setOpenSeoMessage(`Khong dong bo duoc OpenSEO. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setOpenSeoSyncMode('')
+    }
+  }
+
   const selectActiveProject = (projectId: string) => {
     setActiveProjectId(projectId)
     if (currentUserIdValue) localStorage.setItem(activeProjectStorageKey(currentUserIdValue), projectId)
@@ -3261,6 +3706,10 @@ function App() {
     setSelectedKeywordIds(new Set())
     setGoogleOAuthStatus(emptyGoogleOAuthStatus)
     setGoogleOAuthLoading(true)
+    setOpenSeoStatus(null)
+    setOpenSeoMessage('')
+    setOpenSeoSyncMode('')
+    setOpenSeoSyncSummary(null)
   }
   const openNotification = (notification: NotificationItem) => {
     const nextData = {
@@ -6392,6 +6841,93 @@ function App() {
               />
             ) : (
               <>
+                <div className="metric-grid task-overview-metrics agency-kpi-grid">
+                  <Metric title="ROI agency" value={pct(agencyRoi)} note={`Margin ${pct(agencyMargin)} · ${currency.format(agencyProfit)}`} icon="finance" tone={agencyProfit >= 0 ? 'green' : 'amber'} />
+                  <Metric title="Content backlog" value={contentBacklogKeywords.length} note={`${openContentTasks.length} task content đang mở`} icon="projects" tone="blue" />
+                  <Metric title="Rank movement" value={`${rankImprovedCount} tăng / ${rankDroppedCount} tụt`} note={`${rankMovementKeywords.length} keyword có dữ liệu movement`} icon="position" tone={rankDroppedCount > rankImprovedCount ? 'amber' : 'violet'} />
+                  <Metric title="GSC opportunity" value={gscOpportunityKeywords.length} note={`${gscOpportunityImpressions.toLocaleString('vi-VN')} impressions ở vị trí 11-30`} icon="completed" tone="teal" />
+                  <Metric title="Workflow issue" value={agencyWorkflowIssueCount} note={`${agencyBacklinkIssues.length} backlink · ${agencyEntityIssues.length} entity`} icon="overdue" tone={agencyWorkflowIssueCount ? 'amber' : 'green'} />
+                </div>
+
+                <div className="dashboard-grid agency-dashboard-grid">
+                  <Panel title="GSC opportunity" action={`${gscOpportunityKeywords.length} keyword`}>
+                    {gscOpportunityTop.length === 0 ? (
+                      <EmptyState title="Chưa có cơ hội GSC" text="Sau khi Sync GSC, keyword có impressions cao và position 11-30 sẽ hiện ở đây." />
+                    ) : (
+                      <div className="agency-opportunity-list">
+                        {gscOpportunityTop.map((keyword) => (
+                          <article className="agency-opportunity-row" key={keyword.id}>
+                            <div>
+                              <strong>{keyword.term}</strong>
+                              <span>{agencyProjectName(keyword.projectId)}</span>
+                            </div>
+                            <div>
+                              <b>#{keyword.position}</b>
+                              <small>{keyword.impressions.toLocaleString('vi-VN')} impressions</small>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </Panel>
+
+                  <Panel title="Rank movement" action={`${rankImprovedCount} tăng · ${rankDroppedCount} tụt`}>
+                    {rankMovementTop.length === 0 ? (
+                      <EmptyState title="Chưa có movement" text="Movement sẽ hiện sau các lần sync rank tracker hoặc GSC có so sánh position trước/sau." />
+                    ) : (
+                      <div className="agency-opportunity-list">
+                        {rankMovementTop.map((keyword) => {
+                          const delta = Number(keyword.openSeoRankDelta)
+                          return (
+                            <article className={`agency-opportunity-row ${delta > 0 ? 'is-risk' : 'is-good'}`} key={keyword.id}>
+                              <div>
+                                <strong>{keyword.term}</strong>
+                                <span>{agencyProjectName(keyword.projectId)}</span>
+                              </div>
+                              <div>
+                                <b>{delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1)}</b>
+                                <small>hiện #{keyword.position}</small>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </Panel>
+
+                  <Panel title="Backlink / Entity workflow" action={`${agencyWorkflowIssueCount} issue`}>
+                    <div className="agency-workflow-list">
+                      {agencyWorkflowRows.map((row) => {
+                        const doneRate = row.total ? (row.done / row.total) * 100 : 0
+                        return (
+                          <div className="agency-workflow-row" key={row.label}>
+                            <ProgressRow label={row.label} value={doneRate} meta={`${row.done}/${row.total} live · ${row.pending} đang xử lý · ${row.issue} issue`} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </Panel>
+
+                  <Panel title="Content backlog" action={`${contentBacklogKeywords.length} keyword`}>
+                    <div className="agency-content-summary">
+                      <Detail label="Chưa viết / cần sửa" value={`${contentBacklogKeywords.length}`} />
+                      <Detail label="Chờ duyệt" value={`${contentReviewKeywords.length}`} />
+                      <Detail label="Đã có URL / duyệt" value={`${contentApprovedKeywords.length}`} />
+                      <Detail label="Task content mở" value={`${openContentTasks.length}`} />
+                    </div>
+                    {contentBacklogTop.length > 0 && (
+                      <div className="agency-compact-list">
+                        {contentBacklogTop.map((keyword) => (
+                          <div key={keyword.id}>
+                            <strong>{keyword.term}</strong>
+                            <span>{agencyProjectName(keyword.projectId)} · SV {keyword.searchVolume.toLocaleString('vi-VN')} · Pos #{keyword.position}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Panel>
+                </div>
+
                 <div className="metric-grid task-overview-metrics">
                   <Metric title="Tổng dự án" value={activeProjects.length} note={`${projectProgress.filter((p) => p.status === 'Đang SEO').length} đang SEO`} icon="projects" tone="blue" />
                   <Metric title="Tổng chi phí" value={currency.format(expense)} note="Không tính doanh thu" icon="finance" tone="teal" />
@@ -6622,6 +7158,133 @@ function App() {
                         <Detail label="Lưu token" value="Mã hóa tại backend" />
                       </div>
                       {googleOAuthMessage && <p className="analytics-status">{googleOAuthMessage}</p>}
+                    </div>
+                  </div>
+                </Panel>
+
+                <Panel title="OpenSEO Bridge" action={activeOpenSeoSettings.projectId ? 'Đã mapping' : 'Chưa mapping'}>
+                  <div className="analytics-layout open-seo-layout">
+                    <form className="analytics-settings open-seo-settings" onSubmit={saveOpenSeoSettings} key={`${activeProject.id}-open-seo`} ref={openSeoFormRef}>
+                      <div className="google-oauth-state">
+                        <span className={openSeoStatus?.openSeo?.reachable ? 'pill income' : 'pill'}>
+                          {openSeoLoading ? 'Đang kiểm tra' : openSeoStatus?.openSeo?.reachable ? 'Bridge OK' : 'Chưa phản hồi'}
+                        </span>
+                        <strong>{openSeoStatus?.openSeo?.mode || 'OpenSEO self-host'}</strong>
+                      </div>
+                      <label>
+                        <span>OpenSEO Project ID</span>
+                        <input name="openSeoProjectId" list="open-seo-projects" defaultValue={activeOpenSeoSettings.projectId} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>OpenSEO Project Name</span>
+                        <input name="openSeoProjectName" defaultValue={activeOpenSeoSettings.projectName || openSeoSuggestedProject?.name || ''} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>OpenSEO Domain</span>
+                        <input name="openSeoDomain" defaultValue={activeOpenSeoSettings.domain || openSeoSuggestedProject?.domain || activeProject.website} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>Rank Tracker ID</span>
+                        <input name="rankTrackerId" list="open-seo-rank-trackers" defaultValue={activeOpenSeoSettings.rankTrackerId} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>Rank Tracker Domain</span>
+                        <input name="rankTrackerDomain" defaultValue={activeOpenSeoSettings.rankTrackerDomain || openSeoSuggestedTracker?.domain || activeProject.website} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>Location Code</span>
+                        <input name="locationCode" type="number" min="1" defaultValue={activeOpenSeoSettings.locationCode || openSeoSuggestedTracker?.locationCode || 2704} disabled={!canEditProjects} />
+                      </label>
+                      <label>
+                        <span>Language Code</span>
+                        <input name="languageCode" defaultValue={activeOpenSeoSettings.languageCode || openSeoSuggestedTracker?.languageCode || 'vi'} disabled={!canEditProjects} />
+                      </label>
+                      <datalist id="open-seo-projects">
+                        {openSeoProjects.map((project) => (
+                          <option key={project.id} value={project.id}>{project.name}</option>
+                        ))}
+                      </datalist>
+                      <datalist id="open-seo-rank-trackers">
+                        {openSeoRankTrackers.map((tracker) => (
+                          <option key={tracker.id} value={tracker.id}>{tracker.domain}</option>
+                        ))}
+                      </datalist>
+                      <div className="analytics-form-actions">
+                        <button type="submit" disabled={!canEditProjects}>Lưu mapping</button>
+                        <button className="secondary-button" type="button" onClick={() => loadOpenSeoStatus(activeProject.id)} disabled={openSeoLoading}>
+                          Kiểm tra
+                        </button>
+                        <button className="secondary-button" type="button" onClick={applyOpenSeoSuggestion} disabled={!canEditProjects || !openSeoSuggestedProject}>
+                          Dùng gợi ý
+                        </button>
+                        <button className="danger-button" type="button" onClick={disconnectOpenSeoProject} disabled={!canEditProjects || !activeOpenSeoSettings.projectId}>
+                          Ngắt mapping
+                        </button>
+                        <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('keywords')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
+                          Sync keywords
+                        </button>
+                        <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('rank-tracker')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
+                          Sync rank
+                        </button>
+                        <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('gsc')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
+                          Sync GSC
+                        </button>
+                        <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('auto-tasks')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
+                          Auto tasks
+                        </button>
+                        <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('metrics')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
+                          Sync metrics
+                        </button>
+                      </div>
+                    </form>
+                    <div className="analytics-report">
+                      <div className="project-detail open-seo-detail">
+                        <Detail label="Bridge" value={openSeoStatus?.openSeo?.reachable ? 'Đang kết nối' : 'Chưa kết nối'} />
+                        <Detail label="OpenSEO URL" value={field(openSeoStatus?.configured?.baseUrl)} />
+                        <Detail label="Tài khoản MCP" value={field(openSeoStatus?.openSeo?.userEmail)} />
+                        <Detail label="Projects" value={`${openSeoStatus?.openSeo?.projectCount ?? openSeoProjects.length}`} />
+                        <Detail label="Project đã map" value={field(activeOpenSeoSettings.projectName || activeOpenSeoSettings.projectId || openSeoSuggestedProject?.name)} />
+                        <Detail label="Rank tracker" value={field(activeOpenSeoSettings.rankTrackerDomain || openSeoSuggestedTracker?.domain || activeOpenSeoSettings.rankTrackerId)} />
+                        <Detail label="Keyword theo dõi" value={`${openSeoTrackedKeywordCount}`} />
+                        <Detail label="Lần check rank" value={formatDateTime(openSeoSuggestedTracker?.lastCheckedAt || activeOpenSeoSettings.lastCheckedAt)} />
+                        <Detail label="Lịch check tiếp" value={formatDateTime(openSeoSuggestedTracker?.nextCheckAt || activeOpenSeoSettings.nextCheckAt)} />
+                        <Detail label="GSC property" value={field(activeOpenSeoSettings.gscSiteUrl)} />
+                        <Detail label="GSC sync" value={formatDateTime(activeOpenSeoSettings.gscSyncedAt)} />
+                        <Detail label="GSC rows" value={`${activeOpenSeoSettings.gscRowCount ?? 0}`} />
+                        <Detail label="Lưu mapping" value={formatDateTime(activeOpenSeoSettings.linkedAt)} />
+                      </div>
+                      {openSeoSyncSummary && (
+                        <div className="project-detail open-seo-detail">
+                          <Detail label="Sync mode" value={openSeoSyncSummary.mode} />
+                          <Detail label="Sync lúc" value={formatDateTime(openSeoSyncSummary.syncedAt)} />
+                          <Detail label="Cập nhật" value={`${openSeoSyncSummary.updatedKeywordCount ?? 0}`} />
+                          <Detail label="Import mới" value={`${openSeoSyncSummary.importedKeywordCount ?? 0}`} />
+                          <Detail label="Auto tasks" value={`${openSeoSyncSummary.seoTaskAutomation?.createdTaskCount ?? openSeoSyncSummary.createdTaskCount ?? 0}`} />
+                          {(openSeoSyncSummary.seoTaskAutomation?.duplicateTaskCount ?? openSeoSyncSummary.duplicateTaskCount ?? 0) > 0 && (
+                            <Detail label="Task trùng" value={`${openSeoSyncSummary.seoTaskAutomation?.duplicateTaskCount ?? openSeoSyncSummary.duplicateTaskCount ?? 0}`} />
+                          )}
+                          {openSeoSyncSummary.mode === 'gsc' && (
+                            <>
+                              <Detail label="GSC rows" value={`${openSeoSyncSummary.rowCount ?? 0}`} />
+                              <Detail label="Match query" value={`${openSeoSyncSummary.matchedByQueryCount ?? 0}`} />
+                              <Detail label="Match page" value={`${openSeoSyncSummary.matchedByPageCount ?? 0}`} />
+                              <Detail label="GSC range" value={field([openSeoSyncSummary.startDate, openSeoSyncSummary.endDate].filter(Boolean).join('..'))} />
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {openSeoMessage && <p className="analytics-status">{openSeoMessage}</p>}
+                      {openSeoSyncSummary?.mode === 'gsc' && !openSeoSyncSummary.ok && openSeoSyncSummary.setupDocsUrl && (
+                        <p className="analytics-status">
+                          OpenSEO setup docs: <a href={openSeoSyncSummary.setupDocsUrl} target="_blank" rel="noreferrer">{openSeoSyncSummary.setupDocsUrl}</a>
+                        </p>
+                      )}
+                      {openSeoSyncSummary?.mode === 'gsc' && !openSeoSyncSummary.ok && openSeoSyncSummary.connectUrl && (
+                        <p className="analytics-status">
+                          OpenSEO connect URL: <a href={openSeoSyncSummary.connectUrl} target="_blank" rel="noreferrer">{openSeoSyncSummary.connectUrl}</a>
+                        </p>
+                      )}
+                      {openSeoStatus?.openSeo?.error && <p className="analytics-status open-seo-error">{openSeoStatus.openSeo.error}</p>}
                     </div>
                   </div>
                 </Panel>

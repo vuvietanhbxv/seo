@@ -40,6 +40,11 @@ const googleClientId = process.env.SEO_OPS_GOOGLE_CLIENT_ID || ''
 const googleClientSecret = process.env.SEO_OPS_GOOGLE_CLIENT_SECRET || ''
 const googleRedirectUri = process.env.SEO_OPS_GOOGLE_REDIRECT_URI || ''
 const googleTokenSecret = process.env.SEO_OPS_GOOGLE_TOKEN_SECRET || ''
+const openSeoBaseUrl = normalizeOrigin(process.env.OPEN_SEO_BASE_URL || 'http://127.0.0.1:3001')
+const openSeoMcpUrl = process.env.OPEN_SEO_MCP_URL || `${openSeoBaseUrl}/mcp`
+const openSeoMcpToken = process.env.OPEN_SEO_MCP_TOKEN || ''
+const openSeoMcpConnectorKey = process.env.OPEN_SEO_MCP_CONNECTOR_KEY || ''
+const openSeoTimeoutMs = Math.max(1000, Number(process.env.OPEN_SEO_TIMEOUT_MS || 8000))
 const claudeGatewayBaseUrl = process.env.CLAUDE_GATEWAY_BASE_URL || process.env.SEO_OPS_CLAUDE_GATEWAY_BASE_URL || 'https://1gw.gwai.cloud'
 const claudeGatewayAuthHeader = process.env.CLAUDE_GATEWAY_AUTH_HEADER || process.env.SEO_OPS_CLAUDE_GATEWAY_AUTH_HEADER || 'x-api-key'
 const claudeApiKey = process.env.CLAUDE_API_KEY || process.env.SEO_OPS_CLAUDE_API_KEY || ''
@@ -98,6 +103,10 @@ function normalizeBasePath(value) {
   const raw = String(value || '/').trim()
   if (!raw || raw === '/') return ''
   return `/${raw.replace(/^\/+|\/+$/g, '')}`
+}
+
+function normalizeOrigin(value) {
+  return String(value || '').trim().replace(/\/+$/, '')
 }
 
 function isInsideApp(targetPath) {
@@ -272,6 +281,14 @@ const readDb = () => storage.readDb()
 const writeDb = (data, options = {}) => storage.writeDb(data, options)
 
 const taskDeadlineDayMs = 24 * 60 * 60 * 1000
+const seoTaskAutomationDefaults = {
+  rankDropThreshold: 3,
+  highImpressionThreshold: 500,
+  strikingDistanceMin: 11,
+  strikingDistanceMax: 30,
+  deadlineDays: 5,
+}
+const taskDoneStatuses = new Set(['Hoàn thành', 'Đã hủy'])
 
 function parseTaskDeadline(value) {
   const raw = String(value || '').trim()
@@ -394,6 +411,284 @@ async function runTaskDeadlineAutomation() {
   const currentData = await readDb()
   const result = applyTaskDeadlineAutomation(currentData)
   if (result.changed) await writeDb(result.data)
+}
+
+function bangkokParts(date) {
+  return Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]))
+}
+
+function seoTaskDeadlineAt(now, days) {
+  const target = new Date(now.getTime() + days * taskDeadlineDayMs)
+  const parts = bangkokParts(target)
+  return `${parts.year}-${parts.month}-${parts.day}T17:30`
+}
+
+function seoTaskDueDate(deadlineAt) {
+  return String(deadlineAt || '').slice(0, 10)
+}
+
+function normalizedTaskStatus(task) {
+  return task?.status === 'Cần làm' ? 'Chờ nhận' : task?.status
+}
+
+function activeSeoTaskKeys(data) {
+  const keys = new Set()
+  for (const task of Array.isArray(data.tasks) ? data.tasks : []) {
+    if (taskDoneStatuses.has(normalizedTaskStatus(task))) continue
+    if (task.automationKey) keys.add(String(task.automationKey))
+    const marker = String(task.note || task.guide || '').match(/\[SEO-AUTO:[^\]]+\]/)
+    if (marker) keys.add(marker[0].slice(1, -1))
+  }
+  return keys
+}
+
+function seoPreviousKeyword(previousData, keyword) {
+  const previousKeywords = Array.isArray(previousData?.keywords) ? previousData.keywords : []
+  return previousKeywords.find((item) => item.id === keyword.id)
+    || previousKeywords.find((item) => item.projectId === keyword.projectId && normalizeKeywordKey(item.term) === normalizeKeywordKey(keyword.term))
+    || null
+}
+
+function seoTaskAssignee(data, project, keyword) {
+  const users = Array.isArray(data.users) ? data.users : []
+  const activeUsers = users.filter((user) => user.active !== false)
+  return keyword.articleAssigneeId
+    || project.ownerId
+    || activeUsers.find((user) => user.role === 'Quản trị viên')?.id
+    || activeUsers[0]?.id
+    || ''
+}
+
+function seoTaskSalary(data, moduleName) {
+  return numberOrDefault(data?.taskSalarySettings?.[moduleName], 0)
+}
+
+function keywordLanding(keyword) {
+  return String(keyword.landingUrl || keyword.articleUrl || '').trim()
+}
+
+function isNoindexKeyword(keyword) {
+  const status = String(keyword.indexStatus || '').trim().toLowerCase()
+  return status === 'noindex' || status.includes('noindex') || status.includes('no index')
+}
+
+function seoTaskIssueDefinitions(keyword, previousKeyword, options) {
+  const position = numberOrNull(keyword.position)
+  const impressions = numberOrDefault(keyword.impressions, 0)
+  const previousPosition = numberOrNull(previousKeyword?.position ?? keyword.openSeoPreviousPosition)
+  const storedDelta = numberOrNull(keyword.openSeoRankDelta)
+  const rankDelta = previousPosition !== null && position !== null ? position - previousPosition : storedDelta
+  const landing = keywordLanding(keyword)
+  const issues = []
+
+  if (
+    previousPosition !== null &&
+    position !== null &&
+    previousPosition > 0 &&
+    position > previousPosition &&
+    rankDelta !== null &&
+    rankDelta >= options.rankDropThreshold
+  ) {
+    issues.push({
+      type: 'rank-drop',
+      title: `Khôi phục rank: ${keyword.term}`,
+      module: 'Phát triển & Bảo trì',
+      note: `Rank tụt từ #${previousPosition} xuống #${position} (${rankDelta >= 0 ? '+' : ''}${rankDelta}).`,
+      guide: [
+        `Keyword: ${keyword.term}`,
+        landing ? `URL: ${landing}` : 'URL: chưa có landing page',
+        'Kiểm tra SERP, nội dung đối thủ, intent, internal link và thay đổi kỹ thuật gần đây.',
+        'Cập nhật nội dung/onpage hoặc đề xuất backlink nội bộ để phục hồi thứ hạng.',
+      ].join('\n'),
+    })
+  }
+
+  if (
+    impressions >= options.highImpressionThreshold &&
+    position !== null &&
+    position >= options.strikingDistanceMin &&
+    position <= options.strikingDistanceMax
+  ) {
+    issues.push({
+      type: 'high-impression-11-30',
+      title: `Đẩy keyword top 11-30: ${keyword.term}`,
+      module: 'Phát triển & Bảo trì',
+      note: `Keyword có ${impressions.toLocaleString('vi-VN')} impressions và position #${position}.`,
+      guide: [
+        `Keyword: ${keyword.term}`,
+        landing ? `URL: ${landing}` : 'URL: chưa có landing page',
+        'Ưu tiên tối ưu title/H1/meta, bổ sung đoạn trả lời nhanh, FAQ, internal link và schema nếu phù hợp.',
+        'Mục tiêu: kéo keyword vào top 10.',
+      ].join('\n'),
+    })
+  }
+
+  if (landing && isNoindexKeyword(keyword)) {
+    issues.push({
+      type: 'noindex-url',
+      title: `Xử lý index URL: ${keyword.term}`,
+      module: 'Phát triển & Bảo trì',
+      note: `URL đang Noindex hoặc chưa được Google index: ${landing}.`,
+      guide: [
+        `Keyword: ${keyword.term}`,
+        `URL: ${landing}`,
+        'Kiểm tra robots meta, canonical, robots.txt, sitemap, internal link và URL Inspection.',
+        'Sau khi sửa, request indexing lại trong Google Search Console.',
+      ].join('\n'),
+    })
+  }
+
+  if (!landing) {
+    issues.push({
+      type: 'missing-landing-page',
+      title: `Tạo landing page: ${keyword.term}`,
+      module: 'Bài viết',
+      note: 'Keyword chưa có landing URL hoặc article URL trong SEO Ops.',
+      guide: [
+        `Keyword: ${keyword.term}`,
+        'Chọn hoặc tạo landing page phù hợp intent.',
+        'Cập nhật Landing URL trong module Keyword sau khi trang sẵn sàng.',
+      ].join('\n'),
+    })
+  }
+
+  return issues
+}
+
+function applySeoTaskAutomation(data, options = {}, previousData = null) {
+  if (!data || !Array.isArray(data.projects) || !Array.isArray(data.keywords) || !Array.isArray(data.tasks)) {
+    return { data, changed: false, summary: { createdTaskCount: 0 } }
+  }
+
+  const now = options.now instanceof Date ? options.now : new Date()
+  const nowIso = now.toISOString()
+  const rules = { ...seoTaskAutomationDefaults }
+  for (const key of Object.keys(seoTaskAutomationDefaults)) {
+    if (options[key] !== undefined && options[key] !== null && options[key] !== '') {
+      rules[key] = Number(options[key])
+    }
+  }
+  const maxTasks = Math.min(200, Math.max(1, Number(options.maxTasks) || 50))
+  const projectIds = new Set(Array.isArray(options.projectIds) && options.projectIds.length ? options.projectIds : data.projects.map((project) => project.id))
+  const projectById = new Map(data.projects.map((project) => [project.id, project]))
+  const openKeys = activeSeoTaskKeys(data)
+  const newTasks = []
+  const notifications = []
+  const activityLogs = []
+  const createdByIssue = {}
+  let candidateCount = 0
+  let duplicateTaskCount = 0
+  let skippedLimitCount = 0
+
+  for (const keyword of data.keywords) {
+    if (!projectIds.has(keyword.projectId)) continue
+    const project = projectById.get(keyword.projectId)
+    if (!project || project.deletedAt) continue
+    const previousKeyword = seoPreviousKeyword(previousData, keyword)
+    const issues = seoTaskIssueDefinitions(keyword, previousKeyword, rules)
+    for (const issue of issues) {
+      candidateCount += 1
+      const automationKey = `SEO-AUTO:${keyword.projectId}:${keyword.id}:${issue.type}`
+      if (openKeys.has(automationKey)) {
+        duplicateTaskCount += 1
+        continue
+      }
+      if (newTasks.length >= maxTasks) {
+        skippedLimitCount += 1
+        continue
+      }
+      const deadlineAt = seoTaskDeadlineAt(now, rules.deadlineDays)
+      const assigneeId = seoTaskAssignee(data, project, keyword)
+      const task = {
+        id: `t-${crypto.randomUUID()}`,
+        projectId: keyword.projectId,
+        title: issue.title,
+        assigneeId,
+        dueDate: seoTaskDueDate(deadlineAt),
+        deadlineAt,
+        assignedAt: nowIso,
+        estimatedHours: 0,
+        taskSalary: seoTaskSalary(data, issue.module),
+        salaryModule: issue.module,
+        note: issue.note,
+        guide: issue.guide,
+        status: 'Chờ nhận',
+        automationKey,
+        automationSource: 'seo-opportunity',
+        sourceKeywordId: keyword.id,
+        sourceKeywordTerm: keyword.term,
+      }
+      newTasks.push(task)
+      openKeys.add(automationKey)
+      createdByIssue[issue.type] = (createdByIssue[issue.type] || 0) + 1
+      if (!options.dryRun && assigneeId) {
+        notifications.push({
+          id: `noti-${crypto.randomUUID()}`,
+          recipientId: assigneeId,
+          title: 'Task SEO tự động mới',
+          message: `${task.title} đang chờ bạn nhận xử lý.`,
+          projectId: task.projectId,
+          taskId: task.id,
+          linkView: 'tasks',
+          createdAt: nowIso,
+        })
+      }
+    }
+  }
+
+  const summary = {
+    createdTaskCount: newTasks.length,
+    candidateCount,
+    duplicateTaskCount,
+    skippedLimitCount,
+    createdByIssue,
+    rules: {
+      rankDropThreshold: rules.rankDropThreshold,
+      highImpressionThreshold: rules.highImpressionThreshold,
+      strikingDistanceMin: rules.strikingDistanceMin,
+      strikingDistanceMax: rules.strikingDistanceMax,
+      deadlineDays: rules.deadlineDays,
+      maxTasks,
+    },
+    previewTasks: newTasks.slice(0, 10).map((task) => ({
+      title: task.title,
+      assigneeId: task.assigneeId,
+      automationKey: task.automationKey,
+      sourceKeywordId: task.sourceKeywordId,
+    })),
+  }
+
+  if (options.dryRun || newTasks.length === 0) {
+    return { data, changed: false, summary }
+  }
+
+  activityLogs.push({
+    id: `log-${crypto.randomUUID()}`,
+    actorId: '',
+    actorName: 'Hệ thống SEO',
+    action: 'Tự động tạo task SEO',
+    target: `${newTasks.length} task`,
+    at: nowIso,
+  })
+
+  return {
+    changed: true,
+    summary,
+    data: {
+      ...data,
+      tasks: [...newTasks, ...(data.tasks || [])],
+      notifications: [...notifications, ...(data.notifications || [])].slice(0, 500),
+      activityLogs: [...activityLogs, ...(data.activityLogs || [])].slice(0, 300),
+    },
+  }
 }
 
 async function readGoogleConnections() {
@@ -1429,6 +1724,957 @@ async function regenerateArticleImage(payload) {
   }
 }
 
+function normalizeDomain(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .replace(/\/.*$/, '')
+    .toLowerCase()
+}
+
+function normalizeKeywordKey(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN')
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function numberOrDefault(value, fallback = 0) {
+  const number = numberOrNull(value)
+  return number === null ? fallback : number
+}
+
+function chunkArray(items, size) {
+  const chunks = []
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size))
+  }
+  return chunks
+}
+
+function searchIntentFromOpenSeo(value, fallback = 'Informational') {
+  const intent = String(value || '').trim().toLowerCase()
+  if (intent === 'commercial') return 'Commercial'
+  if (intent === 'transactional') return 'Transactional'
+  if (intent === 'navigational') return 'Navigational'
+  if (intent === 'informational') return 'Informational'
+  return fallback || 'Informational'
+}
+
+function metricRowHasData(row) {
+  return [
+    row.searchVolume ?? row.search_volume,
+    row.keywordDifficulty ?? row.keyword_difficulty,
+    row.cpc,
+    row.competition,
+    row.intent ?? row.mainIntent ?? row.main_intent,
+  ].some((value) => value !== null && value !== undefined && value !== '')
+}
+
+function bestRankPosition(row) {
+  const desktop = numberOrNull(row?.desktop?.position)
+  const mobile = numberOrNull(row?.mobile?.position)
+  const positions = [desktop, mobile].filter((item) => item !== null && item > 0)
+  return positions.length ? Math.min(...positions) : 100
+}
+
+function rankingUrlFromRow(row) {
+  return String(row?.desktop?.rankingUrl || row?.mobile?.rankingUrl || row?.rankingUrl || '')
+}
+
+function compactPathname(value) {
+  const raw = String(value || '').trim().replace(/[?#].*$/, '')
+  const pathname = raw.startsWith('/') ? raw : `/${raw}`
+  return pathname.replace(/\/{2,}/g, '/') || '/'
+}
+
+function normalizePageKey(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  try {
+    const url = /^https?:\/\//i.test(raw)
+      ? new URL(raw)
+      : new URL(raw.startsWith('/') ? raw : `/${raw}`, 'https://seo-ops.local')
+    return compactPathname(url.pathname).replace(/\/+$/, '').toLocaleLowerCase('vi-VN') || '/'
+  } catch {
+    return compactPathname(raw.replace(/^https?:\/\/[^/]+/i, '')).replace(/\/+$/, '').toLocaleLowerCase('vi-VN') || '/'
+  }
+}
+
+function projectDomainSet(project, link) {
+  return new Set([
+    normalizeDomain(project?.website),
+    normalizeDomain(link?.domain),
+    normalizeDomain(link?.rankTrackerDomain),
+  ].filter(Boolean))
+}
+
+function landingUrlFromGscPage(page, project, link) {
+  const raw = String(page || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('/')) return compactPathname(raw)
+  try {
+    const url = new URL(raw)
+    return projectDomainSet(project, link).has(normalizeDomain(url.hostname))
+      ? compactPathname(url.pathname)
+      : raw
+  } catch {
+    return raw
+  }
+}
+
+function gscRowQueryAndPage(row, dimensions = ['query', 'page']) {
+  const keys = Array.isArray(row?.keys) ? row.keys : []
+  const queryIndex = dimensions.indexOf('query')
+  const pageIndex = dimensions.indexOf('page')
+  return {
+    query: String(row?.query ?? (queryIndex >= 0 ? keys[queryIndex] : keys[0]) ?? '').trim(),
+    page: String(row?.page ?? (pageIndex >= 0 ? keys[pageIndex] : keys[1]) ?? '').trim(),
+  }
+}
+
+function uniqueProjectKeywords(data, projectId) {
+  const seen = new Set()
+  return (Array.isArray(data.keywords) ? data.keywords : [])
+    .filter((keyword) => keyword.projectId === projectId)
+    .map((keyword) => String(keyword.term || '').trim())
+    .filter((term) => {
+      const key = normalizeKeywordKey(term)
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+function keywordByNormalizedTerm(keywords, projectId) {
+  const map = new Map()
+  for (const keyword of keywords) {
+    if (keyword.projectId !== projectId) continue
+    const key = normalizeKeywordKey(keyword.term)
+    if (key && !map.has(key)) map.set(key, keyword)
+  }
+  return map
+}
+
+function createSeoOpsKeyword(projectId, term, now, extra = {}) {
+  return {
+    id: `k-${Date.now()}-${crypto.randomUUID().slice(0, 12)}`,
+    projectId,
+    parentId: '',
+    keywordType: 'A',
+    term,
+    landingUrl: '',
+    searchVolume: 0,
+    keywordDifficulty: 0,
+    searchIntent: 'Informational',
+    position: 100,
+    impressions: 0,
+    clicks: 0,
+    organicTraffic: 0,
+    ctr: 0,
+    articleType: 'Informational Content',
+    articleTitle: '',
+    articleMetaDescription: '',
+    articleContent: '',
+    articleStatus: 'Chua viet',
+    articleUpdatedAt: '',
+    articleSource: '',
+    articleAssigneeId: '',
+    articleUrl: '',
+    articleTaskId: '',
+    articleImported: false,
+    indexStatus: 'Chua check',
+    indexCheckedAt: '',
+    indexCoverageState: '',
+    indexLastCrawlAt: '',
+    indexInspectionLink: '',
+    openSeoImported: true,
+    openSeoSyncedAt: now,
+    ...extra,
+  }
+}
+
+function mergeKeywordMetric(keyword, row, now) {
+  const searchVolume = numberOrNull(row.searchVolume ?? row.search_volume)
+  const keywordDifficulty = numberOrNull(row.keywordDifficulty ?? row.keyword_difficulty)
+  const cpc = numberOrNull(row.cpc)
+  const competition = numberOrNull(row.competition)
+  const intent = row.intent ?? row.mainIntent ?? row.main_intent
+  const hasMetricData = metricRowHasData(row)
+  return {
+    ...keyword,
+    searchVolume: searchVolume === null ? keyword.searchVolume : searchVolume,
+    keywordDifficulty: keywordDifficulty === null ? keyword.keywordDifficulty : keywordDifficulty,
+    searchIntent: intent ? searchIntentFromOpenSeo(intent, keyword.searchIntent) : keyword.searchIntent,
+    openSeoCpc: cpc,
+    openSeoCompetition: competition,
+    openSeoIntent: intent ? String(intent) : keyword.openSeoIntent,
+    openSeoMetricsAt: hasMetricData ? now : keyword.openSeoMetricsAt || '',
+    openSeoSyncedAt: now,
+  }
+}
+
+function mergeKeywordRank(keyword, row, link, now) {
+  const rankingUrl = rankingUrlFromRow(row)
+  const searchVolume = numberOrNull(row.searchVolume)
+  const keywordDifficulty = numberOrNull(row.keywordDifficulty)
+  const cpc = numberOrNull(row.cpc)
+  const previousPosition = numberOrNull(keyword.position)
+  const nextPosition = bestRankPosition(row)
+  const rankDelta = previousPosition === null ? null : nextPosition - previousPosition
+  return {
+    ...keyword,
+    position: nextPosition,
+    searchVolume: searchVolume === null ? keyword.searchVolume : searchVolume,
+    keywordDifficulty: keywordDifficulty === null ? keyword.keywordDifficulty : keywordDifficulty,
+    openSeoCpc: cpc,
+    openSeoRankTrackerId: link.rankTrackerId || keyword.openSeoRankTrackerId,
+    openSeoRankDesktop: numberOrNull(row?.desktop?.position),
+    openSeoRankMobile: numberOrNull(row?.mobile?.position),
+    openSeoRankingUrl: rankingUrl || keyword.openSeoRankingUrl || '',
+    openSeoPreviousPosition: previousPosition,
+    openSeoRankDelta: rankDelta,
+    openSeoRankDroppedAt: rankDelta !== null && rankDelta > 0 ? now : keyword.openSeoRankDroppedAt || '',
+    openSeoSyncedAt: now,
+  }
+}
+
+function mergeKeywordGsc(keyword, row, query, page, project, link, now, dateRange) {
+  const clicks = numberOrDefault(row.clicks, 0)
+  const impressions = numberOrDefault(row.impressions, 0)
+  const ctr = numberOrNull(row.ctr)
+  const position = numberOrNull(row.position)
+  const ctrPercent = ctr === null ? keyword.ctr : Math.round((ctr > 1 ? ctr : ctr * 100) * 100) / 100
+  const averagePosition = position === null ? keyword.position : Math.round(position * 10) / 10
+  const previousPosition = numberOrNull(keyword.position)
+  const rankDelta = previousPosition === null ? null : averagePosition - previousPosition
+  const landingUrl = keyword.landingUrl || landingUrlFromGscPage(page, project, link)
+
+  return {
+    ...keyword,
+    landingUrl,
+    position: averagePosition,
+    impressions,
+    clicks,
+    organicTraffic: clicks,
+    ctr: ctrPercent,
+    openSeoGscSyncedAt: now,
+    openSeoGscQuery: query,
+    openSeoGscPage: page,
+    openSeoGscClicks: clicks,
+    openSeoGscImpressions: impressions,
+    openSeoGscCtr: ctrPercent,
+    openSeoGscPosition: averagePosition,
+    openSeoGscDateRange: dateRange,
+    openSeoPreviousPosition: previousPosition,
+    openSeoRankDelta: rankDelta,
+    openSeoRankDroppedAt: rankDelta !== null && rankDelta > 0 ? now : keyword.openSeoRankDroppedAt || '',
+    openSeoSyncedAt: now,
+  }
+}
+
+function updateProjectOpenSeoLink(project, link, updates = {}) {
+  return {
+    ...project,
+    openSeo: {
+      ...(project.openSeo || {}),
+      ...link,
+      ...updates,
+    },
+  }
+}
+
+function parseMcpResponseText(text) {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return {}
+  if (trimmed.startsWith('{')) return JSON.parse(trimmed)
+  const dataLines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.replace(/^data:\s*/, '').trim())
+    .filter((line) => line && line !== '[DONE]')
+  if (!dataLines.length) throw new Error(trimmed.slice(0, 300))
+  return JSON.parse(dataLines[dataLines.length - 1])
+}
+
+async function openSeoMcpCall(name, args = {}) {
+  const url = new URL(openSeoMcpUrl)
+  if (openSeoMcpConnectorKey && !url.searchParams.has('key')) {
+    url.searchParams.set('key', openSeoMcpConnectorKey)
+  }
+  const headers = {
+    Accept: 'application/json, text/event-stream',
+    'Content-Type': 'application/json',
+  }
+  if (openSeoMcpToken) headers.Authorization = `Bearer ${openSeoMcpToken}`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), openSeoTimeoutMs)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: `seo-ops-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      }),
+      signal: controller.signal,
+    })
+    const text = await response.text()
+    const payload = parseMcpResponseText(text)
+    if (!response.ok) throw new Error(payload?.error?.message || `OpenSEO MCP HTTP ${response.status}`)
+    if (payload.error) throw new Error(payload.error.message || 'OpenSEO MCP tool error.')
+    return payload.result || {}
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function mcpStructuredContent(result) {
+  return result?.structuredContent || result?.content?.find((item) => item?.type === 'json')?.json || {}
+}
+
+function compactOpenSeoProject(project) {
+  return {
+    id: String(project?.id || ''),
+    name: String(project?.name || ''),
+    domain: project?.domain ? String(project.domain) : null,
+    url: String(project?.url || ''),
+  }
+}
+
+function compactRankTracker(config) {
+  if (!config?.id) return null
+  return {
+    id: String(config.id),
+    projectId: String(config.projectId || ''),
+    domain: String(config.domain || ''),
+    locationCode: Number(config.locationCode || 0),
+    languageCode: String(config.languageCode || ''),
+    devices: String(config.devices || ''),
+    serpDepth: Number(config.serpDepth || 0),
+    scheduleInterval: String(config.scheduleInterval || ''),
+    isActive: Boolean(config.isActive),
+    lastCheckedAt: String(config.lastCheckedAt || ''),
+    nextCheckAt: String(config.nextCheckAt || ''),
+  }
+}
+
+async function buildOpenSeoStatus(projectId) {
+  const data = await readDb()
+  const project = data.projects.find((item) => item.id === projectId)
+  if (!project) return { ok: false, message: 'Project not found.' }
+
+  const link = project.openSeo || {}
+  const projectDomain = normalizeDomain(project.website)
+  const status = {
+    ok: true,
+    configured: {
+      baseUrl: openSeoBaseUrl,
+      mcpUrl: openSeoMcpUrl.replace(/([?&]key=)[^&]+/i, '$1***'),
+      hasBearerToken: Boolean(openSeoMcpToken),
+      hasConnectorKey: Boolean(openSeoMcpConnectorKey),
+      timeoutMs: openSeoTimeoutMs,
+    },
+    project: {
+      id: project.id,
+      name: project.name,
+      website: project.website,
+      normalizedDomain: projectDomain,
+    },
+    link,
+    openSeo: {
+      reachable: false,
+      projects: [],
+      rankTrackers: [],
+    },
+  }
+
+  try {
+    const [whoamiResult, projectsResult] = await Promise.all([
+      openSeoMcpCall('whoami'),
+      openSeoMcpCall('list_projects'),
+    ])
+    const whoami = mcpStructuredContent(whoamiResult)
+    const projectsPayload = mcpStructuredContent(projectsResult)
+    const openSeoProjects = Array.isArray(projectsPayload.projects)
+      ? projectsPayload.projects.map(compactOpenSeoProject).filter((item) => item.id)
+      : []
+    const linkedProject = openSeoProjects.find((item) => item.id === link.projectId)
+    const domainMatchedProject = openSeoProjects.find((item) => normalizeDomain(item.domain) === projectDomain)
+    const suggestedProject = linkedProject || domainMatchedProject || (openSeoProjects.length === 1 ? openSeoProjects[0] : null)
+
+    status.openSeo = {
+      reachable: true,
+      mode: String(whoami.mode || ''),
+      userEmail: String(whoami.userEmail || ''),
+      organizationId: String(whoami.organizationId || ''),
+      projects: openSeoProjects,
+      projectCount: openSeoProjects.length,
+      suggestedProject,
+      rankTrackers: [],
+    }
+
+    if (suggestedProject?.id) {
+      const trackerListResult = await openSeoMcpCall('get_rank_tracker', { projectId: suggestedProject.id })
+      const trackerPayload = mcpStructuredContent(trackerListResult)
+      const trackers = Array.isArray(trackerPayload.configs)
+        ? trackerPayload.configs.map(compactRankTracker).filter(Boolean)
+        : []
+      const linkedTracker = trackers.find((item) => item.id === link.rankTrackerId)
+      const domainMatchedTracker = trackers.find((item) => normalizeDomain(item.domain) === projectDomain)
+      const suggestedTracker = linkedTracker || domainMatchedTracker || (trackers.length === 1 ? trackers[0] : null)
+
+      status.openSeo.rankTrackers = trackers
+      status.openSeo.suggestedTracker = suggestedTracker || null
+
+      if (suggestedTracker?.id) {
+        const detailsResult = await openSeoMcpCall('get_rank_tracker', {
+          projectId: suggestedProject.id,
+          trackerId: suggestedTracker.id,
+        })
+        const detailsPayload = mcpStructuredContent(detailsResult)
+        status.openSeo.trackerDetails = {
+          config: compactRankTracker(detailsPayload.config) || suggestedTracker,
+          results: detailsPayload.results || null,
+        }
+      }
+    }
+  } catch (error) {
+    status.openSeo.reachable = false
+    status.openSeo.error = error instanceof Error ? error.message : String(error)
+  }
+
+  return status
+}
+
+async function resolveOpenSeoLink(data, project) {
+  const existing = project.openSeo || {}
+  if (existing.projectId) {
+    return {
+      ...existing,
+      locationCode: Number(existing.locationCode) || 2704,
+      languageCode: existing.languageCode || 'vi',
+    }
+  }
+
+  const status = await buildOpenSeoStatus(project.id)
+  if (!status.openSeo?.reachable || !status.openSeo?.suggestedProject?.id) {
+    throw new Error(status.openSeo?.error || 'Project này chưa được map với OpenSEO và không có gợi ý tự động rõ ràng.')
+  }
+
+  const suggestedProject = status.openSeo.suggestedProject
+  const suggestedTracker = status.openSeo.suggestedTracker || {}
+  return {
+    projectId: suggestedProject.id,
+    projectName: suggestedProject.name || '',
+    domain: suggestedProject.domain || project.website || '',
+    rankTrackerId: suggestedTracker.id || '',
+    rankTrackerDomain: suggestedTracker.domain || project.website || '',
+    locationCode: Number(suggestedTracker.locationCode || existing.locationCode || 2704),
+    languageCode: suggestedTracker.languageCode || existing.languageCode || 'vi',
+    linkedAt: existing.linkedAt || '',
+    lastStatusAt: existing.lastStatusAt || '',
+    lastCheckedAt: suggestedTracker.lastCheckedAt || existing.lastCheckedAt || '',
+    nextCheckAt: suggestedTracker.nextCheckAt || existing.nextCheckAt || '',
+    statusMessage: existing.statusMessage || 'Auto-mapped from OpenSEO suggestion',
+  }
+}
+
+function requireSeoOpsProject(data, projectId) {
+  const project = (Array.isArray(data.projects) ? data.projects : []).find((item) => item.id === projectId)
+  if (!project) throw new Error('Không tìm thấy dự án SEO Ops.')
+  return project
+}
+
+function applySavedKeywordRows(data, project, link, rows, now) {
+  const byTerm = keywordByNormalizedTerm(data.keywords, project.id)
+  const nextKeywords = [...data.keywords]
+  let importedKeywordCount = 0
+  let updatedKeywordCount = 0
+
+  for (const row of rows) {
+    const term = String(row.keyword || '').trim()
+    const key = normalizeKeywordKey(term)
+    if (!key) continue
+    const existing = byTerm.get(key)
+    if (existing) {
+      const updated = mergeKeywordMetric(existing, row, now)
+      const index = nextKeywords.findIndex((item) => item.id === existing.id)
+      if (index >= 0) nextKeywords[index] = updated
+      byTerm.set(key, updated)
+      updatedKeywordCount += 1
+      continue
+    }
+    const created = createSeoOpsKeyword(project.id, term, now, {
+      searchVolume: numberOrDefault(row.searchVolume, 0),
+      keywordDifficulty: numberOrDefault(row.keywordDifficulty, 0),
+      searchIntent: searchIntentFromOpenSeo(row.intent),
+      openSeoCpc: numberOrNull(row.cpc),
+      openSeoCompetition: numberOrNull(row.competition),
+      openSeoIntent: row.intent ? String(row.intent) : '',
+      openSeoMetricsAt: row.searchVolume != null || row.keywordDifficulty != null ? now : '',
+    })
+    nextKeywords.push(created)
+    byTerm.set(key, created)
+    importedKeywordCount += 1
+  }
+
+  return {
+    data: {
+      ...data,
+      keywords: nextKeywords,
+      projects: data.projects.map((item) =>
+        item.id === project.id
+          ? updateProjectOpenSeoLink(item, link, {
+              linkedAt: link.linkedAt || now,
+              lastStatusAt: now,
+              statusMessage: `Synced ${rows.length} saved keyword(s) from OpenSEO`,
+            })
+          : item,
+      ),
+    },
+    importedKeywordCount,
+    updatedKeywordCount,
+  }
+}
+
+function applyRankTrackerRows(data, project, link, config, rows, now) {
+  const byTerm = keywordByNormalizedTerm(data.keywords, project.id)
+  const nextKeywords = [...data.keywords]
+  let importedKeywordCount = 0
+  let updatedKeywordCount = 0
+
+  for (const row of rows) {
+    const term = String(row.keyword || '').trim()
+    const key = normalizeKeywordKey(term)
+    if (!key) continue
+    const existing = byTerm.get(key)
+    if (existing) {
+      const updated = mergeKeywordRank(existing, row, link, now)
+      const index = nextKeywords.findIndex((item) => item.id === existing.id)
+      if (index >= 0) nextKeywords[index] = updated
+      byTerm.set(key, updated)
+      updatedKeywordCount += 1
+      continue
+    }
+    const created = createSeoOpsKeyword(project.id, term, now, {
+      searchVolume: numberOrDefault(row.searchVolume, 0),
+      keywordDifficulty: numberOrDefault(row.keywordDifficulty, 0),
+      position: bestRankPosition(row),
+      landingUrl: rankingUrlFromRow(row),
+      openSeoCpc: numberOrNull(row.cpc),
+      openSeoRankTrackerId: link.rankTrackerId,
+      openSeoRankDesktop: numberOrNull(row?.desktop?.position),
+      openSeoRankMobile: numberOrNull(row?.mobile?.position),
+      openSeoRankingUrl: rankingUrlFromRow(row),
+    })
+    nextKeywords.push(created)
+    byTerm.set(key, created)
+    importedKeywordCount += 1
+  }
+
+  const lastCheckedAt = config?.lastCheckedAt || link.lastCheckedAt || ''
+  const nextCheckAt = config?.nextCheckAt || link.nextCheckAt || ''
+  return {
+    data: {
+      ...data,
+      keywords: nextKeywords,
+      projects: data.projects.map((item) =>
+        item.id === project.id
+          ? updateProjectOpenSeoLink(item, link, {
+              rankTrackerDomain: config?.domain || link.rankTrackerDomain || '',
+              locationCode: Number(config?.locationCode || link.locationCode || 2704),
+              languageCode: config?.languageCode || link.languageCode || 'vi',
+              linkedAt: link.linkedAt || now,
+              lastStatusAt: now,
+              lastCheckedAt,
+              nextCheckAt,
+              statusMessage: `Synced ${rows.length} rank tracker keyword(s) from OpenSEO`,
+            })
+          : item,
+      ),
+    },
+    importedKeywordCount,
+    updatedKeywordCount,
+    lastCheckedAt,
+    nextCheckAt,
+  }
+}
+
+function applyMetricRows(data, project, link, rows, now) {
+  const byTerm = keywordByNormalizedTerm(data.keywords, project.id)
+  const nextKeywords = [...data.keywords]
+  let importedKeywordCount = 0
+  let updatedKeywordCount = 0
+
+  for (const row of rows) {
+    const term = String(row.keyword || '').trim()
+    const key = normalizeKeywordKey(term)
+    if (!key) continue
+    const existing = byTerm.get(key)
+    if (existing) {
+      const updated = mergeKeywordMetric(existing, row, now)
+      const index = nextKeywords.findIndex((item) => item.id === existing.id)
+      if (index >= 0) nextKeywords[index] = updated
+      byTerm.set(key, updated)
+      updatedKeywordCount += 1
+      continue
+    }
+    const created = mergeKeywordMetric(createSeoOpsKeyword(project.id, term, now), row, now)
+    nextKeywords.push(created)
+    byTerm.set(key, created)
+    importedKeywordCount += 1
+  }
+
+  return {
+    data: {
+      ...data,
+      keywords: nextKeywords,
+      projects: data.projects.map((item) =>
+        item.id === project.id
+          ? updateProjectOpenSeoLink(item, link, {
+              linkedAt: link.linkedAt || now,
+              lastStatusAt: now,
+              statusMessage: `Synced metrics for ${rows.length} keyword(s) from OpenSEO`,
+            })
+          : item,
+      ),
+    },
+    importedKeywordCount,
+    updatedKeywordCount,
+  }
+}
+
+function applyGscRows(data, project, link, rows, details, options, now) {
+  const dimensions = details.dimensions || ['query', 'page']
+  const dateRange = details.dateRange || ''
+  const importMissing = options.importMissing !== false
+  const byTerm = keywordByNormalizedTerm(data.keywords, project.id)
+  const byPage = new Map()
+
+  for (const keyword of data.keywords) {
+    if (keyword.projectId !== project.id) continue
+    const key = normalizePageKey(keyword.landingUrl)
+    if (key && !byPage.has(key)) byPage.set(key, keyword)
+  }
+
+  const nextKeywords = [...data.keywords]
+  const touchedKeywordIds = new Set()
+  let importedKeywordCount = 0
+  let updatedKeywordCount = 0
+  let matchedByQueryCount = 0
+  let matchedByPageCount = 0
+  let unmatchedRowCount = 0
+  let skippedDuplicateRowCount = 0
+
+  for (const row of rows) {
+    const { query, page } = gscRowQueryAndPage(row, dimensions)
+    const termKey = normalizeKeywordKey(query)
+    const pageKey = normalizePageKey(page)
+    let existing = termKey ? byTerm.get(termKey) : null
+    let matchedBy = existing ? 'query' : ''
+
+    if (!existing && (!termKey || !importMissing) && pageKey) {
+      existing = byPage.get(pageKey)
+      matchedBy = existing ? 'page' : ''
+    }
+
+    if (existing) {
+      if (touchedKeywordIds.has(existing.id)) {
+        skippedDuplicateRowCount += 1
+        continue
+      }
+      const updated = mergeKeywordGsc(existing, row, query, page, project, link, now, dateRange)
+      const index = nextKeywords.findIndex((item) => item.id === existing.id)
+      if (index >= 0) nextKeywords[index] = updated
+      if (termKey) byTerm.set(termKey, updated)
+      if (normalizePageKey(updated.landingUrl) && !byPage.has(normalizePageKey(updated.landingUrl))) {
+        byPage.set(normalizePageKey(updated.landingUrl), updated)
+      }
+      touchedKeywordIds.add(updated.id)
+      updatedKeywordCount += 1
+      if (matchedBy === 'query') matchedByQueryCount += 1
+      if (matchedBy === 'page') matchedByPageCount += 1
+      continue
+    }
+
+    if (termKey && importMissing) {
+      const created = mergeKeywordGsc(createSeoOpsKeyword(project.id, query, now, {
+        landingUrl: landingUrlFromGscPage(page, project, link),
+      }), row, query, page, project, link, now, dateRange)
+      nextKeywords.push(created)
+      byTerm.set(termKey, created)
+      if (pageKey && !byPage.has(pageKey)) byPage.set(pageKey, created)
+      touchedKeywordIds.add(created.id)
+      importedKeywordCount += 1
+      continue
+    }
+
+    unmatchedRowCount += 1
+  }
+
+  return {
+    data: {
+      ...data,
+      keywords: nextKeywords,
+      projects: data.projects.map((item) =>
+        item.id === project.id
+          ? updateProjectOpenSeoLink(item, link, {
+              linkedAt: link.linkedAt || now,
+              lastStatusAt: now,
+              gscSiteUrl: details.siteUrl || link.gscSiteUrl || '',
+              gscStartDate: details.startDate || '',
+              gscEndDate: details.endDate || '',
+              gscSyncedAt: now,
+              gscRowCount: rows.length,
+              statusMessage: `Synced ${rows.length} GSC query/page row(s) from OpenSEO`,
+            })
+          : item,
+      ),
+    },
+    importedKeywordCount,
+    updatedKeywordCount,
+    matchedByQueryCount,
+    matchedByPageCount,
+    unmatchedRowCount,
+    skippedDuplicateRowCount,
+  }
+}
+
+async function syncOpenSeoKeywords(projectId, options = {}) {
+  const data = await readDb()
+  const project = requireSeoOpsProject(data, projectId)
+  const link = await resolveOpenSeoLink(data, project)
+  const now = new Date().toISOString()
+  const keywords = uniqueProjectKeywords(data, project.id)
+
+  let pushedKeywordCount = 0
+  if (!options.dryRun && keywords.length > 0) {
+    for (const chunk of chunkArray(keywords, 100)) {
+      await openSeoMcpCall('save_keywords', {
+        projectId: link.projectId,
+        keywords: chunk,
+        locationCode: Number(link.locationCode) || 2704,
+        languageCode: link.languageCode || 'vi',
+      })
+      pushedKeywordCount += chunk.length
+    }
+  }
+
+  const savedResult = await openSeoMcpCall('list_saved_keywords', {
+    projectId: link.projectId,
+    limit: 250,
+  })
+  const savedPayload = mcpStructuredContent(savedResult)
+  const rows = Array.isArray(savedPayload.rows) ? savedPayload.rows : []
+  const merged = applySavedKeywordRows(data, project, link, rows, now)
+  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: Boolean(options.dryRun) }, data)
+  if (!options.dryRun) await writeDb(seoTasks.data)
+
+  return {
+    ok: true,
+    mode: 'keywords',
+    dryRun: Boolean(options.dryRun),
+    syncedAt: now,
+    seoOpsKeywordCount: keywords.length,
+    pushedKeywordCount: options.dryRun ? 0 : pushedKeywordCount,
+    openSeoSavedKeywordCount: rows.length,
+    importedKeywordCount: merged.importedKeywordCount,
+    updatedKeywordCount: merged.updatedKeywordCount,
+    seoTaskAutomation: seoTasks.summary,
+    openSeoProjectId: link.projectId,
+  }
+}
+
+async function syncOpenSeoRankTracker(projectId, options = {}) {
+  const data = await readDb()
+  const project = requireSeoOpsProject(data, projectId)
+  const link = await resolveOpenSeoLink(data, project)
+  if (!link.rankTrackerId) throw new Error('Dự án chưa có OpenSEO Rank Tracker ID.')
+  const now = new Date().toISOString()
+
+  const trackerResult = await openSeoMcpCall('get_rank_tracker', {
+    projectId: link.projectId,
+    trackerId: link.rankTrackerId,
+  })
+  const trackerPayload = mcpStructuredContent(trackerResult)
+  const rows = Array.isArray(trackerPayload.results?.rows) ? trackerPayload.results.rows : []
+  const config = compactRankTracker(trackerPayload.config) || {
+    id: link.rankTrackerId,
+    domain: link.rankTrackerDomain,
+    locationCode: link.locationCode,
+    languageCode: link.languageCode,
+    lastCheckedAt: link.lastCheckedAt,
+    nextCheckAt: link.nextCheckAt,
+  }
+  const merged = applyRankTrackerRows(data, project, link, config, rows, now)
+  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: Boolean(options.dryRun) }, data)
+  if (!options.dryRun) await writeDb(seoTasks.data)
+
+  return {
+    ok: true,
+    mode: 'rank-tracker',
+    dryRun: Boolean(options.dryRun),
+    syncedAt: now,
+    rankTrackerId: link.rankTrackerId,
+    rankTrackerDomain: config.domain,
+    rankingKeywordCount: rows.length,
+    importedKeywordCount: merged.importedKeywordCount,
+    updatedKeywordCount: merged.updatedKeywordCount,
+    lastCheckedAt: merged.lastCheckedAt,
+    nextCheckAt: merged.nextCheckAt,
+    seoTaskAutomation: seoTasks.summary,
+  }
+}
+
+async function syncOpenSeoMetrics(projectId, options = {}) {
+  const data = await readDb()
+  const project = requireSeoOpsProject(data, projectId)
+  const link = await resolveOpenSeoLink(data, project)
+  const keywords = uniqueProjectKeywords(data, project.id).slice(0, 700)
+  const now = new Date().toISOString()
+
+  if (options.dryRun) {
+    return {
+      ok: true,
+      mode: 'metrics',
+      dryRun: true,
+      syncedAt: now,
+      wouldFetchKeywordCount: keywords.length,
+      openSeoProjectId: link.projectId,
+    }
+  }
+
+  if (!options.confirmPaidMetrics) {
+    throw new Error('Đồng bộ metrics gọi DataForSEO qua OpenSEO và có thể tốn credit. Cần confirmPaidMetrics=true.')
+  }
+  if (keywords.length === 0) throw new Error('Dự án chưa có keyword để đồng bộ metrics.')
+
+  const rows = []
+  for (const chunk of chunkArray(keywords, 700)) {
+    const metricsResult = await openSeoMcpCall('get_keyword_metrics', {
+      projectId: link.projectId,
+      keywords: chunk,
+      locationCode: Number(link.locationCode) || 2704,
+      languageCode: link.languageCode || 'vi',
+      includeMonthlyTrends: false,
+    })
+    const metricsPayload = mcpStructuredContent(metricsResult)
+    if (Array.isArray(metricsPayload.keywords)) rows.push(...metricsPayload.keywords)
+  }
+
+  const merged = applyMetricRows(data, project, link, rows, now)
+  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id] }, data)
+  await writeDb(seoTasks.data)
+
+  return {
+    ok: true,
+    mode: 'metrics',
+    dryRun: false,
+    syncedAt: now,
+    requestedKeywordCount: keywords.length,
+    metricsKeywordCount: rows.length,
+    importedKeywordCount: merged.importedKeywordCount,
+    updatedKeywordCount: merged.updatedKeywordCount,
+    seoTaskAutomation: seoTasks.summary,
+    openSeoProjectId: link.projectId,
+  }
+}
+
+async function syncOpenSeoGscPerformance(projectId, options = {}) {
+  const data = await readDb()
+  const project = requireSeoOpsProject(data, projectId)
+  const link = await resolveOpenSeoLink(data, project)
+  const now = new Date().toISOString()
+  const rowLimit = Math.min(1000, Math.max(1, Number(options.rowLimit) || 250))
+  const dimensions = ['query', 'page']
+  const request = {
+    projectId: link.projectId,
+    dimensions,
+    rowLimit,
+    dataState: options.dataState === 'all' ? 'all' : 'final',
+    type: 'web',
+  }
+
+  if (options.startDate && options.endDate) {
+    request.startDate = String(options.startDate)
+    request.endDate = String(options.endDate)
+  } else {
+    request.dateRange = String(options.dateRange || 'last_28_days')
+  }
+
+  const gscResult = await openSeoMcpCall('get_search_console_performance', request)
+  const gscPayload = mcpStructuredContent(gscResult)
+
+  if (gscPayload.ok === false) {
+    const reason = String(gscPayload.reason || 'gsc_not_connected')
+    const message = reason === 'gsc_oauth_not_configured'
+      ? 'OpenSEO GSC OAuth is not configured yet.'
+      : reason === 'not_connected'
+        ? 'OpenSEO has not connected a Google Search Console property yet.'
+        : 'OpenSEO could not return Google Search Console performance.'
+    return {
+      ok: false,
+      mode: 'gsc',
+      dryRun: Boolean(options.dryRun),
+      syncedAt: now,
+      connected: false,
+      reason,
+      message,
+      setupDocsUrl: gscPayload.setupDocsUrl || '',
+      connectUrl: gscPayload.connectUrl || '',
+      siteUrl: gscPayload.siteUrl || '',
+      openSeoProjectId: link.projectId,
+    }
+  }
+
+  const rows = Array.isArray(gscPayload.rows) ? gscPayload.rows : []
+  const startDate = String(gscPayload.startDate || request.startDate || '')
+  const endDate = String(gscPayload.endDate || request.endDate || '')
+  const dateRange = startDate || endDate ? `${startDate}..${endDate}` : String(request.dateRange || '')
+  const merged = applyGscRows(data, project, link, rows, {
+    dimensions: Array.isArray(gscPayload.dimensions) ? gscPayload.dimensions : dimensions,
+    siteUrl: gscPayload.siteUrl || '',
+    startDate,
+    endDate,
+    dateRange,
+  }, {
+    importMissing: options.importMissing !== false,
+  }, now)
+
+  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: Boolean(options.dryRun) }, data)
+  if (!options.dryRun) await writeDb(seoTasks.data)
+
+  return {
+    ok: true,
+    mode: 'gsc',
+    dryRun: Boolean(options.dryRun),
+    syncedAt: now,
+    connected: true,
+    siteUrl: gscPayload.siteUrl || '',
+    startDate,
+    endDate,
+    rowCount: rows.length,
+    importedKeywordCount: merged.importedKeywordCount,
+    updatedKeywordCount: merged.updatedKeywordCount,
+    matchedByQueryCount: merged.matchedByQueryCount,
+    matchedByPageCount: merged.matchedByPageCount,
+    unmatchedRowCount: merged.unmatchedRowCount,
+    skippedDuplicateRowCount: merged.skippedDuplicateRowCount,
+    seoTaskAutomation: seoTasks.summary,
+    hasMore: Boolean(gscPayload.hasMore),
+    nextStartRow: gscPayload.nextStartRow ?? null,
+    openSeoProjectId: link.projectId,
+  }
+}
+
 async function loadArticleHistoryItem(runIdValue) {
   const runId = safeRunId(runIdValue)
   const runDir = path.resolve(path.join(toolOutputDir, runId))
@@ -1620,7 +2866,92 @@ const server = http.createServer(async (req, res) => {
       const articleConfig = await publicArticleComposerConfig()
       const storageInfo = await storage.getStorageInfo()
       const currentData = await readDb()
-      sendJson(res, 200, { ok: true, ...storageInfo, dbPath, publicDir, toolOutputDir, entityGuideDir, entityGuideSearchDirs, toolConfigPath, basePath: basePath || '/', dataCounts: dataCounts(currentData), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured })
+      sendJson(res, 200, { ok: true, ...storageInfo, dbPath, publicDir, toolOutputDir, entityGuideDir, entityGuideSearchDirs, toolConfigPath, basePath: basePath || '/', dataCounts: dataCounts(currentData), mcpConfigured: mcp.configured, mcpConnectorKeyConfigured: mcp.connectorKeyConfigured, searchConsoleConfigured: Boolean(searchConsoleToken), googleOAuthConfigured, articleComposerConfigured: articleConfig.articleComposerConfigured, openSeoConfigured: Boolean(openSeoMcpUrl), openSeoBaseUrl })
+      return
+    }
+
+    if (scopedPathname === '/api/open-seo/status') {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { ok: false, message: 'Unauthorized' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      const projectId = String(url.searchParams.get('projectId') || '')
+      sendJson(res, 200, await buildOpenSeoStatus(projectId))
+      return
+    }
+
+    if (scopedPathname === '/api/open-seo/auto-tasks') {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { ok: false, message: 'Unauthorized' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      const payload = JSON.parse(await readBody(req))
+      const projectId = String(payload.projectId || '')
+      const currentData = await readDb()
+      const project = requireSeoOpsProject(currentData, projectId)
+      const result = applySeoTaskAutomation(currentData, {
+        projectIds: [project.id],
+        dryRun: Boolean(payload.dryRun),
+        rankDropThreshold: payload.rankDropThreshold,
+        highImpressionThreshold: payload.highImpressionThreshold,
+        maxTasks: payload.maxTasks,
+      })
+      if (!payload.dryRun && result.changed) await writeDb(result.data)
+      sendJson(res, 200, {
+        ok: true,
+        mode: 'auto-tasks',
+        dryRun: Boolean(payload.dryRun),
+        syncedAt: new Date().toISOString(),
+        projectId: project.id,
+        ...result.summary,
+      })
+      return
+    }
+
+    if (scopedPathname === '/api/open-seo/sync-keywords' || scopedPathname === '/api/open-seo/sync-rank-tracker' || scopedPathname === '/api/open-seo/sync-metrics' || scopedPathname === '/api/open-seo/sync-gsc') {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { ok: false, message: 'Unauthorized' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      const payload = JSON.parse(await readBody(req))
+      const projectId = String(payload.projectId || '')
+      try {
+        if (scopedPathname === '/api/open-seo/sync-keywords') {
+          sendJson(res, 200, await syncOpenSeoKeywords(projectId, { dryRun: Boolean(payload.dryRun) }))
+          return
+        }
+        if (scopedPathname === '/api/open-seo/sync-rank-tracker') {
+          sendJson(res, 200, await syncOpenSeoRankTracker(projectId, { dryRun: Boolean(payload.dryRun) }))
+          return
+        }
+        if (scopedPathname === '/api/open-seo/sync-gsc') {
+          sendJson(res, 200, await syncOpenSeoGscPerformance(projectId, {
+            dryRun: Boolean(payload.dryRun),
+            dateRange: payload.dateRange || 'last_28_days',
+            rowLimit: payload.rowLimit || 250,
+            importMissing: payload.importMissing !== false,
+          }))
+          return
+        }
+        sendJson(res, 200, await syncOpenSeoMetrics(projectId, {
+          dryRun: Boolean(payload.dryRun),
+          confirmPaidMetrics: Boolean(payload.confirmPaidMetrics),
+        }))
+      } catch (error) {
+        sendJson(res, 400, { ok: false, message: error.message || 'Không đồng bộ được OpenSEO.' })
+      }
       return
     }
 
@@ -1722,8 +3053,15 @@ const server = http.createServer(async (req, res) => {
           sendJson(res, 400, { ok: false, message: 'Invalid SEO Ops data shape' })
           return
         }
+        let savedData = nextData
+        let seoTaskAutomation = { createdTaskCount: 0 }
         try {
-          await writeDb(applyTaskDeadlineAutomation(nextData).data, {
+          const currentData = await readDb()
+          const deadlineData = applyTaskDeadlineAutomation(nextData).data
+          const seoTaskResult = applySeoTaskAutomation(deadlineData, {}, currentData)
+          savedData = seoTaskResult.data
+          seoTaskAutomation = seoTaskResult.summary
+          await writeDb(savedData, {
             allowLargeOverwrite: req.headers['x-seo-ops-allow-large-overwrite'] === 'true',
           })
         } catch (error) {
@@ -1733,7 +3071,7 @@ const server = http.createServer(async (req, res) => {
           }
           throw error
         }
-        sendJson(res, 200, { ok: true, savedAt: new Date().toISOString() })
+        sendJson(res, 200, { ok: true, savedAt: new Date().toISOString(), data: savedData, seoTaskAutomation })
         return
       }
 
