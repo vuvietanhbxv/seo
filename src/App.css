@@ -4914,6 +4914,68 @@ tr:last-child td {
   font-weight: 800;
 }
 
+.open-seo-task-preview {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.open-seo-task-preview-head,
+.open-seo-task-preview-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.open-seo-task-preview-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.open-seo-task-preview-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.open-seo-task-preview-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface);
+}
+
+.open-seo-task-preview-item div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.open-seo-task-preview-item strong,
+.open-seo-task-preview-item span,
+.open-seo-task-preview-item small {
+  overflow-wrap: anywhere;
+}
+
+.open-seo-task-preview-item span,
+.open-seo-task-preview-item small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.open-seo-task-preview-item b {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-size: 12px;
+}
+
 .analytics-form-actions {
   display: flex;
   gap: 10px;

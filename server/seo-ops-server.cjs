@@ -450,6 +450,32 @@ function activeSeoTaskKeys(data) {
   return keys
 }
 
+function taskStatusKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function isSeoAutoTask(task) {
+  return Boolean(
+    task
+    && (
+      task.automationSource === 'seo-opportunity'
+      || String(task.automationKey || '').startsWith('SEO-AUTO:')
+      || /\[SEO-AUTO:[^\]]+\]/.test(String(task.note || task.guide || ''))
+    ),
+  )
+}
+
+function canRecallSeoAutoTask(task) {
+  if (!isSeoAutoTask(task)) return false
+  if (task.acceptedAt || task.completedAt || task.approvedAt || task.payrollSettlementId) return false
+  const status = taskStatusKey(normalizedTaskStatus(task))
+  return !status || status === 'cho nhan' || status === 'can lam' || status === 'tu choi'
+}
+
 function seoPreviousKeyword(previousData, keyword) {
   const previousKeywords = Array.isArray(previousData?.keywords) ? previousData.keywords : []
   return previousKeywords.find((item) => item.id === keyword.id)
@@ -645,7 +671,8 @@ function applySeoTaskAutomation(data, options = {}, previousData = null) {
   }
 
   const summary = {
-    createdTaskCount: newTasks.length,
+    createdTaskCount: options.dryRun ? 0 : newTasks.length,
+    suggestedTaskCount: newTasks.length,
     candidateCount,
     duplicateTaskCount,
     skippedLimitCount,
@@ -658,11 +685,17 @@ function applySeoTaskAutomation(data, options = {}, previousData = null) {
       deadlineDays: rules.deadlineDays,
       maxTasks,
     },
-    previewTasks: newTasks.slice(0, 10).map((task) => ({
+    previewTasks: newTasks.slice(0, maxTasks).map((task) => ({
       title: task.title,
       assigneeId: task.assigneeId,
       automationKey: task.automationKey,
       sourceKeywordId: task.sourceKeywordId,
+      sourceKeywordTerm: task.sourceKeywordTerm,
+      salaryModule: task.salaryModule,
+      taskSalary: task.taskSalary,
+      deadlineAt: task.deadlineAt,
+      note: task.note,
+      guide: task.guide,
     })),
   }
 
@@ -687,6 +720,58 @@ function applySeoTaskAutomation(data, options = {}, previousData = null) {
       tasks: [...newTasks, ...(data.tasks || [])],
       notifications: [...notifications, ...(data.notifications || [])].slice(0, 500),
       activityLogs: [...activityLogs, ...(data.activityLogs || [])].slice(0, 300),
+    },
+  }
+}
+
+function recallSeoAutoTasks(data, options = {}) {
+  if (!data || !Array.isArray(data.projects) || !Array.isArray(data.tasks)) {
+    return { data, changed: false, summary: { recalledTaskCount: 0 } }
+  }
+  const nowIso = new Date().toISOString()
+  const projectIds = new Set(Array.isArray(options.projectIds) && options.projectIds.length ? options.projectIds : data.projects.map((project) => project.id))
+  const recalledTaskIds = new Set()
+  let blockedTaskCount = 0
+  const tasks = data.tasks.filter((task) => {
+    if (!projectIds.has(task.projectId) || !isSeoAutoTask(task)) return true
+    if (!canRecallSeoAutoTask(task)) {
+      blockedTaskCount += 1
+      return true
+    }
+    recalledTaskIds.add(task.id)
+    return false
+  })
+  if (recalledTaskIds.size === 0) {
+    return {
+      data,
+      changed: false,
+      summary: {
+        recalledTaskCount: 0,
+        blockedTaskCount,
+      },
+    }
+  }
+  return {
+    changed: true,
+    summary: {
+      recalledTaskCount: recalledTaskIds.size,
+      blockedTaskCount,
+    },
+    data: {
+      ...data,
+      tasks,
+      notifications: (data.notifications || []).filter((notification) => !recalledTaskIds.has(notification.taskId)),
+      activityLogs: [
+        {
+          id: `log-${crypto.randomUUID()}`,
+          actorId: '',
+          actorName: 'He thong SEO',
+          action: 'Thu hoi task SEO tu dong',
+          target: `${recalledTaskIds.size} task`,
+          at: nowIso,
+        },
+        ...(data.activityLogs || []),
+      ].slice(0, 300),
     },
   }
 }
@@ -2475,7 +2560,7 @@ async function syncOpenSeoKeywords(projectId, options = {}) {
   const savedPayload = mcpStructuredContent(savedResult)
   const rows = Array.isArray(savedPayload.rows) ? savedPayload.rows : []
   const merged = applySavedKeywordRows(data, project, link, rows, now)
-  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: Boolean(options.dryRun) }, data)
+  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: options.createAutoTasks !== true }, data)
   if (!options.dryRun) await writeDb(seoTasks.data)
 
   return {
@@ -2515,7 +2600,7 @@ async function syncOpenSeoRankTracker(projectId, options = {}) {
     nextCheckAt: link.nextCheckAt,
   }
   const merged = applyRankTrackerRows(data, project, link, config, rows, now)
-  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: Boolean(options.dryRun) }, data)
+  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: options.createAutoTasks !== true }, data)
   if (!options.dryRun) await writeDb(seoTasks.data)
 
   return {
@@ -2571,7 +2656,7 @@ async function syncOpenSeoMetrics(projectId, options = {}) {
   }
 
   const merged = applyMetricRows(data, project, link, rows, now)
-  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id] }, data)
+  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: options.createAutoTasks !== true }, data)
   await writeDb(seoTasks.data)
 
   return {
@@ -2649,7 +2734,7 @@ async function syncOpenSeoGscPerformance(projectId, options = {}) {
     importMissing: options.importMissing !== false,
   }, now)
 
-  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: Boolean(options.dryRun) }, data)
+  const seoTasks = applySeoTaskAutomation(merged.data, { projectIds: [project.id], dryRun: options.createAutoTasks !== true }, data)
   if (!options.dryRun) await writeDb(seoTasks.data)
 
   return {
@@ -2672,6 +2757,38 @@ async function syncOpenSeoGscPerformance(projectId, options = {}) {
     hasMore: Boolean(gscPayload.hasMore),
     nextStartRow: gscPayload.nextStartRow ?? null,
     openSeoProjectId: link.projectId,
+  }
+}
+
+async function checkOpenSeoProjectKeywords(projectId) {
+  const keywordSync = await syncOpenSeoKeywords(projectId, { createAutoTasks: false })
+  let rankSync = null
+  let rankError = ''
+  try {
+    rankSync = await syncOpenSeoRankTracker(projectId, { createAutoTasks: false })
+  } catch (error) {
+    rankError = error instanceof Error ? error.message : String(error || '')
+  }
+  const taskSummary = rankSync?.seoTaskAutomation || keywordSync.seoTaskAutomation
+  return {
+    ok: true,
+    mode: 'keyword-check',
+    dryRun: false,
+    syncedAt: new Date().toISOString(),
+    seoOpsKeywordCount: keywordSync.seoOpsKeywordCount,
+    pushedKeywordCount: keywordSync.pushedKeywordCount,
+    openSeoSavedKeywordCount: keywordSync.openSeoSavedKeywordCount,
+    rankingKeywordCount: rankSync?.rankingKeywordCount ?? 0,
+    importedKeywordCount: (keywordSync.importedKeywordCount || 0) + (rankSync?.importedKeywordCount || 0),
+    updatedKeywordCount: (keywordSync.updatedKeywordCount || 0) + (rankSync?.updatedKeywordCount || 0),
+    rankTrackerDomain: rankSync?.rankTrackerDomain || '',
+    lastCheckedAt: rankSync?.lastCheckedAt || '',
+    nextCheckAt: rankSync?.nextCheckAt || '',
+    keywordSync,
+    rankSync,
+    rankError,
+    seoTaskAutomation: taskSummary,
+    openSeoProjectId: keywordSync.openSeoProjectId,
   }
 }
 
@@ -2884,6 +3001,31 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    if (scopedPathname === '/api/open-seo/auto-tasks/recall') {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { ok: false, message: 'Unauthorized' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: 'Method not allowed' })
+        return
+      }
+      const payload = JSON.parse(await readBody(req))
+      const projectId = String(payload.projectId || '')
+      const currentData = await readDb()
+      const project = requireSeoOpsProject(currentData, projectId)
+      const result = recallSeoAutoTasks(currentData, { projectIds: [project.id] })
+      if (result.changed) await writeDb(result.data)
+      sendJson(res, 200, {
+        ok: true,
+        mode: 'auto-tasks',
+        syncedAt: new Date().toISOString(),
+        projectId: project.id,
+        ...result.summary,
+      })
+      return
+    }
+
     if (scopedPathname === '/api/open-seo/auto-tasks') {
       if (!isAuthorized(req)) {
         sendJson(res, 401, { ok: false, message: 'Unauthorized' })
@@ -2897,18 +3039,19 @@ const server = http.createServer(async (req, res) => {
       const projectId = String(payload.projectId || '')
       const currentData = await readDb()
       const project = requireSeoOpsProject(currentData, projectId)
+      const approve = payload.approve === true
       const result = applySeoTaskAutomation(currentData, {
         projectIds: [project.id],
-        dryRun: Boolean(payload.dryRun),
+        dryRun: !approve,
         rankDropThreshold: payload.rankDropThreshold,
         highImpressionThreshold: payload.highImpressionThreshold,
         maxTasks: payload.maxTasks,
       })
-      if (!payload.dryRun && result.changed) await writeDb(result.data)
+      if (approve && result.changed) await writeDb(result.data)
       sendJson(res, 200, {
         ok: true,
         mode: 'auto-tasks',
-        dryRun: Boolean(payload.dryRun),
+        dryRun: !approve,
         syncedAt: new Date().toISOString(),
         projectId: project.id,
         ...result.summary,
@@ -2916,7 +3059,7 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    if (scopedPathname === '/api/open-seo/sync-keywords' || scopedPathname === '/api/open-seo/sync-rank-tracker' || scopedPathname === '/api/open-seo/sync-metrics' || scopedPathname === '/api/open-seo/sync-gsc') {
+    if (scopedPathname === '/api/open-seo/sync-keywords' || scopedPathname === '/api/open-seo/sync-rank-tracker' || scopedPathname === '/api/open-seo/sync-metrics' || scopedPathname === '/api/open-seo/sync-gsc' || scopedPathname === '/api/open-seo/check-keywords') {
       if (!isAuthorized(req)) {
         sendJson(res, 401, { ok: false, message: 'Unauthorized' })
         return
@@ -2928,17 +3071,22 @@ const server = http.createServer(async (req, res) => {
       const payload = JSON.parse(await readBody(req))
       const projectId = String(payload.projectId || '')
       try {
+        if (scopedPathname === '/api/open-seo/check-keywords') {
+          sendJson(res, 200, await checkOpenSeoProjectKeywords(projectId))
+          return
+        }
         if (scopedPathname === '/api/open-seo/sync-keywords') {
-          sendJson(res, 200, await syncOpenSeoKeywords(projectId, { dryRun: Boolean(payload.dryRun) }))
+          sendJson(res, 200, await syncOpenSeoKeywords(projectId, { dryRun: Boolean(payload.dryRun), createAutoTasks: Boolean(payload.createAutoTasks) }))
           return
         }
         if (scopedPathname === '/api/open-seo/sync-rank-tracker') {
-          sendJson(res, 200, await syncOpenSeoRankTracker(projectId, { dryRun: Boolean(payload.dryRun) }))
+          sendJson(res, 200, await syncOpenSeoRankTracker(projectId, { dryRun: Boolean(payload.dryRun), createAutoTasks: Boolean(payload.createAutoTasks) }))
           return
         }
         if (scopedPathname === '/api/open-seo/sync-gsc') {
           sendJson(res, 200, await syncOpenSeoGscPerformance(projectId, {
             dryRun: Boolean(payload.dryRun),
+            createAutoTasks: Boolean(payload.createAutoTasks),
             dateRange: payload.dateRange || 'last_28_days',
             rowLimit: payload.rowLimit || 250,
             importMissing: payload.importMissing !== false,
@@ -2948,6 +3096,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, await syncOpenSeoMetrics(projectId, {
           dryRun: Boolean(payload.dryRun),
           confirmPaidMetrics: Boolean(payload.confirmPaidMetrics),
+          createAutoTasks: Boolean(payload.createAutoTasks),
         }))
       } catch (error) {
         sendJson(res, 400, { ok: false, message: error.message || 'Không đồng bộ được OpenSEO.' })
@@ -3058,8 +3207,8 @@ const server = http.createServer(async (req, res) => {
         try {
           const currentData = await readDb()
           const deadlineData = applyTaskDeadlineAutomation(nextData).data
-          const seoTaskResult = applySeoTaskAutomation(deadlineData, {}, currentData)
-          savedData = seoTaskResult.data
+          const seoTaskResult = applySeoTaskAutomation(deadlineData, { dryRun: true }, currentData)
+          savedData = deadlineData
           seoTaskAutomation = seoTaskResult.summary
           await writeDb(savedData, {
             allowLargeOverwrite: req.headers['x-seo-ops-allow-large-overwrite'] === 'true',

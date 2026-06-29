@@ -436,10 +436,23 @@ type OpenSeoStatus = {
   }
 }
 
+type OpenSeoTaskPreview = {
+  title: string
+  assigneeId?: string
+  automationKey?: string
+  sourceKeywordId?: string
+  sourceKeywordTerm?: string
+  salaryModule?: TaskSalaryModule
+  taskSalary?: number
+  deadlineAt?: string
+  note?: string
+  guide?: string
+}
+
 type OpenSeoSyncResult = {
   ok: boolean
-  mode: 'keywords' | 'rank-tracker' | 'metrics' | 'gsc' | 'auto-tasks'
-  dryRun: boolean
+  mode: 'keywords' | 'rank-tracker' | 'metrics' | 'gsc' | 'auto-tasks' | 'keyword-check'
+  dryRun?: boolean
   syncedAt: string
   connected?: boolean
   reason?: string
@@ -468,16 +481,25 @@ type OpenSeoSyncResult = {
   hasMore?: boolean
   nextStartRow?: number | null
   createdTaskCount?: number
+  suggestedTaskCount?: number
+  recalledTaskCount?: number
+  blockedTaskCount?: number
   candidateCount?: number
   duplicateTaskCount?: number
   skippedLimitCount?: number
   createdByIssue?: Record<string, number>
+  previewTasks?: OpenSeoTaskPreview[]
+  rankError?: string
+  keywordSync?: Partial<OpenSeoSyncResult>
+  rankSync?: Partial<OpenSeoSyncResult> | null
   seoTaskAutomation?: {
     createdTaskCount?: number
+    suggestedTaskCount?: number
     candidateCount?: number
     duplicateTaskCount?: number
     skippedLimitCount?: number
     createdByIssue?: Record<string, number>
+    previewTasks?: OpenSeoTaskPreview[]
   }
   message?: string
 }
@@ -3267,6 +3289,11 @@ function App() {
   const openSeoProjects = openSeoStatus?.openSeo?.projects ?? []
   const openSeoRankTrackers = openSeoStatus?.openSeo?.rankTrackers ?? []
   const openSeoTrackedKeywordCount = openSeoStatus?.openSeo?.trackerDetails?.results?.rows?.length ?? 0
+  const openSeoAutoTaskSummary = openSeoSyncSummary ? (openSeoSyncSummary.seoTaskAutomation ?? openSeoSyncSummary) : null
+  const openSeoAutoTaskPreview = openSeoSyncSummary
+    ? (openSeoSyncSummary.previewTasks ?? openSeoSyncSummary.seoTaskAutomation?.previewTasks ?? [])
+    : []
+  const openSeoSuggestedTaskCount = openSeoAutoTaskSummary?.suggestedTaskCount ?? openSeoAutoTaskSummary?.candidateCount ?? 0
   const canEditAssignedArticle = (keyword: Keyword) => assignedArticleKeywordIds.has(keyword.id)
   const projectTasks = data.tasks.filter((task) =>
     task.projectId === activeProject?.id &&
@@ -3632,9 +3659,25 @@ function App() {
     setOpenSeoStatus(null)
   }
 
+  const openSeoTaskSummary = (payload: OpenSeoSyncResult) => payload.seoTaskAutomation ?? payload
+
+  const openSeoTaskText = (payload: OpenSeoSyncResult) => {
+    const summary = openSeoTaskSummary(payload)
+    const created = summary.createdTaskCount ?? 0
+    const suggested = summary.suggestedTaskCount ?? summary.candidateCount ?? 0
+    if (created > 0) return ` Tao ${created} task SEO tu dong.`
+    if (suggested > 0) return ` Goi y ${suggested} task can duyet.`
+    return ''
+  }
+
   const openSeoSyncMessage = (payload: OpenSeoSyncResult) => {
-    const autoTaskCount = payload.seoTaskAutomation?.createdTaskCount ?? payload.createdTaskCount ?? 0
-    const autoTaskText = autoTaskCount ? ` Tao ${autoTaskCount} task SEO tu dong.` : ''
+    const autoTaskText = openSeoTaskText(payload)
+    if (payload.mode === 'keyword-check') {
+      const rankText = payload.rankError
+        ? ` Rank tracker chua tra ket qua: ${payload.rankError}.`
+        : ` Rank tracker ${payload.rankTrackerDomain || ''}: ${payload.rankingKeywordCount ?? 0} keyword.`
+      return `Da day ${payload.pushedKeywordCount ?? 0}/${payload.seoOpsKeywordCount ?? 0} keyword sang OpenSEO, doc ${payload.openSeoSavedKeywordCount ?? 0} saved keyword, cap nhat ${payload.updatedKeywordCount ?? 0}, import moi ${payload.importedKeywordCount ?? 0}.${rankText}${autoTaskText}`
+    }
     if (payload.mode === 'keywords') {
       return `Da sync keyword: day ${payload.pushedKeywordCount ?? 0}/${payload.seoOpsKeywordCount ?? 0} keyword tu SEO Ops, doc ${payload.openSeoSavedKeywordCount ?? 0} saved keyword, cap nhat ${payload.updatedKeywordCount ?? 0}, import moi ${payload.importedKeywordCount ?? 0}.${autoTaskText}`
     }
@@ -3650,17 +3693,25 @@ function App() {
       return `Da sync GSC: doc ${payload.rowCount ?? 0} query/page row, cap nhat ${payload.updatedKeywordCount ?? 0}, import moi ${payload.importedKeywordCount ?? 0}, bo qua trung ${payload.skippedDuplicateRowCount ?? 0}.${autoTaskText}`
     }
     if (payload.mode === 'auto-tasks') {
-      return `Da quet task SEO tu dong: tao ${payload.createdTaskCount ?? 0}/${payload.candidateCount ?? 0} task, bo qua trung ${payload.duplicateTaskCount ?? 0}.`
+      if (payload.recalledTaskCount !== undefined) {
+        return `Da thu hoi ${payload.recalledTaskCount ?? 0} task SEO tu dong chua co nhan su nhan. Giu lai ${payload.blockedTaskCount ?? 0} task da co nguoi nhan hoac dang xu ly.`
+      }
+      if (payload.dryRun !== false) {
+        return `Da quet goi y task SEO: ${payload.suggestedTaskCount ?? 0}/${payload.candidateCount ?? 0} task moi, bo qua trung ${payload.duplicateTaskCount ?? 0}. Bam Duyet tao task neu dong y.`
+      }
+      return `Da tao ${payload.createdTaskCount ?? 0}/${payload.candidateCount ?? 0} task SEO tu dong, bo qua trung ${payload.duplicateTaskCount ?? 0}.`
     }
     return `Da sync metrics: yeu cau ${payload.requestedKeywordCount ?? 0} keyword, nhan ${payload.metricsKeywordCount ?? 0}, cap nhat ${payload.updatedKeywordCount ?? 0}, import moi ${payload.importedKeywordCount ?? 0}.${autoTaskText}`
   }
 
-  const runOpenSeoSync = async (mode: OpenSeoSyncResult['mode']) => {
+  const runOpenSeoSync = async (mode: OpenSeoSyncResult['mode'], options: { approveAutoTasks?: boolean } = {}) => {
     if (!activeProject) return
     if (mode === 'metrics' && !window.confirm('Dong bo metrics se goi DataForSEO qua OpenSEO va co the ton credit. Ban muon tiep tuc?')) {
       return
     }
-    const endpoint = mode === 'keywords'
+    const endpoint = mode === 'keyword-check'
+      ? 'api/open-seo/check-keywords'
+      : mode === 'keywords'
       ? 'api/open-seo/sync-keywords'
       : mode === 'rank-tracker'
         ? 'api/open-seo/sync-rank-tracker'
@@ -3670,7 +3721,17 @@ function App() {
             ? 'api/open-seo/auto-tasks'
             : 'api/open-seo/sync-metrics'
     setOpenSeoSyncMode(mode)
-    setOpenSeoMessage(mode === 'metrics' ? 'Dang dong bo metrics tu OpenSEO...' : mode === 'gsc' ? 'Dang dong bo GSC tu OpenSEO...' : mode === 'auto-tasks' ? 'Dang quet task SEO tu dong...' : 'Dang dong bo OpenSEO...')
+    setOpenSeoMessage(
+      mode === 'metrics'
+        ? 'Dang dong bo metrics tu OpenSEO...'
+        : mode === 'gsc'
+          ? 'Dang dong bo GSC tu OpenSEO...'
+          : mode === 'auto-tasks'
+            ? options.approveAutoTasks ? 'Dang tao task SEO da duyet...' : 'Dang quet goi y task SEO...'
+            : mode === 'keyword-check'
+              ? 'Dang day keyword sang OpenSEO va keo ket qua ve SEO Ops...'
+              : 'Dang dong bo OpenSEO...',
+    )
     try {
       const response = await fetch(appUrl(endpoint), {
         method: 'POST',
@@ -3679,6 +3740,7 @@ function App() {
           projectId: activeProject.id,
           confirmPaidMetrics: mode === 'metrics',
           importMissing: true,
+          approve: mode === 'auto-tasks' && options.approveAutoTasks === true,
         }),
       })
       const payload = await readApiJson(response) as OpenSeoSyncResult
@@ -3687,12 +3749,48 @@ function App() {
       const message = openSeoSyncMessage(payload)
       setOpenSeoMessage(message)
       if (payload.ok) {
-        await refreshRemoteData()
+        if (payload.dryRun === false || mode !== 'auto-tasks') await refreshRemoteData()
         if (mode !== 'auto-tasks') await loadOpenSeoStatus(activeProject.id)
         setOpenSeoMessage(message)
       }
     } catch (error) {
       setOpenSeoMessage(`Khong dong bo duoc OpenSEO. ${error instanceof Error ? error.message : ''}`.trim())
+    } finally {
+      setOpenSeoSyncMode('')
+    }
+  }
+
+  const approveOpenSeoAutoTasks = () => {
+    const summary = openSeoSyncSummary ? openSeoTaskSummary(openSeoSyncSummary) : null
+    const suggested = summary?.suggestedTaskCount ?? summary?.candidateCount ?? 0
+    if (!activeProject || suggested <= 0) {
+      setOpenSeoMessage('Chua co goi y task moi de duyet.')
+      return
+    }
+    if (!window.confirm(`Tao ${suggested} task SEO tu dong cho du an "${activeProject.name}"?`)) return
+    void runOpenSeoSync('auto-tasks', { approveAutoTasks: true })
+  }
+
+  const recallOpenSeoAutoTasks = async () => {
+    if (!activeProject) return
+    if (!window.confirm(`Thu hoi tat ca task SEO tu dong cua "${activeProject.name}" chua co nhan su nhan?`)) return
+    setOpenSeoSyncMode('auto-tasks')
+    setOpenSeoMessage('Dang thu hoi task SEO tu dong...')
+    try {
+      const response = await fetch(appUrl('api/open-seo/auto-tasks/recall'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: activeProject.id }),
+      })
+      const payload = await readApiJson(response) as OpenSeoSyncResult
+      if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setOpenSeoSyncSummary(payload)
+      const message = openSeoSyncMessage(payload)
+      setOpenSeoMessage(message)
+      await refreshRemoteData()
+      setOpenSeoMessage(message)
+    } catch (error) {
+      setOpenSeoMessage(`Khong thu hoi duoc task SEO tu dong. ${error instanceof Error ? error.message : ''}`.trim())
     } finally {
       setOpenSeoSyncMode('')
     }
@@ -7220,6 +7318,9 @@ function App() {
                         <button className="danger-button" type="button" onClick={disconnectOpenSeoProject} disabled={!canEditProjects || !activeOpenSeoSettings.projectId}>
                           Ngắt mapping
                         </button>
+                        <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('keyword-check')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
+                          Day key & lay rank
+                        </button>
                         <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('keywords')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
                           Sync keywords
                         </button>
@@ -7230,7 +7331,13 @@ function App() {
                           Sync GSC
                         </button>
                         <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('auto-tasks')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
-                          Auto tasks
+                          Goi y task
+                        </button>
+                        <button className="secondary-button" type="button" onClick={approveOpenSeoAutoTasks} disabled={!canEditProjects || Boolean(openSeoSyncMode) || openSeoSuggestedTaskCount <= 0}>
+                          Duyet tao task
+                        </button>
+                        <button className="danger-button" type="button" onClick={recallOpenSeoAutoTasks} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
+                          Thu hoi task tu dong
                         </button>
                         <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('metrics')} disabled={!canEditProjects || Boolean(openSeoSyncMode)}>
                           Sync metrics
@@ -7259,7 +7366,8 @@ function App() {
                           <Detail label="Sync lúc" value={formatDateTime(openSeoSyncSummary.syncedAt)} />
                           <Detail label="Cập nhật" value={`${openSeoSyncSummary.updatedKeywordCount ?? 0}`} />
                           <Detail label="Import mới" value={`${openSeoSyncSummary.importedKeywordCount ?? 0}`} />
-                          <Detail label="Auto tasks" value={`${openSeoSyncSummary.seoTaskAutomation?.createdTaskCount ?? openSeoSyncSummary.createdTaskCount ?? 0}`} />
+                          <Detail label="Task tao" value={`${openSeoSyncSummary.seoTaskAutomation?.createdTaskCount ?? openSeoSyncSummary.createdTaskCount ?? 0}`} />
+                          <Detail label="Task goi y" value={`${openSeoSyncSummary.seoTaskAutomation?.suggestedTaskCount ?? openSeoSyncSummary.suggestedTaskCount ?? openSeoSyncSummary.candidateCount ?? 0}`} />
                           {(openSeoSyncSummary.seoTaskAutomation?.duplicateTaskCount ?? openSeoSyncSummary.duplicateTaskCount ?? 0) > 0 && (
                             <Detail label="Task trùng" value={`${openSeoSyncSummary.seoTaskAutomation?.duplicateTaskCount ?? openSeoSyncSummary.duplicateTaskCount ?? 0}`} />
                           )}
@@ -7271,6 +7379,26 @@ function App() {
                               <Detail label="GSC range" value={field([openSeoSyncSummary.startDate, openSeoSyncSummary.endDate].filter(Boolean).join('..'))} />
                             </>
                           )}
+                        </div>
+                      )}
+                      {openSeoAutoTaskPreview.length > 0 && (
+                        <div className="open-seo-task-preview">
+                          <div className="open-seo-task-preview-head">
+                            <strong>Task goi y can duyet</strong>
+                            <span>{openSeoAutoTaskPreview.length}/{openSeoSuggestedTaskCount} hien thi</span>
+                          </div>
+                          <div className="open-seo-task-preview-list">
+                            {openSeoAutoTaskPreview.map((task) => (
+                              <article className="open-seo-task-preview-item" key={task.automationKey || task.title}>
+                                <div>
+                                  <strong>{task.title}</strong>
+                                  <span>{task.note}</span>
+                                  <small>{task.sourceKeywordTerm || task.sourceKeywordId || 'Keyword'} · {task.salaryModule || 'SEO'} · {formatDateTime(task.deadlineAt)}</small>
+                                </div>
+                                <b>{task.assigneeId ? ownerName(task.assigneeId) : 'Chua gan'}</b>
+                              </article>
+                            ))}
+                          </div>
                         </div>
                       )}
                       {openSeoMessage && <p className="analytics-status">{openSeoMessage}</p>}
@@ -7493,12 +7621,16 @@ function App() {
                   <button className="secondary-button" type="button" onClick={importSelectedKeywordsToArticles} disabled={selectedImportableArticleCount === 0}>
                     Đẩy key đã chọn sang Bài viết
                   </button>
+                  <button className="secondary-button" type="button" onClick={() => runOpenSeoSync('keyword-check')} disabled={!activeOpenSeoSettings.projectId || Boolean(openSeoSyncMode)}>
+                    {openSeoSyncMode === 'keyword-check' ? 'Dang sync OpenSEO...' : 'Day OpenSEO & lay rank'}
+                  </button>
                   <button className="keyword-index-bulk-button" type="button" onClick={checkAllKeywordIndexes} disabled={checkingAllKeywords}>
                     {checkingAllKeywords ? 'Đang check...' : 'Check index hàng loạt'}
                   </button>
                   {quickKeywordStatus && <span>{quickKeywordStatus}</span>}
                 </div>
                 {searchConsoleStatus && <p className="analytics-status keyword-index-status">{searchConsoleStatus}</p>}
+                {openSeoMessage && openSeoSyncSummary?.mode === 'keyword-check' && <p className="analytics-status keyword-index-status">{openSeoMessage}</p>}
                 <form className="keyword-form" onSubmit={saveKeyword} key={editingKeyword?.id ?? 'new-keyword'}>
                   <input name="term" placeholder="Keyword *" defaultValue={editingKeyword?.term ?? ''} required />
                   <select name="keywordType" value={keywordFormType} onChange={(event) => setKeywordFormType(event.target.value as KeywordType)}>
